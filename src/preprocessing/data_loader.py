@@ -7,7 +7,7 @@ import json
 import csv
 import pandas as pd
 from typing import List, Dict, Any, Optional, Union
-
+import pymongo
 
 class DataLoader:
     """Class for loading and handling OCR-processed newspaper data."""
@@ -22,7 +22,28 @@ class DataLoader:
         self.config = config
         self.raw_dir = config.get('raw_dir', '../data/raw')
         self.processed_dir = config.get('processed_dir', '../data/processed')
-    
+        self.mongodb_config = config.get('mongodb', {})
+        self.mongo_client = None
+        self.mongo_db = None
+        self.mongo_collection = None
+        if self.mongodb_config:
+            self._init_mongo()
+
+    def _init_mongo(self):
+        """
+        Initialize MongoDB client and collection.
+        """
+        uri = self.mongodb_config.get('uri', 'mongodb://localhost:27017')
+        username = self.mongodb_config.get('username')
+        password = self.mongodb_config.get('password')
+        if username and password:
+            uri = uri.replace('mongodb://', f'mongodb://{username}:{password}@')
+        self.mongo_client = pymongo.MongoClient(uri)
+        db_name = self.mongodb_config.get('database', 'newspaper_db')
+        collection_name = self.mongodb_config.get('collection', 'articles')
+        self.mongo_db = self.mongo_client[db_name]
+        self.mongo_collection = self.mongo_db[collection_name]
+
     def list_files(self, directory: str, file_extension: Optional[str] = None) -> List[str]:
         """
         List all files in a directory with optional extension filter.
@@ -145,6 +166,29 @@ class DataLoader:
                     'file_path': file_path
                 })
         
+        return documents
+    
+    def load_from_mongodb(self, query: Optional[Dict[str, Any]] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Load documents from MongoDB.
+        
+        Args:
+            query: MongoDB query dictionary
+            limit: Optional limit on number of documents
+            
+        Returns:
+            List of document dictionaries
+        """
+        if not self.mongo_collection:
+            raise RuntimeError("MongoDB collection is not initialized.")
+        cursor = self.mongo_collection.find(query or {})
+        if limit:
+            cursor = cursor.limit(limit)
+        documents = list(cursor)
+        for doc in documents:
+            doc['doc_id'] = str(doc.get('_id', ''))
+            if 'text' not in doc and 'content' in doc:
+                doc['text'] = doc['content']
         return documents
     
     def save_processed_data(self, documents: List[Dict[str, Any]], 

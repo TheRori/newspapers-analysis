@@ -39,6 +39,14 @@ analysis:
     max_length: 512
     batch_size: 16
 
+# MongoDB settings
+mongodb:
+  uri: "mongodb://localhost:27017"
+  database: "newspaper_db"
+  collection: "articles"
+  username: ""
+  password: ""
+
 # Visualization settings
 visualization:
   default_figsize: [12, 8]
