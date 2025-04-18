@@ -1,0 +1,39 @@
+# Ignore all data and results
+/data/
+/results/
+
+# Ignore virtual environments
+venv/
+.env/
+
+# Ignore Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore logs
+*.log
+logs/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE/project files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Ignore test outputs
+/test_outputs/
+
+# Ignore temporary files
+*.tmp
+*.swp
+*.bak
+*~

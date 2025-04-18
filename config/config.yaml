@@ -1,0 +1,53 @@
+# Newspaper Articles Analysis Configuration
+
+# Data paths
+data:
+  raw_dir: "../data/raw"
+  processed_dir: "../data/processed"
+  results_dir: "../results"
+
+# Preprocessing settings
+preprocessing:
+  min_word_length: 3
+  remove_stopwords: true
+  lemmatize: true
+  language: "english"
+  min_doc_length: 50  # Minimum document length in words to be considered
+
+# Analysis settings
+analysis:
+  # Topic modeling
+  topic_modeling:
+    algorithm: "lda"  # Options: lda, nmf, bertopic
+    num_topics: 10
+    max_df: 0.7  # Ignore terms that appear in more than 70% of documents
+    min_df: 5    # Ignore terms that appear in fewer than 5 documents
+  
+  # Named Entity Recognition
+  ner:
+    model: "en_core_web_lg"  # spaCy model to use
+    entities: ["PERSON", "ORG", "GPE", "LOC", "DATE"]
+  
+  # Sentiment Analysis
+  sentiment:
+    model: "vader"  # Options: vader, transformers
+    transformer_model: "distilbert-base-uncased-finetuned-sst-2-english"  # If using transformers
+  
+  # Text classification
+  classification:
+    model: "distilbert-base-uncased"
+    max_length: 512
+    batch_size: 16
+
+# Visualization settings
+visualization:
+  default_figsize: [12, 8]
+  dpi: 300
+  save_format: "png"
+  color_palette: "viridis"
+  
+# Logging settings
+logging:
+  level: "INFO"
+  log_to_file: true
+  log_file: "../logs/newspaper_analysis.log"
