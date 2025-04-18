@@ -41,11 +41,11 @@ analysis:
 
 # MongoDB settings
 mongodb:
-  uri: "mongodb://localhost:27017"
-  database: "newspaper_db"
-  collection: "articles"
-  username: ""
-  password: ""
+  uri: "mongodb://therori-mac:xvjZDOGubL61UtEB@localhost:27017"
+  database: "articles"
+  collection: "press_processed"
+  username: "therori-mac"
+  password: "xvjZDOGubL61UtEB"
 
 # Visualization settings
 visualization:
