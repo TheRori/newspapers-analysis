@@ -49,7 +49,8 @@ class MongoDBClient:
                 raise ValueError("Missing MongoDB configuration parameters")
             
             # Connect to MongoDB
-            self.client = MongoClient(uri)
+            logger.info(f"Attempting to connect to MongoDB with URI: {uri[:20]}...{uri[-20:]} (middle part hidden)")
+            self.client = MongoClient(uri, serverSelectionTimeoutMS=5000)
             # Test connection
             self.client.admin.command('ping')
             logger.info("Successfully connected to MongoDB")

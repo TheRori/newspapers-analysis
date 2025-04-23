@@ -19,13 +19,13 @@ sys.path.append(str(project_root))
 from src.utils.config_loader import load_config
 from src.utils.mongodb_client import MongoDBClient
 
-def parse_arguments():
+def parse_arguments(processed_dir_default: str):
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Load articles from MongoDB with filtering options')
     
     # Basic filtering options
     parser.add_argument('--limit', type=int, default=10, help='Maximum number of articles to retrieve')
-    parser.add_argument('--output', type=str, default='articles.json', help='Output file path')
+    parser.add_argument('--output', type=str, default=f'{processed_dir_default}/articles.json', help='Output file path')
     
     # Date filtering
     parser.add_argument('--start-date', type=str, help='Start date in YYYY-MM-DD format')
@@ -47,6 +47,9 @@ def parse_arguments():
     
     # Article by ID
     parser.add_argument('--article-id', type=str, help='Retrieve a specific article by ID')
+    
+    # Configuration
+    parser.add_argument('--config', type=str, default='config/config.yaml', help='Path to configuration YAML file')
     
     return parser.parse_args()
 
@@ -93,10 +96,10 @@ def save_articles_to_file(articles: List[Dict[str, Any]], output_path: str):
 
 def main():
     """Main function to load and filter articles from MongoDB."""
-    args = parse_arguments()
-    
     # Load configuration
-    config = load_config()
+    config = load_config('config/config.yaml')
+    processed_dir_default = config.get('data', {}).get('processed_dir', 'data/processed')
+    args = parse_arguments(processed_dir_default)
     
     # Initialize MongoDB client
     mongo_client = MongoDBClient(config)

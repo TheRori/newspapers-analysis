@@ -2,9 +2,9 @@
 
 # Data paths
 data:
-  raw_dir: "../data/raw"
-  processed_dir: "../data/processed"
-  results_dir: "../results"
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  results_dir: "data/results"
 
 # Preprocessing settings
 preprocessing:
@@ -41,11 +41,11 @@ analysis:
 
 # MongoDB settings
 mongodb:
-  uri: "mongodb://therori-mac:xvjZDOGubL61UtEB@localhost:27017"
+  uri: "mongodb+srv://therori-mac:xzSI4OZiwhPV3zrh@articles.futmiee.mongodb.net/?retryWrites=true&w=majority&appName=articles"
   database: "articles"
   collection: "press_processed"
   username: "therori-mac"
-  password: "xvjZDOGubL61UtEB"
+  password: "xzSI4OZiwhPV3zrh"
 
 # Visualization settings
 visualization:
