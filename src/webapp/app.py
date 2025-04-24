@@ -21,7 +21,7 @@ import numpy as np
 
 from src.visualization.visualizer import Visualizer
 from src.utils.config_loader import load_config
-from src.webapp.lexical_analysis_viz import get_lexical_analysis_layout
+from src.webapp.lexical_analysis_viz import get_lexical_analysis_layout, register_lexical_analysis_callbacks
 
 # Load configuration
 config_path = str(project_root / "config" / "config.yaml")
@@ -36,6 +36,9 @@ app = dash.Dash(
 )
 app.title = "Newspaper Articles Analysis"
 server = app.server  # Expose the server for deployment platforms
+
+# Register callbacks for lexical analysis form
+register_lexical_analysis_callbacks(app)
 
 # Define the app layout
 app.layout = dbc.Container([

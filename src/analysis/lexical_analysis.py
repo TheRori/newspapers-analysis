@@ -125,20 +125,23 @@ def get_lexical_stats_bulk(texts, batch_size=50, n_process=1, lang='fr'):
         last_log = 0
         last_time = start_time
         for i, doc in enumerate(nlp.pipe(texts, batch_size=batch_size, n_process=n_process)):
-            tokens = [token.text.lower() for token in doc if token.is_alpha and token.text.lower() not in stop_words]
-            types = set(tokens)
-            num_tokens = len(tokens)
+            # Inclure les stopwords pour tous les calculs sauf top_words
+            tokens_all = [token.text.lower() for token in doc if token.is_alpha]
+            types = set(tokens_all)
+            num_tokens = len(tokens_all)
             num_types = len(types)
             ttr = num_types / num_tokens if num_tokens else 0
             num_sentences = sum(1 for _ in doc.sents)
-            word_entropy = entropy(list(Counter(tokens).values()), base=2) if tokens else 0
-            avg_word_length = sum(len(t) for t in tokens) / num_tokens if num_tokens else 0
+            word_entropy = entropy(list(Counter(tokens_all).values()), base=2) if tokens_all else 0
+            avg_word_length = sum(len(t) for t in tokens_all) / num_tokens if num_tokens else 0
             avg_sent_length = num_tokens / num_sentences if num_sentences else 0
             pos_counts = Counter([token.pos_ for token in doc if token.is_alpha])
             lexical_pos = ['NOUN', 'VERB', 'ADJ', 'ADV']
             lexical_count = sum(pos_counts.get(pos, 0) for pos in lexical_pos)
             lexical_density = lexical_count / num_tokens if num_tokens else 0
-            top_words = Counter(tokens).most_common(5)
+            # Exclure les stopwords uniquement pour top_words
+            tokens_no_stop = [t for t in tokens_all if t not in stop_words]
+            top_words = Counter(tokens_no_stop).most_common(5)
             stats = {
                 'num_sentences': num_sentences,
                 'num_tokens': num_tokens,
