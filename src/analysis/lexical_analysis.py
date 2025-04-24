@@ -92,3 +92,62 @@ def build_cooc_graph(texts, window_size=4, min_freq=2):
         if freq >= min_freq:
             G.add_edge(w1, w2, weight=freq)
     return G
+
+def get_lexical_stats_bulk(texts, batch_size=50, n_process=1):
+    """
+    Calcule les stats lexicales pour une liste de textes en batch (pipeline spaCy désactivée).
+    Retourne une liste de dicts (stats par doc).
+    """
+    nlp = get_nlp().select_pipes(disable=["ner", "parser", "lemmatizer"])
+    results = []
+    for doc in nlp.pipe(texts, batch_size=batch_size, n_process=n_process):
+        tokens = [token.text.lower() for token in doc if token.is_alpha]
+        types = set(tokens)
+        ttr = len(types) / len(tokens) if tokens else 0
+        num_sentences = doc.text.count('.')  # approximation rapide
+        word_entropy = entropy(list(Counter(tokens).values()), base=2) if tokens else 0
+        results.append({
+            'num_sentences': num_sentences,
+            'ttr': ttr,
+            'entropy': word_entropy
+        })
+    return results
+
+# Marquage optimisé
+
+def mark_special_words_fast(text, technical_words=None, technical_pos=None):
+    """
+    Version optimisée du marquage spécial : préfiltre, conditions regroupées.
+    """
+    nlp = get_nlp().select_pipes(disable=["ner", "parser", "lemmatizer"])
+    doc = nlp(text)
+    results = []
+    for token in doc:
+        if not token.is_alpha or len(token.text) <= 1:
+            continue
+        txt = token.text
+        is_sigle = (txt.isupper() and len(txt) > 1) or token.shape_ == "XXX"
+        is_etranger = token.lang_ != "fr"
+        is_technique = (
+            (technical_words and txt.lower() in technical_words)
+            or (technical_pos and token.pos_ in technical_pos)
+        )
+        if is_sigle or is_etranger or is_technique:
+            results.append((txt, {
+                'sigle': is_sigle,
+                'etranger': is_etranger,
+                'technique': is_technique
+            }))
+    return results
+
+# Cooccurrence rapide avec CountVectorizer
+
+def build_cooc_matrix_vectorizer(texts, min_df=5, stop_words='french'):
+    from sklearn.feature_extraction.text import CountVectorizer
+    import numpy as np
+    vectorizer = CountVectorizer(min_df=min_df, stop_words=stop_words)
+    X = vectorizer.fit_transform(texts)
+    vocab = vectorizer.get_feature_names_out()
+    cooc_matrix = (X.T @ X).toarray()
+    np.fill_diagonal(cooc_matrix, 0)  # ignore auto-cooc
+    return cooc_matrix, vocab
