@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Tuple, Optional
 import logging
 import re
 import requests
+import json
 
 import numpy as np
 import pandas as pd
@@ -17,8 +18,11 @@ from sklearn.decomposition import LatentDirichletAllocation, NMF
 import gensim
 from gensim.corpora import Dictionary
 from gensim.models import LdaModel, HdpModel, CoherenceModel
+from bertopic import BERTopic
+from bertopic.vectorizers import ClassTfidfTransformer
 from .utils import get_stopwords
 from .llm_utils import LLMClient
+from sentence_transformers import SentenceTransformer
 
 class TopicModeler:
     """Class for topic modeling on newspaper articles."""
@@ -45,6 +49,10 @@ class TopicModeler:
         self.gensim_dictionary = None
         self.gensim_corpus = None
         
+        # BERTopic specific attributes
+        self.bertopic_topics = None
+        self.bertopic_probs = None
+        
     def preprocess_for_sklearn(self, documents: List[Dict[str, Any]]) -> Tuple[List[str], List[str]]:
         """
         Preprocess documents for sklearn-based topic modeling.
@@ -55,17 +63,19 @@ class TopicModeler:
         Returns:
             Tuple of (document_ids, document_texts)
         """
-        doc_ids = [doc.get('doc_id', f"doc_{i}") for i, doc in enumerate(documents)]
+        doc_ids = [doc.get('doc_id', doc.get('id', f"doc_{i}")) for i, doc in enumerate(documents)]
         
-        # Use cleaned_text if available, otherwise use text
+        # Use cleaned_text, text, or content if available
         texts = []
         for doc in documents:
             if 'cleaned_text' in doc:
                 texts.append(doc['cleaned_text'])
             elif 'text' in doc:
                 texts.append(doc['text'])
+            elif 'content' in doc:
+                texts.append(doc['content'])
             else:
-                raise KeyError("Documents must contain either 'cleaned_text' or 'text' key")
+                raise KeyError("Documents must contain 'cleaned_text', 'text', or 'content' key")
         
         return doc_ids, texts
     
@@ -79,7 +89,7 @@ class TopicModeler:
         Returns:
             Tuple of (document_ids, tokenized_texts)
         """
-        doc_ids = [doc.get('doc_id', f"doc_{i}") for i, doc in enumerate(documents)]
+        doc_ids = [doc.get('doc_id', doc.get('id', f"doc_{i}")) for i, doc in enumerate(documents)]
         
         # Get tokenized texts
         tokenized_texts = []
@@ -87,12 +97,13 @@ class TopicModeler:
             if 'tokens' in doc:
                 tokenized_texts.append(doc['tokens'])
             elif 'cleaned_text' in doc:
-                # Simple tokenization by splitting on whitespace
                 tokenized_texts.append(doc['cleaned_text'].split())
             elif 'text' in doc:
                 tokenized_texts.append(doc['text'].split())
+            elif 'content' in doc:
+                tokenized_texts.append(doc['content'].split())
             else:
-                raise KeyError("Documents must contain 'tokens', 'cleaned_text', or 'text' key")
+                raise KeyError("Documents must contain 'tokens', 'cleaned_text', 'text', or 'content' key")
         
         return doc_ids, tokenized_texts
     
@@ -210,6 +221,68 @@ class TopicModeler:
                 doc_topic_matrix.append(topic_dist)
         return doc_topic_matrix
     
+    def fit_transform_bertopic(self, texts: List[str]) -> np.ndarray:
+        """
+        Fit and transform texts using BERTopic.
+        
+        Args:
+            texts: List of document texts
+        
+        Returns:
+            Document-topic matrix (list of topic distributions per doc)
+        """
+        from sklearn.feature_extraction.text import CountVectorizer
+        import torch
+        
+        # Vérifier si un GPU est disponible
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.logger.info(f"Using device for BERTopic: {device}")
+        
+        # Retrieve French stopwords
+        stopwords = list(get_stopwords("fr"))
+        # Ajoute les tokens numériques courants comme stopwords (0-100 et années courantes)
+        stopwords += [str(i) for i in range(0, 100)]  # 0-99
+        stopwords += [str(i) for i in range(1900, 2030)]  # Années courantes
+        
+        # Configure BERTopic avec des stopwords mais sans token_pattern personnalisé
+        # qui pourrait être trop restrictif
+        vectorizer_model = CountVectorizer(stop_words=stopwords)
+        
+        # Initialiser le modèle d'embedding avec le device spécifié
+        embedding_model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", device=device)
+        
+        # Initialiser le modèle BERTopic
+        self.model = BERTopic(
+            language="french", 
+            embedding_model=embedding_model,
+            vectorizer_model=vectorizer_model,
+            calculate_probabilities=True,
+            nr_topics=self.num_topics if self.num_topics != "auto" else "auto",
+            verbose=True
+        )
+        
+        # Fit the model and get topics and probabilities
+        self.bertopic_topics, self.bertopic_probs = self.model.fit_transform(texts)
+        
+        # Get the actual number of topics found (may differ from requested)
+        topic_info = self.model.get_topic_info()
+        self.num_topics = len(topic_info) - 1  # Exclude the -1 outlier topic
+        
+        # Convert sparse probabilities to a full document-topic matrix
+        # Each row is a document, each column is a topic
+        import numpy as np
+        doc_topic_matrix = np.zeros((len(texts), self.num_topics))
+        
+        # Fill in the matrix with available probabilities
+        for i, (topic_idx, probs) in enumerate(zip(self.bertopic_topics, self.bertopic_probs)):
+            if topic_idx != -1:  # Skip outlier topic
+                for j, prob in enumerate(probs):
+                    topic_id = j if j < topic_idx else j + 1
+                    if topic_id < self.num_topics:
+                        doc_topic_matrix[i, topic_id] = prob
+        
+        return doc_topic_matrix
+    
     def fit_transform(self, documents: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Fit topic model and transform documents.
@@ -220,6 +293,8 @@ class TopicModeler:
         Returns:
             Dictionary with topic model results
         """
+        self.logger.info(f"Fitting topic model with algorithm: {self.algorithm}")
+        
         if self.algorithm in ['lda', 'nmf']:
             # Sklearn-based modeling
             doc_ids, texts = self.preprocess_for_sklearn(documents)
@@ -245,6 +320,16 @@ class TopicModeler:
                     'dominant_topic': int(np.argmax(doc_topic_matrix[i]))
                 }
             top_terms = self.get_top_terms_gensim(n_terms=10)
+        elif self.algorithm == 'bertopic':
+            doc_ids, texts = self.preprocess_for_sklearn(documents)
+            doc_topic_matrix = self.fit_transform_bertopic(texts)
+            doc_topics = {}
+            for i, doc_id in enumerate(doc_ids):
+                doc_topics[doc_id] = {
+                    'topic_distribution': doc_topic_matrix[i].tolist() if isinstance(doc_topic_matrix[i], np.ndarray) else doc_topic_matrix[i],
+                    'dominant_topic': self.bertopic_topics[i] if self.bertopic_topics[i] != -1 else -1
+                }
+            top_terms = self.get_top_terms_bertopic(n_terms=10)
         else:
             doc_ids, tokenized_texts = self.preprocess_for_gensim(documents)
             doc_topic_matrix = self.fit_transform_gensim([' '.join(toks) for toks in tokenized_texts])
@@ -301,6 +386,32 @@ class TopicModeler:
             topic_terms = self.model.show_topic(topic_idx, n_terms)
             top_terms[topic_idx] = [term for term, _ in topic_terms]
         
+        return top_terms
+    
+    def get_top_terms_bertopic(self, n_terms: int = 10) -> Dict[int, List[str]]:
+        """
+        Get the top terms for each topic from BERTopic.
+        Args:
+            n_terms: Number of terms to return per topic
+        Returns:
+            Dictionary mapping topic index to list of top terms
+        """
+        if self.model is None:
+            raise ValueError("Model has not been fit yet")
+        
+        top_terms = {}
+        topic_info = self.model.get_topic_info()
+        # Skip the outlier topic (-1)
+        for topic_id in topic_info[topic_info['Topic'] != -1]['Topic'].values:
+            topic_words = self.model.get_topic(topic_id)
+            # Robust: handle tuple or str
+            cleaned_terms = []
+            for item in topic_words[:n_terms]:
+                if isinstance(item, (tuple, list)) and len(item) >= 1:
+                    cleaned_terms.append(item[0])
+                else:
+                    cleaned_terms.append(str(item))
+            top_terms[int(topic_id)] = cleaned_terms
         return top_terms
     
     def get_topic_coherence(self, texts: Optional[List[List[str]]] = None, coherence_type: str = "c_v") -> float:
@@ -485,6 +596,142 @@ class TopicModeler:
                 topic_counts[topic_idx] = int((doc_topic_matrix[:, topic_idx] >= threshold).sum())
             return topic_counts
     
+    def get_bertopic_coherence(self, texts: Optional[List[List[str]]] = None, coherence_type: str = "c_v") -> float:
+        """
+        Calculate the coherence score of the fitted BERTopic model.
+        
+        Args:
+            texts: List of tokenized texts (list of lists of tokens)
+            coherence_type: Type of coherence to calculate
+            
+        Returns:
+            Coherence score
+        """
+        if self.model is None:
+            raise ValueError("Model has not been fit yet")
+        
+        # Ensure we have tokenized texts
+        if texts is None:
+            raise ValueError("texts must be provided for coherence calculation")
+        
+        # Get topics as lists of top words
+        topics = []
+        topic_info = self.model.get_topic_info()
+        
+        # Skip the outlier topic (-1)
+        for topic_id in topic_info[topic_info['Topic'] != -1]['Topic'].values:
+            topic_words = [word for word, _ in self.model.get_topic(topic_id)]
+            topics.append(topic_words)
+        
+        # Calculate coherence using gensim
+        from gensim.models.coherencemodel import CoherenceModel
+        cm = CoherenceModel(topics=topics, texts=texts, dictionary=None, coherence=coherence_type)
+        return cm.get_coherence()
+    
+    def get_bertopic_topic_distribution(self) -> List[float]:
+        """
+        Get the global distribution of topics in the corpus.
+        
+        Returns:
+            List of topic proportions
+        """
+        if self.model is None or self.bertopic_topics is None:
+            raise ValueError("Model has not been fit yet")
+        
+        import numpy as np
+        # Get topic assignments (excluding outlier topic -1)
+        topic_assignments = np.array(self.bertopic_topics)
+        valid_topics = topic_assignments[topic_assignments != -1]
+        
+        # Count occurrences of each topic
+        unique, counts = np.unique(valid_topics, return_counts=True)
+        
+        # Create a distribution array with zeros
+        distribution = np.zeros(self.num_topics)
+        
+        # Fill in the counts for topics that appear in the corpus
+        for topic_idx, count in zip(unique, counts):
+            if 0 <= topic_idx < self.num_topics:
+                distribution[topic_idx] = count
+        
+        # Normalize to get proportions
+        if distribution.sum() > 0:
+            distribution = distribution / distribution.sum()
+        
+        return distribution.tolist()
+    
+    def get_bertopic_word_weights(self, n_terms: int = 10) -> Dict[str, List[Tuple[str, float]]]:
+        """
+        Get the top weighted words for each topic from BERTopic model.
+        
+        Args:
+            n_terms: Number of terms to return per topic
+            
+        Returns:
+            Dictionary mapping topic IDs to lists of (word, weight) tuples
+        """
+        if self.model is None:
+            raise ValueError("Model has not been fit yet")
+        
+        weighted_words = {}
+        topic_info = self.model.get_topic_info()
+        
+        # Skip the outlier topic (-1)
+        for topic_id in topic_info[topic_info['Topic'] != -1]['Topic'].values:
+            topic_words = self.model.get_topic(topic_id)
+            weighted_words[str(int(topic_id))] = [(word, float(weight)) for word, weight in topic_words[:n_terms]]
+        
+        return weighted_words
+    
+    def get_bertopic_representative_docs(self, n_docs: int = 3) -> Dict[str, List[int]]:
+        """
+        Get the most representative documents for each topic.
+        
+        Args:
+            n_docs: Number of documents to return per topic
+            
+        Returns:
+            Dictionary mapping topic IDs to lists of document indices
+        """
+        if self.model is None:
+            raise ValueError("Model has not been fit yet")
+        
+        representative_docs = {}
+        topic_info = self.model.get_topic_info()
+        
+        # Skip the outlier topic (-1)
+        for topic_id in topic_info[topic_info['Topic'] != -1]['Topic'].values:
+            # Get representative documents for this topic
+            doc_indices = self.model.get_representative_docs(topic_id)
+            # Always treat as list
+            if not isinstance(doc_indices, (list, tuple, np.ndarray)):
+                doc_indices = [doc_indices]
+            # Limit to n_docs
+            representative_docs[str(int(topic_id))] = list(doc_indices)[:n_docs]
+        
+        return representative_docs
+    
+    def get_bertopic_article_counts(self) -> Dict[str, int]:
+        """
+        Get the number of articles assigned to each topic.
+        
+        Returns:
+            Dictionary mapping topic IDs to article counts
+        """
+        if self.model is None or self.bertopic_topics is None:
+            raise ValueError("Model has not been fit yet")
+        
+        from collections import Counter
+        # Count occurrences of each topic
+        counts = Counter(self.bertopic_topics)
+        # Skip the outlier topic (-1)
+        topic_article_counts = {
+            str(topic_id): counts[topic_id] 
+            for topic_id in range(self.num_topics)
+        }
+        
+        return topic_article_counts
+    
     def save_model(self, output_dir: str, prefix: str = 'topic_model') -> str:
         """
         Save the topic model and related objects.
@@ -511,6 +758,13 @@ class TopicModeler:
                     'feature_names': self.feature_names,
                     'config': self.config
                 }, f)
+        elif self.algorithm == 'bertopic':
+            # Save BERTopic model
+            self.model.save(model_path)
+            # Save config used for training
+            config_path = os.path.join(output_dir, f"{prefix}_{self.algorithm}_config.json")
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump({'num_topics': self.num_topics, **self.config}, f, ensure_ascii=False, indent=2)
         else:
             # Save gensim model and dictionary
             self.model.save(model_path)
@@ -542,6 +796,17 @@ class TopicModeler:
             topic_modeler.vectorizer = saved_data['vectorizer']
             topic_modeler.feature_names = saved_data['feature_names']
             
+        elif algorithm == 'bertopic':
+            # Load BERTopic model
+            topic_modeler = cls({'algorithm': 'bertopic'})
+            topic_modeler.model = BERTopic.load(model_path)
+            # Load config used for training if available
+            config_path = model_path.replace('.pkl', '_config.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    topic_modeler.training_config = json.load(f)
+            else:
+                topic_modeler.training_config = {'num_topics': 'auto'}
         else:
             # Load gensim model
             # Assume dictionary is in same directory with _dictionary.pkl suffix
@@ -614,3 +879,52 @@ class TopicModeler:
             else:
                 topic_names.append(f"(Erreur API: {response.status_code})")
         return topic_names
+
+    def transform_with_bertopic(self, texts: List[str]) -> Dict[str, Any]:
+        """
+        Transform texts using a pre-trained BERTopic model.
+        
+        Args:
+            texts: List of document texts
+            
+        Returns:
+            Dictionary with document topics and other results
+        """
+        if self.model is None:
+            raise ValueError("No BERTopic model available. Load or fit a model first.")
+        
+        # Transform documents using the loaded model
+        topics, probs = self.model.transform(texts)
+        self.bertopic_topics = topics
+        self.bertopic_probs = probs
+        
+        # Get the actual number of topics found
+        topic_info = self.model.get_topic_info()
+        self.num_topics = len(topic_info[topic_info['Topic'] != -1])
+        
+        # Prepare document-topic matrix
+        doc_topics = {}
+        for i, (doc_id, text) in enumerate(zip(range(len(texts)), texts)):
+            topic_idx = topics[i]
+            # Skip -1 (outlier) topics
+            if topic_idx == -1:
+                topic_idx = self.model.get_topic_info().iloc[1]['Topic']  # Use the first non-outlier topic
+            
+            # Create topic distribution (mostly zeros, with probability at the assigned topic)
+            topic_distribution = np.zeros(self.num_topics)
+            if topic_idx >= 0 and topic_idx < self.num_topics:
+                topic_distribution[topic_idx] = 1.0
+            
+            # Store document topic info
+            doc_topics[str(doc_id)] = {
+                'topic': int(topic_idx),
+                'topic_distribution': topic_distribution.tolist()
+            }
+        
+        # Get top terms per topic
+        top_terms = self.get_top_terms_bertopic()
+        
+        return {
+            'doc_topics': doc_topics,
+            'top_terms': top_terms
+        }

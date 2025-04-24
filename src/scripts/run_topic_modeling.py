@@ -85,10 +85,13 @@ def main():
     parser.add_argument('--versioned', action='store_true', help='Save results with unique versioned filenames (default: True)')
     parser.add_argument('--no-versioned', dest='versioned', action='store_false', help='Save results only with generic names (overwrites previous)')
     parser.set_defaults(versioned=True)
-    parser.add_argument('--engine', choices=['sklearn', 'gensim'], default='gensim', help='Choose topic modeling engine: sklearn or gensim (default: sklearn)')
+    parser.add_argument('--engine', choices=['sklearn', 'gensim', 'bertopic'], default='gensim', help='Choose topic modeling engine: sklearn, gensim, or bertopic (default: gensim)')
     parser.add_argument('--algorithm', type=str, default=None, help='Topic modeling algorithm (e.g., lda, hdp, nmf). Overrides config file.')
     parser.add_argument('--auto-num-topics', action='store_true', help='Automatically find the best num_topics (LDA only, Gensim)')
-    parser.add_argument('--num-topics', type=int, default=None, help='Nombre de topics à utiliser si on ne fait pas de recherche du meilleur k (k).')
+    parser.add_argument('--num-topics', 
+        type=str,
+        default=None, 
+        help='Nombre de topics à utiliser. Utiliser "auto" pour BERTopic automatique.')
     parser.add_argument('--k-min', type=int, default=5, help='Min num_topics for search (default: 5)')
     parser.add_argument('--k-max', type=int, default=20, help='Max num_topics for search (default: 20)')
     parser.add_argument('--search-mode', choices=['linear', 'bisect'], default='linear', help='Mode de recherche du meilleur num_topics (linear ou bisect, défaut: linear)')
@@ -105,6 +108,10 @@ def main():
     articles_path = project_root / 'data' / 'processed' / 'articles.json'
     results_dir = project_root / 'data' / 'results'
     os.makedirs(results_dir, exist_ok=True)
+    
+    # Dossier pour sauvegarder les modèles
+    models_dir = project_root / 'data' / 'models'
+    os.makedirs(models_dir, exist_ok=True)
 
     # Ensure result subdirectories exist
     advanced_dir = results_dir / "advanced_topic"
@@ -119,6 +126,8 @@ def main():
     # Override algorithm if provided via CLI
     if args.algorithm:
         topic_config['algorithm'] = args.algorithm
+    elif args.engine == 'bertopic':
+        topic_config['algorithm'] = 'bertopic'
     logger.info(f"Loaded topic modeling config: {topic_config}")
 
     # Load articles
@@ -179,14 +188,63 @@ def main():
         stats_path = save_coherence_stats(run_id, coherence_dict, coherence_dir, start_time, end_time, cpu_times)
         logger.info(f"Saved coherence trials to {stats_path}")
     elif args.num_topics is not None:
-        topic_config['num_topics'] = args.num_topics
-        logger.info(f"Nombre de topics fixé à {args.num_topics} (pas de recherche du meilleur k)")
+        if args.engine == "bertopic" and str(args.num_topics).lower() == "auto":
+            topic_config['num_topics'] = "auto"
+            logger.info("Nombre de topics en mode automatique (BERTopic)")
+        else:
+            topic_config['num_topics'] = int(args.num_topics)
+            logger.info(f"Nombre de topics fixé à {args.num_topics} (pas de recherche du meilleur k)")
 
     # Fit and transform using selected engine
     if args.engine == 'sklearn':
         doc_topic_matrix = modeler.fit_transform_sklearn(texts)
         feature_names = modeler.feature_names
         model_components = modeler.model.components_
+    elif args.engine == 'bertopic':
+        # Chemin pour sauvegarder/charger le modèle
+        model_dir = models_dir / 'bertopic'
+        os.makedirs(model_dir, exist_ok=True)
+        model_path = model_dir / f"topic_model_bertopic.pkl"
+        
+        # Vérifier si un modèle existe déjà
+        if os.path.exists(model_path):
+            try:
+                logger.info(f"[BERTopic] Tentative de chargement du modèle depuis {model_path}")
+                loaded_modeler = TopicModeler.load_model(str(model_path), algorithm='bertopic')
+                logger.info(f"[BERTopic] Modèle chargé avec succès depuis {model_path}")
+                # Nouvelle logique : lire la config d'entraînement du modèle
+                trained_num_topics = None
+                if hasattr(loaded_modeler, 'training_config') and loaded_modeler.training_config:
+                    trained_num_topics = str(loaded_modeler.training_config.get('num_topics', 'auto'))
+                current_num_topics = str(topic_config['num_topics'])
+                # Si les deux sont 'auto', pas de réentraînement
+                if trained_num_topics == "auto" and current_num_topics == "auto":
+                    logger.info("[BERTopic] Modèle existant et config tous deux en 'auto' (vérifié via config d'entraînement) : pas de réentraînement.")
+                    modeler = loaded_modeler
+                    results = modeler.transform_with_bertopic(texts)
+                elif trained_num_topics == current_num_topics:
+                    modeler = loaded_modeler
+                    results = modeler.transform_with_bertopic(texts)
+                else:
+                    logger.info(f"[BERTopic] Le modèle existant a été entraîné avec num_topics={trained_num_topics}, mais {current_num_topics} sont demandés. Réentraînement...")
+                    results = modeler.fit_transform(articles)
+                    logger.info(f"[BERTopic] Sauvegarde immédiate du modèle dans {model_path}")
+                    modeler.save_model(str(model_dir), prefix='topic_model')
+            except Exception as e:
+                logger.warning(f"[BERTopic] Erreur lors du chargement du modèle : {e}")
+                results = modeler.fit_transform(articles)
+                logger.info(f"[BERTopic] Sauvegarde immédiate du modèle dans {model_path}")
+                modeler.save_model(str(model_dir), prefix='topic_model')
+        else:
+            logger.info("[BERTopic] Aucun modèle existant, entraînement d'un nouveau modèle")
+            results = modeler.fit_transform(articles)
+            logger.info(f"[BERTopic] Sauvegarde immédiate du modèle dans {model_path}")
+            modeler.save_model(str(model_dir), prefix='topic_model')
+        
+        # Extraire les résultats
+        doc_topic_matrix = [doc['topic_distribution'] for doc in results['doc_topics'].values()]
+        feature_names = None  # Not used for BERTopic
+        model_components = results['top_terms']
     else:  # gensim
         doc_topic_matrix = modeler.fit_transform_gensim(texts)
         feature_names = modeler.feature_names
@@ -202,6 +260,10 @@ def main():
     if args.engine == 'sklearn':
         for topic_idx, topic in enumerate(model_components):
             top_features = [feature_names[i] for i in topic.argsort()[:-num_top_words - 1:-1]]
+            logger.info(f"Topic #{topic_idx}: {' '.join(top_features)}")
+            top_words_per_topic[f"topic_{topic_idx}"] = top_features
+    elif args.engine == 'bertopic':
+        for topic_idx, top_features in model_components.items():
             logger.info(f"Topic #{topic_idx}: {' '.join(top_features)}")
             top_words_per_topic[f"topic_{topic_idx}"] = top_features
     else:  # gensim
@@ -305,32 +367,82 @@ def main():
             "weighted_words": {str(k): [(w, float(f"{wgt:.5f}")) for w, wgt in v] for k, v in weighted_words.items()},
             "representative_docs": {str(k): v for k, v in rep_docs.items()},
             "llm_name": llm_name,
-            "topic_names_llm": topic_names_llm
+            "topic_names_llm": topic_names_llm,
+            "topic_article_counts": modeler.get_topic_article_counts()
         }
-        adv_path = advanced_dir / f'advanced_topic_analysis_{run_id}.json' if args.versioned else advanced_dir / 'advanced_topic_analysis.json'
-        with open(adv_path, 'w', encoding='utf-8') as f:
+        
+        advanced_path = advanced_dir / f'advanced_topic_analysis_{run_id}.json' if args.versioned else advanced_dir / 'advanced_topic_analysis.json'
+        with open(advanced_path, 'w', encoding='utf-8') as f:
             json.dump(advanced_results, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved advanced topic analysis to {adv_path}")
-        # Always update latest
-        latest_adv_path = advanced_dir / 'advanced_topic_analysis.json'
-        with open(latest_adv_path, 'w', encoding='utf-8') as f:
+        logger.info(f"Saved advanced topic analysis to {advanced_path}")
+        
+        # Also save/update latest version for convenience
+        latest_advanced_path = advanced_dir / 'advanced_topic_analysis.json'
+        with open(latest_advanced_path, 'w', encoding='utf-8') as f:
             json.dump(advanced_results, f, ensure_ascii=False, indent=2)
-        logger.info(f"Updated latest advanced topic analysis at {latest_adv_path}")
+        logger.info(f"Updated latest advanced topic analysis at {latest_advanced_path}")
 
-        # 6. Comptage des articles par topic (avec seuil)
-        threshold = 0.2  # seuil par défaut, modifiable
-        topic_article_counts = modeler.get_topic_article_counts(threshold=threshold)
-        logger.info(f"\n--- Nombre d'articles par topic (seuil={threshold}) ---")
+    # --- Analyse avancée BERTopic : pondération, cohérence, distribution, docs représentatifs ---
+    elif args.engine == 'bertopic':
+        # 1. Mots-clés pondérés par sujet
+        weighted_words = modeler.get_bertopic_word_weights(n_terms=num_top_words)
+        logger.info("\n--- Mots-clés pondérés par sujet (BERTopic) ---")
+        for topic_idx, words in weighted_words.items():
+            logger.info(f"Topic #{topic_idx}: {[(w, f'{wgt:.3f}') for w, wgt in words]}")
+
+        # 2. Score de cohérence
+        # Tokenize texts for coherence calculation
+        tokenized_texts = [text.split() for text in texts]
+        try:
+            coherence = modeler.get_bertopic_coherence(texts=tokenized_texts)
+            logger.info(f"Coherence score (c_v): {coherence:.3f}")
+        except Exception as e:
+            logger.warning(f"Could not calculate coherence score: {e}")
+            coherence = None
+
+        # 3. Distribution globale des sujets
+        topic_dist = modeler.get_bertopic_topic_distribution()
+        logger.info("\n--- Distribution globale des sujets (importance relative) ---")
+        for topic_idx, frac in enumerate(topic_dist):
+            logger.info(f"Topic #{topic_idx}: {frac:.2%}")
+
+        # 4. Documents les plus représentatifs par sujet
+        rep_docs = modeler.get_bertopic_representative_docs(n_docs=3)
+        logger.info("\n--- Documents représentatifs par sujet (indices) ---")
+        for topic_idx, doc_indices in rep_docs.items():
+            logger.info(f"Topic #{topic_idx}: {doc_indices}")
+
+        # 5. Nombre d'articles par sujet
+        topic_article_counts = modeler.get_bertopic_article_counts()
+        logger.info("\n--- Nombre d'articles par sujet ---")
         for topic_idx, count in topic_article_counts.items():
             logger.info(f"Topic #{topic_idx}: {count} articles")
-        # Ajoute au JSON
-        advanced_results["topic_article_counts"] = {str(k): v for k, v in topic_article_counts.items()}
-        # Réécrit les fichiers
-        with open(adv_path, 'w', encoding='utf-8') as f:
+
+        # 6. Sauvegarde des scores et analyses avancées dans results
+        # Utilise le nom du LLM effectivement utilisé pour nommer les topics
+        llm_name = getattr(modeler, 'llm_name_used', None)
+        topic_names_llm = getattr(modeler, 'topic_names_llm', None)
+        advanced_results = {
+            "run_id": run_id,
+            "coherence_score": coherence,
+            "topic_distribution": topic_dist,
+            "weighted_words": weighted_words,
+            "representative_docs": rep_docs,
+            "llm_name": llm_name,
+            "topic_names_llm": topic_names_llm,
+            "topic_article_counts": topic_article_counts
+        }
+        
+        advanced_path = advanced_dir / f'advanced_topic_analysis_{run_id}.json' if args.versioned else advanced_dir / 'advanced_topic_analysis.json'
+        with open(advanced_path, 'w', encoding='utf-8') as f:
             json.dump(advanced_results, f, ensure_ascii=False, indent=2)
-        with open(latest_adv_path, 'w', encoding='utf-8') as f:
+        logger.info(f"Saved advanced topic analysis to {advanced_path}")
+        
+        # Also save/update latest version for convenience
+        latest_advanced_path = advanced_dir / 'advanced_topic_analysis.json'
+        with open(latest_advanced_path, 'w', encoding='utf-8') as f:
             json.dump(advanced_results, f, ensure_ascii=False, indent=2)
-        logger.info(f"Updated advanced topic analysis with article counts (threshold={threshold})")
+        logger.info(f"Updated latest advanced topic analysis at {latest_advanced_path}")
 
 if __name__ == "__main__":
     main()
