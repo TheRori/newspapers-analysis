@@ -87,6 +87,7 @@ def main():
     parser.add_argument('--engine', choices=['sklearn', 'gensim'], default='sklearn', help='Choose topic modeling engine: sklearn or gensim (default: sklearn)')
     parser.add_argument('--algorithm', type=str, default=None, help='Topic modeling algorithm (e.g., lda, hdp, nmf). Overrides config file.')
     parser.add_argument('--auto-num-topics', action='store_true', help='Automatically find the best num_topics (LDA only, Gensim)')
+    parser.add_argument('--num-topics', type=int, default=None, help='Nombre de topics à utiliser si on ne fait pas de recherche du meilleur k (k).')
     parser.add_argument('--k-min', type=int, default=5, help='Min num_topics for search (default: 5)')
     parser.add_argument('--k-max', type=int, default=20, help='Max num_topics for search (default: 20)')
     parser.add_argument('--search-mode', choices=['linear', 'bisect'], default='linear', help='Mode de recherche du meilleur num_topics (linear ou bisect, défaut: linear)')
@@ -171,6 +172,9 @@ def main():
         # Save all stats for this run
         stats_path = save_coherence_stats(run_id, coherence_dict, coherence_dir, start_time, end_time, cpu_times)
         logger.info(f"Saved coherence trials to {stats_path}")
+    elif args.num_topics is not None:
+        topic_config['num_topics'] = args.num_topics
+        logger.info(f"Nombre de topics fixé à {args.num_topics} (pas de recherche du meilleur k)")
 
     # Fit and transform using selected engine
     if args.engine == 'sklearn':

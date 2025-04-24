@@ -12,6 +12,8 @@ import json
 import numpy as np
 from sklearn.cluster import KMeans
 from typing import List, Tuple, Any
+import os
+os.environ['LOKY_MAX_CPU_COUNT'] = '8' 
 
 def cluster_documents_from_matrix(doc_topic_matrix: List[List[float]], n_clusters: int = 6, random_state: int = 42) -> Tuple[np.ndarray, KMeans]:
     """

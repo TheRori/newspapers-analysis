@@ -5,6 +5,7 @@ data:
   raw_dir: "data/raw"
   processed_dir: "data/processed"
   results_dir: "data/results"
+  cluster_results_dir: "data/results/clusters/"
 
 # Preprocessing settings
 preprocessing:
