@@ -5,6 +5,12 @@ from pathlib import Path
 import logging
 import sys
 import uuid
+from gensim.models import LdaMulticore, CoherenceModel
+import time
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 # Add the project root to the path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
@@ -13,6 +19,65 @@ sys.path.append(str(project_root))
 from src.analysis.topic_modeling import TopicModeler
 from src.utils.config_loader import load_config
 
+def find_best_num_topics_bisect(corpus, id2word, texts, k_min=5, k_max=20, tol=1, logger=None):
+    results = {}
+    # Évaluer les extrêmes
+    for k in [k_min, k_max]:
+        model_k = LdaMulticore(corpus=corpus, id2word=id2word, num_topics=k, workers=2, random_state=42)
+        cm = CoherenceModel(model=model_k, texts=texts, dictionary=id2word, coherence='c_v')
+        results[k] = cm.get_coherence()
+        if logger:
+            logger.info(f"num_topics={k}, coherence={results[k]:.4f}")
+        else:
+            print(f"num_topics={k}, coherence={results[k]:.4f}")
+    # Recherche dichotomique
+    while k_max - k_min > tol:
+        k_mid = (k_min + k_max) // 2
+        if k_mid in results:
+            break
+        model_k = LdaMulticore(corpus=corpus, id2word=id2word, num_topics=k_mid, workers=2, random_state=42)
+        cm = CoherenceModel(model=model_k, texts=texts, dictionary=id2word, coherence='c_v')
+        results[k_mid] = cm.get_coherence()
+        if logger:
+            logger.info(f"num_topics={k_mid}, coherence={results[k_mid]:.4f}")
+        else:
+            print(f"num_topics={k_mid}, coherence={results[k_mid]:.4f}")
+        # Choisir la moitié la plus prometteuse
+        vals = [(kk, results[kk]) for kk in sorted(results.keys())]
+        best_k, best_score = max(vals, key=lambda x: x[1])
+        if k_mid == best_k:
+            # Explorer autour du maximum local
+            if abs(k_mid - k_min) > abs(k_max - k_mid):
+                k_max = k_mid
+            else:
+                k_min = k_mid
+        elif k_mid < best_k:
+            k_min = k_mid
+        else:
+            k_max = k_mid
+    best_k = max(results.items(), key=lambda x: x[1])
+    if logger:
+        logger.info(f"Best num_topics: {best_k[0]} with coherence: {best_k[1]:.4f}")
+    else:
+        print(f"Best num_topics: {best_k[0]} with coherence: {best_k[1]:.4f}")
+    return best_k[0], results
+
+def save_coherence_stats(run_id, coherences, coherence_dir, start_time, end_time, cpu_times):
+    stats = {
+        "run_id": run_id,
+        "coherence_trials": [
+            {"num_topics": int(k), "coherence": float(score)} for k, score in sorted(coherences.items())
+        ],
+        "start_time": start_time,
+        "end_time": end_time,
+        "duration_sec": end_time - start_time,
+        "cpu_times": cpu_times
+    }
+    path = coherence_dir / f"coherence_trials_{run_id}.json"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(stats, f, ensure_ascii=False, indent=2)
+    return path
+
 def main():
     # Parse arguments for versioning
     parser = argparse.ArgumentParser(description="Run topic modeling on articles.")
@@ -20,6 +85,12 @@ def main():
     parser.add_argument('--no-versioned', dest='versioned', action='store_false', help='Save results only with generic names (overwrites previous)')
     parser.set_defaults(versioned=True)
     parser.add_argument('--engine', choices=['sklearn', 'gensim'], default='sklearn', help='Choose topic modeling engine: sklearn or gensim (default: sklearn)')
+    parser.add_argument('--algorithm', type=str, default=None, help='Topic modeling algorithm (e.g., lda, hdp, nmf). Overrides config file.')
+    parser.add_argument('--auto-num-topics', action='store_true', help='Automatically find the best num_topics (LDA only, Gensim)')
+    parser.add_argument('--k-min', type=int, default=5, help='Min num_topics for search (default: 5)')
+    parser.add_argument('--k-max', type=int, default=20, help='Max num_topics for search (default: 20)')
+    parser.add_argument('--search-mode', choices=['linear', 'bisect'], default='linear', help='Mode de recherche du meilleur num_topics (linear ou bisect, défaut: linear)')
+    parser.add_argument('--bisect-tol', type=int, default=1, help='Tolérance (écart min) pour arrêt dichotomique (défaut: 1)')
     args = parser.parse_args()
 
     # Configure logging
@@ -32,9 +103,19 @@ def main():
     results_dir = project_root / 'data' / 'results'
     os.makedirs(results_dir, exist_ok=True)
 
+    # Ensure result subdirectories exist
+    advanced_dir = results_dir / "advanced_topic"
+    topwords_dir = results_dir / "top_words"
+    coherence_dir = results_dir / "coherence_trials"
+    for d in [advanced_dir, topwords_dir, coherence_dir]:
+        d.mkdir(parents=True, exist_ok=True)
+
     # Load config
     config = load_config(str(config_path))
     topic_config = config.get('analysis', {}).get('topic_modeling', {})
+    # Override algorithm if provided via CLI
+    if args.algorithm:
+        topic_config['algorithm'] = args.algorithm
     logger.info(f"Loaded topic modeling config: {topic_config}")
 
     # Load articles
@@ -48,6 +129,48 @@ def main():
     # Preprocess articles for sklearn (using 'content' as text field)
     doc_ids = [doc.get('id', f"doc_{i}") for i, doc in enumerate(articles)]
     texts = [doc['content'] for doc in articles]
+
+    # If requested, automatically find the best num_topics using coherence (LDA + Gensim engine only)
+    if args.auto_num_topics and args.engine == 'gensim' and topic_config.get('algorithm', 'lda') == 'lda':
+        logger.info(f"Searching best num_topics (coherence) in [{args.k_min}, {args.k_max}] with mode {args.search_mode}...")
+        # Prepare texts and corpus for Gensim
+        stopwords = modeler.get_french_stopwords()
+        import re
+        tokenized_texts = [
+            [
+                word for word in re.findall(r"\b\w{2,}\b", text.lower())
+                if word not in stopwords and not word.isdigit()
+            ]
+            for text in texts
+        ]
+        from gensim.corpora import Dictionary
+        id2word = Dictionary(tokenized_texts)
+        corpus = [id2word.doc2bow(text) for text in tokenized_texts]
+        run_id = str(uuid.uuid4())
+        start_time = time.time()
+        cpu_times_before = psutil.cpu_times_percent() if psutil else None
+        if args.search_mode == 'bisect':
+            best_k, coherence_dict = find_best_num_topics_bisect(corpus, id2word, tokenized_texts, k_min=args.k_min, k_max=args.k_max, tol=args.bisect_tol, logger=logger)
+        else:
+            coherence_dict = {}
+            for k in range(args.k_min, args.k_max + 1):
+                model_k = LdaMulticore(corpus=corpus, id2word=id2word, num_topics=k, workers=2, random_state=42)
+                cm = CoherenceModel(model=model_k, texts=tokenized_texts, dictionary=id2word, coherence='c_v')
+                score = cm.get_coherence()
+                coherence_dict[k] = score
+                logger.info(f"num_topics={k}, coherence={score:.4f}")
+            best_k = max(coherence_dict.items(), key=lambda x: x[1])[0]
+            logger.info(f"Best num_topics: {best_k} with coherence: {coherence_dict[best_k]:.4f}")
+        end_time = time.time()
+        cpu_times_after = psutil.cpu_times_percent() if psutil else None
+        cpu_times = {
+            "before": cpu_times_before._asdict() if psutil and cpu_times_before else None,
+            "after": cpu_times_after._asdict() if psutil and cpu_times_after else None
+        }
+        topic_config['num_topics'] = best_k
+        # Save all stats for this run
+        stats_path = save_coherence_stats(run_id, coherence_dict, coherence_dir, start_time, end_time, cpu_times)
+        logger.info(f"Saved coherence trials to {stats_path}")
 
     # Fit and transform using selected engine
     if args.engine == 'sklearn':
@@ -82,13 +205,13 @@ def main():
         "run_id": run_id,
         "top_words_per_topic": top_words_per_topic
     }
-    top_words_path = results_dir / f'top_words_per_topic_{run_id}.json' if args.versioned else results_dir / 'top_words_per_topic.json'
+    top_words_path = topwords_dir / f'top_words_per_topic_{run_id}.json' if args.versioned else topwords_dir / 'top_words_per_topic.json'
     with open(top_words_path, 'w', encoding='utf-8') as f:
         json.dump(results_summary, f, ensure_ascii=False, indent=2)
     logger.info(f"Saved top words per topic to {top_words_path}")
 
     # Also save/update latest version for convenience
-    latest_top_words_path = results_dir / 'top_words_per_topic.json'
+    latest_top_words_path = topwords_dir / 'top_words_per_topic.json'
     with open(latest_top_words_path, 'w', encoding='utf-8') as f:
         json.dump(results_summary, f, ensure_ascii=False, indent=2)
     logger.info(f"Updated latest top words per topic at {latest_top_words_path}")
@@ -148,12 +271,12 @@ def main():
             "weighted_words": {str(k): [(w, float(f"{wgt:.5f}")) for w, wgt in v] for k, v in weighted_words.items()},
             "representative_docs": {str(k): v for k, v in rep_docs.items()}
         }
-        adv_path = results_dir / f'advanced_topic_analysis_{run_id}.json' if args.versioned else results_dir / 'advanced_topic_analysis.json'
+        adv_path = advanced_dir / f'advanced_topic_analysis_{run_id}.json' if args.versioned else advanced_dir / 'advanced_topic_analysis.json'
         with open(adv_path, 'w', encoding='utf-8') as f:
             json.dump(advanced_results, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved advanced topic analysis to {adv_path}")
         # Always update latest
-        latest_adv_path = results_dir / 'advanced_topic_analysis.json'
+        latest_adv_path = advanced_dir / 'advanced_topic_analysis.json'
         with open(latest_adv_path, 'w', encoding='utf-8') as f:
             json.dump(advanced_results, f, ensure_ascii=False, indent=2)
         logger.info(f"Updated latest advanced topic analysis at {latest_adv_path}")

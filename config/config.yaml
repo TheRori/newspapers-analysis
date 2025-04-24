@@ -19,7 +19,7 @@ analysis:
   # Topic modeling
   topic_modeling:
     algorithm: "lda"  # Options: lda, nmf, bertopic
-    num_topics: 10
+    num_topics: 6
     max_df: 0.7  # Ignore terms that appear in more than 70% of documents
     min_df: 5    # Ignore terms that appear in fewer than 5 documents
   

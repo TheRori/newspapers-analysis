@@ -48,18 +48,16 @@ class DataLoader:
     def load_from_mongodb(self, query: Optional[Dict[str, Any]] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Load documents from MongoDB.
-        
         Args:
-            query: MongoDB query dictionary
-            limit: Optional limit on number of documents
-            
+            query: MongoDB query dict
+            limit: Maximum number of documents to load; if None or 0, loads all
         Returns:
-            List of document dictionaries
+            List of documents
         """
         if not self.mongo_collection:
             raise RuntimeError("MongoDB collection is not initialized.")
         cursor = self.mongo_collection.find(query or {})
-        if limit:
+        if limit is not None and limit > 0:
             cursor = cursor.limit(limit)
         documents = list(cursor)
         for doc in documents:

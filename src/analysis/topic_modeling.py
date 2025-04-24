@@ -6,6 +6,7 @@ import os
 import pickle
 from typing import List, Dict, Any, Tuple, Optional
 import logging
+import re
 
 import numpy as np
 import pandas as pd
@@ -14,7 +15,7 @@ from sklearn.feature_extraction import text as sklearn_text
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 import gensim
 from gensim.corpora import Dictionary
-from gensim.models import LdaModel, CoherenceModel
+from gensim.models import LdaModel, HdpModel, CoherenceModel
 
 
 class TopicModeler:
@@ -27,27 +28,42 @@ class TopicModeler:
         'au', 'aux', 'avec', 'ce', 'ces', 'dans', 'de', 'des', 'du', 'elle', 'en', 'et', 'eux', 'il', 'je', 'la', 'le', 'leur', 'lui', 'ma', 'mais', 'me', 'même', 'mes', 'moi', 'mon', 'ne', 'nos', 'notre', 'nous', 'on', 'ou', 'par', 'pas', 'pour', 'qu', 'que', 'qui', 'sa', 'se', 'ses', 'son', 'sur', 'ta', 'te', 'tes', 'toi', 'ton', 'tu', 'un', 'une', 'vos', 'votre', 'vous', 'c', 'd', 'j', 'l', 'à', 'm', 'n', 's', 't', 'y', 'été', 'étée', 'étées', 'étés', 'étant', 'suis', 'es', 'est', 'sommes', 'êtes', 'sont', 'serai', 'seras', 'sera', 'serons', 'serez', 'seront', 'serais', 'serait', 'serions', 'seriez', 'seraient', 'étais', 'était', 'étions', 'étiez', 'étaient', 'fus', 'fut', 'fûmes', 'fûtes', 'furent', 'sois', 'soit', 'soyons', 'soyez', 'soient', 'fusse', 'fusses', 'fût', 'fussions', 'fussiez', 'fussent', 'ayant', 'eu', 'eue', 'eues', 'eus', 'ai', 'as', 'avons', 'avez', 'ont', 'aurai', 'auras', 'aura', 'aurons', 'aurez', 'auront', 'aurais', 'aurait', 'aurions', 'auriez', 'auraient', 'avais', 'avait', 'avions', 'aviez', 'avaient', 'eut', 'eûmes', 'eûtes', 'eurent', 'aie', 'aies', 'ait', 'ayons', 'ayez', 'aient', 'eusse', 'eusses', 'eût', 'eussions', 'eussiez', 'eussent', 'ceci', 'cela', 'celà', 'cet', 'cette', 'ici', 'ils', 'les', 'leurs', 'quel', 'quels', 'quelle', 'quelles', 'sans', 'soi'
     ])
     
+    # German stopwords fallback (minimal list, can be expanded)
+    GERMAN_STOPWORDS = set([
+        'aber', 'alle', 'allem', 'allen', 'aller', 'alles', 'als', 'also', 'am', 'an', 'ander', 'andere', 'anderem', 'anderen', 'anderer', 'anderes', 'anderm', 'andern', 'anderr', 'anders', 'auch', 'auf', 'aus', 'bei', 'bin', 'bis', 'bist', 'da', 'damit', 'dann', 'der', 'den', 'des', 'dem', 'die', 'das', 'daß', 'derselbe', 'derselben', 'denselben', 'desselben', 'demselben', 'dieselbe', 'dieselben', 'dasselbe', 'dazu', 'dein', 'deine', 'deinem', 'deinen', 'deiner', 'deines', 'denn', 'derer', 'dessen', 'dich', 'dir', 'du', 'dies', 'diese', 'diesem', 'diesen', 'dieser', 'dieses', 'doch', 'dort', 'durch', 'ein', 'eine', 'einem', 'einen', 'einer', 'eines', 'einig', 'einige', 'einigem', 'einigen', 'einiger', 'einiges', 'einmal', 'er', 'ihn', 'ihm', 'es', 'etwas', 'euer', 'eure', 'eurem', 'euren', 'eurer', 'eures', 'für', 'gegen', 'gewesen', 'hab', 'habe', 'haben', 'hat', 'hatte', 'hatten', 'hier', 'hin', 'hinter', 'ich', 'mich', 'mir', 'ihr', 'ihre', 'ihrem', 'ihren', 'ihrer', 'ihres', 'euch', 'im', 'in', 'indem', 'ins', 'ist', 'jede', 'jedem', 'jeden', 'jeder', 'jedes', 'jene', 'jenem', 'jenen', 'jener', 'jenes', 'jetzt', 'kann', 'kein', 'keine', 'keinem', 'keinen', 'keiner', 'keines', 'können', 'könnte', 'machen', 'man', 'manche', 'manchem', 'manchen', 'mancher', 'manches', 'mein', 'meine', 'meinem', 'meinen', 'meiner', 'meines', 'mit', 'muss', 'musste', 'nach', 'nicht', 'nichts', 'noch', 'nun', 'nur', 'ob', 'oder', 'ohne', 'sehr', 'sein', 'seine', 'seinem', 'seinen', 'seiner', 'seines', 'selbst', 'sich', 'sie', 'ihnen', 'sind', 'so', 'solche', 'solchem', 'solchen', 'solcher', 'solches', 'soll', 'sollte', 'sondern', 'sonst', 'über', 'um', 'und', 'uns', 'unser', 'unserem', 'unseren', 'unserer', 'unseres', 'unter', 'viel', 'vom', 'von', 'vor', 'während', 'war', 'waren', 'warst', 'was', 'weg', 'weil', 'weiter', 'welche', 'welchem', 'welchen', 'welcher', 'welches', 'wenn', 'werde', 'werden', 'wie', 'wieder', 'will', 'wir', 'wird', 'wirst', 'wo', 'wollen', 'wollte', 'würde', 'würden', 'zu', 'zum', 'zur', 'zwar', 'zwischen'
+    ])
+    
     @staticmethod
-    def get_french_stopwords():
-        # Use stopwords-iso for a comprehensive French stopword list
+    def get_stopwords(langs=("fr", "de")):
+        """
+        Get stopwords for specified languages (default: French + German).
+        """
+        stopwords = set()
         try:
             import stopwordsiso as stopwordsiso
-            base = set(stopwordsiso.stopwords('fr'))
+            for lang in langs:
+                stopwords.update(stopwordsiso.stopwords(lang))
         except Exception:
             # Fallback to NLTK/hardcoded if stopwordsiso unavailable
             try:
                 import nltk
-                from nltk.corpus import stopwords
-                try:
-                    nltk.data.find('corpora/stopwords')
-                except LookupError:
-                    nltk.download('stopwords')
-                base = set(stopwords.words('french'))
+                from nltk.corpus import stopwords as nltk_stopwords
+                for lang in langs:
+                    try:
+                        nltk.data.find('corpora/stopwords')
+                    except LookupError:
+                        nltk.download('stopwords')
+                    stopwords.update(nltk_stopwords.words({'fr': 'french', 'de': 'german'}.get(lang, lang)))
             except Exception:
-                base = TopicModeler.FRENCH_STOPWORDS
-        # Ajout manuel de quelques mots fréquents si besoin (optionnel)
-        extra = {'plus', 'être', 'fait', 'sans', 'tout', 'bien', 'très', 'comme', 'peut', 'cette', 'dont', 'ainsi', 'encore', 'entre', 'aussi', 'ans', 'depuis', 'avant', 'après', 'lors', 'chez'}
-        return base.union(extra)
+                stopwords = TopicModeler.FRENCH_STOPWORDS.union(TopicModeler.GERMAN_STOPWORDS)
+        # Ajout manuel de mots fréquents si besoin
+        extra_fr = {'plus', 'être', 'fait', 'sans', 'tout', 'bien', 'très', 'comme', 'peut', 'cette', 'dont', 'ainsi', 'encore', 'entre', 'aussi', 'ans', 'depuis', 'avant', 'après', 'lors', 'chez'}
+        extra_de = {'auch', 'noch', 'schon', 'immer', 'gibt', 'kann', 'sich', 'wird', 'wurden', 'werden', 'diese', 'dieser', 'dieses', 'uns', 'unser', 'euch', 'euer', 'eure', 'ihnen', 'ihre', 'ihrem', 'ihren', 'ihres', 'ihm', 'ihn', 'ihr', 'sein', 'seine', 'seinem', 'seinen', 'seiner', 'seines', 'mein', 'meine', 'meinem', 'meinen', 'meiner', 'meines', 'dein', 'deine', 'deinem', 'deinen', 'deiner', 'deines'}
+        return stopwords.union(extra_fr).union(extra_de)
+
+    @staticmethod
+    def get_french_stopwords():
+        return TopicModeler.get_stopwords(langs=("fr",))
     
     def __init__(self, config: Dict[str, Any]):
         """
@@ -174,7 +190,7 @@ class TopicModeler:
     
     def fit_transform_gensim(self, texts: List[str]) -> np.ndarray:
         """
-        Fit and transform texts using gensim LDA.
+        Fit and transform texts using gensim LDA or HDP.
         
         Args:
             texts: List of document texts (untokenized)
@@ -182,43 +198,55 @@ class TopicModeler:
         Returns:
             Document-topic matrix (list of topic distributions per doc)
         """
-        # Get French stopwords
-        stopwords = self.get_french_stopwords()
-        self.logger.info(f"Using {len(stopwords)} French stopwords for Gensim.")
-        # Tokenize texts (basic whitespace split, or customize as needed)
+        stopwords = self.get_stopwords(langs=("fr", "de"))
+        self.logger.info(f"Using {len(stopwords)} French+German stopwords for Gensim.")
+        # Tokenize texts with better cleaning: remove punctuation, digits, short tokens, lowercase
         tokenized_texts = [
-            [token for token in t.split() if token.lower() not in stopwords and token.isalpha() and len(token) > 1]
-            for t in texts
+            [
+                word for word in re.findall(r"\b\w{2,}\b", text.lower())
+                if word not in stopwords and not word.isdigit()
+            ]
+            for text in texts
         ]
-        self.logger.info(f"Tokenizing {len(texts)} documents for gensim LDA (stopwords removed).")
-
-        # Create dictionary
+        self.tokenized_texts = tokenized_texts
         self.gensim_dictionary = Dictionary(tokenized_texts)
-        self.gensim_dictionary.filter_extremes(no_below=self.min_df, no_above=self.max_df)
-
-        # Create corpus
         self.gensim_corpus = [self.gensim_dictionary.doc2bow(text) for text in tokenized_texts]
-
-        # Train LDA model
-        self.model = LdaModel(
-            corpus=self.gensim_corpus,
-            id2word=self.gensim_dictionary,
-            num_topics=self.num_topics,
-            passes=10,
-            alpha='auto',
-            random_state=42
-        )
-
+        
+        if self.algorithm == 'hdp':
+            self.model = HdpModel(
+                self.gensim_corpus,
+                id2word=self.gensim_dictionary
+            )
+            # Estimate number of topics from HDP
+            self.num_topics = len(self.model.show_topics(formatted=False))
+        else:
+            self.model = LdaModel(
+                self.gensim_corpus,
+                num_topics=self.num_topics,
+                id2word=self.gensim_dictionary,
+                passes=10,
+                alpha='auto',
+                random_state=42
+            )
+        
         # Store feature names (gensim: id2word mapping)
         self.feature_names = [self.gensim_dictionary[i] for i in range(len(self.gensim_dictionary))]
-
+        
         # Get dense doc-topic matrix (list of lists, shape [n_docs, n_topics])
         doc_topic_matrix = []
-        for doc_bow in self.gensim_corpus:
-            topic_dist = [0.0] * self.num_topics
-            for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
-                topic_dist[topic_id] = prob
-            doc_topic_matrix.append(topic_dist)
+        if self.algorithm == 'hdp':
+            for doc_bow in self.gensim_corpus:
+                topic_dist = [0.0] * self.num_topics
+                for topic_id, prob in self.model[doc_bow]:
+                    if topic_id < self.num_topics:
+                        topic_dist[topic_id] = prob
+                doc_topic_matrix.append(topic_dist)
+        else:
+            for doc_bow in self.gensim_corpus:
+                topic_dist = [0.0] * self.num_topics
+                for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
+                    topic_dist[topic_id] = prob
+                doc_topic_matrix.append(topic_dist)
         return doc_topic_matrix
     
     def fit_transform(self, documents: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -240,31 +268,32 @@ class TopicModeler:
             doc_topics = {}
             for i, doc_id in enumerate(doc_ids):
                 doc_topics[doc_id] = {
-                    'topic_distribution': doc_topic_matrix[i].tolist(),
+                    'topic_distribution': doc_topic_matrix[i],
                     'dominant_topic': int(np.argmax(doc_topic_matrix[i]))
                 }
             
             # Get top terms for each topic
             top_terms = self.get_top_terms_sklearn(n_terms=10)
-            
-        elif self.algorithm == 'gensim_lda':
-            # Gensim-based modeling
-            doc_ids, texts = self.preprocess_for_sklearn(documents)
-            doc_topic_matrix = self.fit_transform_gensim(texts)
-            
-            # Convert to more usable format
+        elif self.algorithm == 'hdp':
+            doc_ids, tokenized_texts = self.preprocess_for_gensim(documents)
+            doc_topic_matrix = self.fit_transform_gensim([' '.join(toks) for toks in tokenized_texts])
             doc_topics = {}
             for i, doc_id in enumerate(doc_ids):
                 doc_topics[doc_id] = {
                     'topic_distribution': doc_topic_matrix[i],
                     'dominant_topic': int(np.argmax(doc_topic_matrix[i]))
                 }
-            
-            # Get top terms for each topic
             top_terms = self.get_top_terms_gensim(n_terms=10)
-            
         else:
-            raise ValueError(f"Unsupported algorithm: {self.algorithm}")
+            doc_ids, tokenized_texts = self.preprocess_for_gensim(documents)
+            doc_topic_matrix = self.fit_transform_gensim([' '.join(toks) for toks in tokenized_texts])
+            doc_topics = {}
+            for i, doc_id in enumerate(doc_ids):
+                doc_topics[doc_id] = {
+                    'topic_distribution': doc_topic_matrix[i],
+                    'dominant_topic': int(np.argmax(doc_topic_matrix[i]))
+                }
+            top_terms = self.get_top_terms_gensim(n_terms=10)
         
         return {
             'doc_topics': doc_topics,
@@ -350,7 +379,7 @@ class TopicModeler:
             topic_word_weights[topic_idx] = topic_terms
         return topic_word_weights
 
-    def get_topic_distribution(self) -> List[float]:
+    def get_topic_distribution(self, max_topics: int = 20) -> List[float]:
         """
         Get the overall topic distribution (importance/frequency) in the corpus.
         Returns:
@@ -358,37 +387,28 @@ class TopicModeler:
         """
         if self.model is None or self.gensim_corpus is None:
             raise ValueError("Model and corpus must be fit before getting distribution.")
-        topic_sums = [0.0] * self.num_topics
-        for doc_bow in self.gensim_corpus:
-            for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
-                topic_sums[topic_id] += prob
-        total = sum(topic_sums)
-        return [s / total for s in topic_sums] if total > 0 else topic_sums
+        if hasattr(self.model, 'get_document_topics'):
+            # LDA
+            topic_sums = [0.0] * self.num_topics
+            for doc_bow in self.gensim_corpus:
+                for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
+                    if topic_id < self.num_topics:
+                        topic_sums[topic_id] += prob
+            total = sum(topic_sums)
+            return [s / total for s in topic_sums] if total > 0 else topic_sums
+        else:
+            # HDP
+            topic_sums = []
+            for _ in range(max_topics):
+                topic_sums.append(0.0)
+            for doc_bow in self.gensim_corpus:
+                for topic_id, prob in self.model[doc_bow]:
+                    if topic_id < max_topics:
+                        topic_sums[topic_id] += prob
+            total = sum(topic_sums)
+            return [s / total for s in topic_sums] if total > 0 else topic_sums
 
-    def get_representative_docs(self, n_docs: int = 3) -> Dict[int, List[int]]:
-        """
-        For each topic, return indices of the most representative documents (highest topic probability).
-        Args:
-            n_docs: Number of top documents per topic
-        Returns:
-            Dict mapping topic index to list of document indices
-        """
-        if self.model is None or self.gensim_corpus is None:
-            raise ValueError("Model and corpus must be fit before getting representative documents.")
-        doc_topic_matrix = []
-        for doc_bow in self.gensim_corpus:
-            topic_dist = [0.0] * self.num_topics
-            for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
-                topic_dist[topic_id] = prob
-            doc_topic_matrix.append(topic_dist)
-        doc_topic_matrix = np.array(doc_topic_matrix)
-        rep_docs = {}
-        for topic_idx in range(self.num_topics):
-            top_doc_indices = doc_topic_matrix[:, topic_idx].argsort()[::-1][:n_docs]
-            rep_docs[topic_idx] = top_doc_indices.tolist()
-        return rep_docs
-    
-    def get_topic_article_counts(self, threshold: float = 0.2) -> Dict[int, int]:
+    def get_topic_article_counts(self, threshold: float = 0.2, max_topics: int = 20) -> Dict[int, int]:
         """
         Count the number of articles (documents) for which each topic is dominant above a threshold.
         Args:
@@ -398,18 +418,111 @@ class TopicModeler:
         """
         if self.model is None or self.gensim_corpus is None:
             raise ValueError("Model and corpus must be fit before getting article counts.")
-        doc_topic_matrix = []
-        for doc_bow in self.gensim_corpus:
-            topic_dist = [0.0] * self.num_topics
-            for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
-                topic_dist[topic_id] = prob
-            doc_topic_matrix.append(topic_dist)
-        doc_topic_matrix = np.array(doc_topic_matrix)
-        # For each topic, count docs with score >= threshold
-        topic_counts = {}
-        for topic_idx in range(self.num_topics):
-            topic_counts[topic_idx] = int((doc_topic_matrix[:, topic_idx] >= threshold).sum())
-        return topic_counts
+        if hasattr(self.model, 'get_document_topics'):
+            doc_topic_matrix = []
+            for doc_bow in self.gensim_corpus:
+                topic_dist = [0.0] * self.num_topics
+                for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
+                    if topic_id < self.num_topics:
+                        topic_dist[topic_id] = prob
+                doc_topic_matrix.append(topic_dist)
+            doc_topic_matrix = np.array(doc_topic_matrix)
+            topic_counts = {}
+            for topic_idx in range(self.num_topics):
+                topic_counts[topic_idx] = int((doc_topic_matrix[:, topic_idx] >= threshold).sum())
+            return topic_counts
+        else:
+            # HDP
+            doc_topic_matrix = []
+            for doc_bow in self.gensim_corpus:
+                topic_dist = [0.0] * max_topics
+                for topic_id, prob in self.model[doc_bow]:
+                    if topic_id < max_topics:
+                        topic_dist[topic_id] = prob
+                doc_topic_matrix.append(topic_dist)
+            doc_topic_matrix = np.array(doc_topic_matrix)
+            topic_counts = {}
+            for topic_idx in range(max_topics):
+                topic_counts[topic_idx] = int((doc_topic_matrix[:, topic_idx] >= threshold).sum())
+            return topic_counts
+
+    def get_representative_docs(self, n_docs: int = 3, max_topics: int = 20) -> Dict[int, List[int]]:
+        """
+        For each topic, return indices of the most representative documents (highest topic probability).
+        Args:
+            n_docs: Number of top documents per topic
+        Returns:
+            Dict mapping topic index to list of document indices
+        """
+        if self.model is None or self.gensim_corpus is None:
+            raise ValueError("Model and corpus must be fit before getting representative documents.")
+        if hasattr(self.model, 'get_document_topics'):
+            doc_topic_matrix = []
+            for doc_bow in self.gensim_corpus:
+                topic_dist = [0.0] * self.num_topics
+                for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
+                    if topic_id < self.num_topics:
+                        topic_dist[topic_id] = prob
+                doc_topic_matrix.append(topic_dist)
+            doc_topic_matrix = np.array(doc_topic_matrix)
+            rep_docs = {}
+            for topic_idx in range(self.num_topics):
+                top_doc_indices = doc_topic_matrix[:, topic_idx].argsort()[::-1][:n_docs]
+                rep_docs[topic_idx] = top_doc_indices.tolist()
+            return rep_docs
+        else:
+            # HDP
+            doc_topic_matrix = []
+            for doc_bow in self.gensim_corpus:
+                topic_dist = [0.0] * max_topics
+                for topic_id, prob in self.model[doc_bow]:
+                    if topic_id < max_topics:
+                        topic_dist[topic_id] = prob
+                doc_topic_matrix.append(topic_dist)
+            doc_topic_matrix = np.array(doc_topic_matrix)
+            rep_docs = {}
+            for topic_idx in range(max_topics):
+                top_doc_indices = doc_topic_matrix[:, topic_idx].argsort()[::-1][:n_docs]
+                rep_docs[topic_idx] = top_doc_indices.tolist()
+            return rep_docs
+    
+    def get_topic_article_counts(self, threshold: float = 0.2, max_topics: int = 20) -> Dict[int, int]:
+        """
+        Count the number of articles (documents) for which each topic is dominant above a threshold.
+        Args:
+            threshold: Minimum probability for a topic to be considered as present in a document
+        Returns:
+            Dict mapping topic index to count of articles
+        """
+        if self.model is None or self.gensim_corpus is None:
+            raise ValueError("Model and corpus must be fit before getting article counts.")
+        if hasattr(self.model, 'get_document_topics'):
+            doc_topic_matrix = []
+            for doc_bow in self.gensim_corpus:
+                topic_dist = [0.0] * self.num_topics
+                for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
+                    if topic_id < self.num_topics:
+                        topic_dist[topic_id] = prob
+                doc_topic_matrix.append(topic_dist)
+            doc_topic_matrix = np.array(doc_topic_matrix)
+            topic_counts = {}
+            for topic_idx in range(self.num_topics):
+                topic_counts[topic_idx] = int((doc_topic_matrix[:, topic_idx] >= threshold).sum())
+            return topic_counts
+        else:
+            # HDP
+            doc_topic_matrix = []
+            for doc_bow in self.gensim_corpus:
+                topic_dist = [0.0] * max_topics
+                for topic_id, prob in self.model[doc_bow]:
+                    if topic_id < max_topics:
+                        topic_dist[topic_id] = prob
+                doc_topic_matrix.append(topic_dist)
+            doc_topic_matrix = np.array(doc_topic_matrix)
+            topic_counts = {}
+            for topic_idx in range(max_topics):
+                topic_counts[topic_idx] = int((doc_topic_matrix[:, topic_idx] >= threshold).sum())
+            return topic_counts
     
     def save_model(self, output_dir: str, prefix: str = 'topic_model') -> str:
         """

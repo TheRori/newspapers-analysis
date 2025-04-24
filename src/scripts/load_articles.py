@@ -32,7 +32,7 @@ def parse_arguments(processed_dir_default: str):
     parser = argparse.ArgumentParser(description='Load articles from MongoDB with filtering options')
     
     # Basic filtering options
-    parser.add_argument('--limit', type=int, default=10, help='Maximum number of articles to retrieve')
+    parser.add_argument('--limit', type=int, default=None, help='Maximum number of articles to retrieve (default: all)')
     parser.add_argument('--output', type=str, default=f'{processed_dir_default}/articles.json', help='Output file path')
     
     # Date filtering
@@ -155,6 +155,7 @@ def main():
             date_range = (args.start_date, args.end_date)
         
         # Get articles with combined filters
+        limit = args.limit if args.limit is not None else 0  # 0 or None = no limit
         articles = mongo_client.get_articles_by_combined_filters(
             date_range=date_range,
             topics=args.topics,
@@ -162,7 +163,7 @@ def main():
             canton=args.canton,
             search_text=args.search_text,
             match_all_topics=args.match_all_topics,
-            limit=args.limit
+            limit=limit
         )
         
         # Print summary
