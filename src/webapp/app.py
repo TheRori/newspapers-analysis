@@ -21,124 +21,73 @@ import numpy as np
 
 from src.visualization.visualizer import Visualizer
 from src.utils.config_loader import load_config
+from src.webapp.lexical_analysis_viz import get_lexical_analysis_layout
 
 # Load configuration
-config = load_config()
+config_path = str(project_root / "config" / "config.yaml")
+config = load_config(config_path)
 
 # Initialize the Dash app with a Bootstrap theme
 app = dash.Dash(
     __name__,
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    external_stylesheets=[dbc.themes.DARKLY],
     meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
+    suppress_callback_exceptions=True,
 )
 app.title = "Newspaper Articles Analysis"
 server = app.server  # Expose the server for deployment platforms
 
 # Define the app layout
-app.layout = dbc.Container(
-    [
-        dbc.Row(
-            [
-                dbc.Col(
-                    html.H1("Newspaper Articles Analysis Dashboard", className="text-center mb-4"),
-                    width=12,
-                )
-            ],
-            className="mt-4",
-        ),
-        
-        dbc.Row(
-            [
-                dbc.Col(
-                    dbc.Card(
-                        [
-                            dbc.CardHeader("Data Selection"),
-                            dbc.CardBody(
-                                [
-                                    html.P("Select analysis results to visualize:"),
-                                    dcc.Dropdown(
-                                        id="analysis-dropdown",
-                                        options=[
-                                            {"label": "Topic Modeling", "value": "topic_modeling"},
-                                            {"label": "Named Entity Recognition", "value": "ner"},
-                                            {"label": "Sentiment Analysis", "value": "sentiment"},
-                                            {"label": "Text Classification", "value": "classification"},
-                                        ],
-                                        value="topic_modeling",
-                                        clearable=False,
-                                    ),
-                                    html.Div(id="data-selection-controls", className="mt-3"),
-                                ]
-                            ),
-                        ],
-                        className="mb-4",
-                    ),
-                    width=12,
-                    lg=3,
-                ),
-                
-                dbc.Col(
-                    [
-                        dbc.Card(
-                            [
-                                dbc.CardHeader("Visualization"),
-                                dbc.CardBody(
-                                    [
-                                        dcc.Loading(
-                                            id="loading-visualization",
-                                            type="circle",
-                                            children=html.Div(id="visualization-content"),
-                                        )
-                                    ]
-                                ),
-                            ],
-                            className="mb-4",
-                        ),
-                    ],
-                    width=12,
-                    lg=9,
-                ),
-            ]
-        ),
-        
-        dbc.Row(
-            [
-                dbc.Col(
-                    dbc.Card(
-                        [
-                            dbc.CardHeader("Analysis Details"),
-                            dbc.CardBody(
-                                [
-                                    dcc.Loading(
-                                        id="loading-details",
-                                        type="circle",
-                                        children=html.Div(id="analysis-details"),
-                                    )
-                                ]
-                            ),
-                        ],
-                        className="mb-4",
-                    ),
-                    width=12,
-                ),
-            ]
-        ),
-        
-        dbc.Row(
-            [
-                dbc.Col(
-                    html.Footer(
-                        "Newspaper Articles Analysis Dashboard - Created with Dash",
-                        className="text-center text-muted mb-4",
-                    ),
-                    width=12,
-                ),
-            ]
-        ),
-    ],
-    fluid=True,
-    className="px-4",
+app.layout = dbc.Container([
+    dbc.Row([
+        dbc.Col([
+            html.H1("Newspaper Articles Analysis Dashboard", className="text-center mb-4"),
+            html.Div([
+                dbc.Button("Lexical Analysis", id="btn-lexical", color="primary", className="me-2", n_clicks=0),
+                dbc.Button("Topic Modeling", id="btn-topic", color="secondary", className="me-2", n_clicks=0),
+                dbc.Button("Clustering", id="btn-clustering", color="info", n_clicks=0),
+            ], className="text-center mb-4"),
+        ], width=12)
+    ], className="mt-4"),
+    dbc.Row([
+        dbc.Col(html.Div(id="page-content", className="p-4 rounded-3", style={"backgroundColor": "#23272b"}), width=12)
+    ]),
+    dbc.Row([
+        dbc.Col(html.Footer("Newspaper Articles Analysis Dashboard - Created with Dash", className="text-center text-muted mb-4"), width=12)
+    ]),
+], fluid=True, className="px-4")
+
+@app.callback(
+    dash.dependencies.Output("page-content", "children"),
+    [dash.dependencies.Input("btn-lexical", "n_clicks"),
+     dash.dependencies.Input("btn-topic", "n_clicks"),
+     dash.dependencies.Input("btn-clustering", "n_clicks")],
 )
+def display_page(btn_lexical, btn_topic, btn_clustering):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return html.Div([
+            html.H3("Bienvenue sur le tableau de bord Newspapers Analysis!", className="text-info"),
+            html.P("Utilisez les boutons ci-dessus pour naviguer entre les différentes analyses.", className="text-secondary")
+        ])
+    button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    if button_id == "btn-lexical":
+        return get_lexical_analysis_layout()
+    elif button_id == "btn-topic":
+        return html.Div([
+            html.H3("Topic Modeling", className="text-info"),
+            html.P("Section à venir…", className="text-secondary")
+        ])
+    elif button_id == "btn-clustering":
+        return html.Div([
+            html.H3("Clustering", className="text-info"),
+            html.P("Section à venir…", className="text-secondary")
+        ])
+    else:
+        return html.Div([
+            html.H3("Bienvenue sur le tableau de bord Newspapers Analysis!", className="text-info"),
+            html.P("Utilisez les boutons ci-dessus pour naviguer entre les différentes analyses.", className="text-secondary")
+        ])
 
 # Callback to update data selection controls based on analysis type
 @app.callback(
@@ -170,52 +119,36 @@ def update_data_selection_controls(analysis_type):
                 className="mb-2",
             ),
         ]
-    elif analysis_type == "ner":
-        return [
-            html.P("Entity types to display:", className="mt-3"),
-            dcc.Checklist(
-                id="entity-types",
-                options=[
-                    {"label": "Person", "value": "PERSON"},
-                    {"label": "Organization", "value": "ORG"},
-                    {"label": "Location", "value": "GPE"},
-                    {"label": "Date", "value": "DATE"},
-                ],
-                value=["PERSON", "ORG", "GPE"],
-                className="mb-2",
-            ),
-            html.P("Top N entities:", className="mt-3"),
-            dcc.Slider(
-                id="top-n-entities",
-                min=5,
-                max=30,
-                step=5,
-                value=15,
-                marks={i: str(i) for i in range(5, 31, 5)},
-            ),
-        ]
-    elif analysis_type == "sentiment":
+    elif analysis_type == "lexical_analysis":
         return [
             html.P("Visualization type:", className="mt-3"),
             dcc.RadioItems(
-                id="sentiment-viz-type",
+                id="lexical-viz-type",
                 options=[
-                    {"label": "Distribution", "value": "distribution"},
-                    {"label": "Over Time", "value": "time"},
-                    {"label": "By Source", "value": "source"},
+                    {"label": "Word Frequency", "value": "word_frequency"},
+                    {"label": "Word Cloud", "value": "word_cloud"},
                 ],
-                value="distribution",
+                value="word_frequency",
                 className="mb-2",
             ),
         ]
-    elif analysis_type == "classification":
+    elif analysis_type == "clustering":
         return [
-            html.P("Classification type:", className="mt-3"),
+            html.P("Number of clusters to display:", className="mt-3"),
+            dcc.Slider(
+                id="num-clusters-slider",
+                min=2,
+                max=10,
+                step=1,
+                value=5,
+                marks={i: str(i) for i in range(2, 11)},
+            ),
+            html.P("Visualization type:", className="mt-3"),
             dcc.RadioItems(
-                id="classification-type",
+                id="clustering-viz-type",
                 options=[
-                    {"label": "Category Distribution", "value": "distribution"},
-                    {"label": "Confusion Matrix", "value": "confusion"},
+                    {"label": "Cluster Distribution", "value": "distribution"},
+                    {"label": "Cluster Over Time", "value": "time"},
                 ],
                 value="distribution",
                 className="mb-2",
@@ -251,46 +184,28 @@ def update_visualization(analysis_type, _):
         )
         return dcc.Graph(figure=fig)
     
-    elif analysis_type == "ner":
-        # Placeholder data for NER
-        entities = ["Person A", "Organization B", "Location C", "Person D", "Organization E"]
-        counts = [45, 32, 28, 22, 18]
+    elif analysis_type == "lexical_analysis":
+        # Placeholder data for lexical analysis
+        words = ["word1", "word2", "word3", "word4", "word5"]
+        frequencies = [10, 8, 6, 4, 2]
         
         fig = px.bar(
-            x=counts, 
-            y=entities,
-            orientation="h",
-            title="Top Entities (Placeholder)",
-            labels={"x": "Count", "y": "Entity"},
+            x=words, 
+            y=frequencies,
+            title="Word Frequency (Placeholder)",
+            labels={"x": "Word", "y": "Frequency"},
         )
         return dcc.Graph(figure=fig)
     
-    elif analysis_type == "sentiment":
-        # Placeholder data for sentiment analysis
-        sentiment_scores = np.random.normal(0.1, 0.3, 100)
-        
-        fig = px.histogram(
-            sentiment_scores,
-            nbins=20,
-            title="Sentiment Distribution (Placeholder)",
-            labels={"value": "Sentiment Score", "count": "Frequency"},
-        )
-        
-        # Add vertical lines for sentiment categories
-        fig.add_vline(x=-0.05, line_dash="dash", line_color="red")
-        fig.add_vline(x=0.05, line_dash="dash", line_color="green")
-        
-        return dcc.Graph(figure=fig)
-    
-    elif analysis_type == "classification":
-        # Placeholder data for classification
-        categories = ["Politics", "Business", "Sports", "Technology", "Entertainment"]
-        counts = [120, 85, 65, 45, 30]
+    elif analysis_type == "clustering":
+        # Placeholder data for clustering
+        clusters = [f"Cluster {i}" for i in range(1, 6)]
+        cluster_sizes = [100, 80, 60, 40, 20]
         
         fig = px.pie(
-            values=counts,
-            names=categories,
-            title="Article Categories (Placeholder)",
+            values=cluster_sizes,
+            names=clusters,
+            title="Cluster Distribution (Placeholder)",
         )
         return dcc.Graph(figure=fig)
     
@@ -315,44 +230,28 @@ def update_analysis_details(analysis_type):
             ]),
         ])
     
-    elif analysis_type == "ner":
+    elif analysis_type == "lexical_analysis":
         return html.Div([
-            html.H5("Named Entity Recognition Analysis"),
-            html.P("This visualization shows the most frequent entities mentioned in the articles."),
+            html.H5("Lexical Analysis"),
+            html.P("This visualization shows the frequency of words in the articles."),
             html.P("The data shown is currently placeholder data. Connect to your actual analysis results to see real data."),
             html.Ul([
-                html.Li("NER model: spaCy en_core_web_lg"),
-                html.Li("Entity types: PERSON, ORG, GPE"),
-                html.Li("Total entities extracted: 1,245 (placeholder)"),
+                html.Li("Lexical analysis algorithm: Word Frequency"),
+                html.Li("Number of words: 100"),
+                html.Li("Average word length: 5 (placeholder)"),
             ]),
         ])
     
-    elif analysis_type == "sentiment":
+    elif analysis_type == "clustering":
         return html.Div([
-            html.H5("Sentiment Analysis"),
-            html.P("This visualization shows the distribution of sentiment scores across articles."),
+            html.H5("Clustering Analysis"),
+            html.P("This visualization shows the distribution of clusters across articles."),
             html.P("The data shown is currently placeholder data. Connect to your actual analysis results to see real data."),
             html.Ul([
-                html.Li("Sentiment model: VADER"),
-                html.Li("Sentiment range: -1 (negative) to 1 (positive)"),
-                html.Li("Average sentiment: 0.12 (placeholder)"),
-            ]),
-        ])
-    
-    elif analysis_type == "classification":
-        return html.Div([
-            html.H5("Text Classification Analysis"),
-            html.P("This visualization shows the distribution of article categories."),
-            html.P("The data shown is currently placeholder data. Connect to your actual analysis results to see real data."),
-            html.Ul([
-                html.Li("Classification model: DistilBERT"),
-                html.Li("Number of categories: 5"),
-                html.Li("Accuracy: 0.78 (placeholder)"),
+                html.Li("Clustering algorithm: K-Means"),
+                html.Li("Number of clusters: 5"),
+                html.Li("Silhouette score: 0.6 (placeholder)"),
             ]),
         ])
     
     return html.P("Select an analysis type to view details")
-
-# Run the app
-if __name__ == "__main__":
-    app.run_server(debug=True, port=8050)
