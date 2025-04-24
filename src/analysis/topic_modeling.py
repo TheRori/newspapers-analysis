@@ -16,54 +16,13 @@ from sklearn.decomposition import LatentDirichletAllocation, NMF
 import gensim
 from gensim.corpora import Dictionary
 from gensim.models import LdaModel, HdpModel, CoherenceModel
+from .utils import get_stopwords
 
 
 class TopicModeler:
     """Class for topic modeling on newspaper articles."""
     
     logger = logging.getLogger(__name__)
-    
-    # French stopwords fallback (minimal list, can be expanded)
-    FRENCH_STOPWORDS = set([
-        'au', 'aux', 'avec', 'ce', 'ces', 'dans', 'de', 'des', 'du', 'elle', 'en', 'et', 'eux', 'il', 'je', 'la', 'le', 'leur', 'lui', 'ma', 'mais', 'me', 'même', 'mes', 'moi', 'mon', 'ne', 'nos', 'notre', 'nous', 'on', 'ou', 'par', 'pas', 'pour', 'qu', 'que', 'qui', 'sa', 'se', 'ses', 'son', 'sur', 'ta', 'te', 'tes', 'toi', 'ton', 'tu', 'un', 'une', 'vos', 'votre', 'vous', 'c', 'd', 'j', 'l', 'à', 'm', 'n', 's', 't', 'y', 'été', 'étée', 'étées', 'étés', 'étant', 'suis', 'es', 'est', 'sommes', 'êtes', 'sont', 'serai', 'seras', 'sera', 'serons', 'serez', 'seront', 'serais', 'serait', 'serions', 'seriez', 'seraient', 'étais', 'était', 'étions', 'étiez', 'étaient', 'fus', 'fut', 'fûmes', 'fûtes', 'furent', 'sois', 'soit', 'soyons', 'soyez', 'soient', 'fusse', 'fusses', 'fût', 'fussions', 'fussiez', 'fussent', 'ayant', 'eu', 'eue', 'eues', 'eus', 'ai', 'as', 'avons', 'avez', 'ont', 'aurai', 'auras', 'aura', 'aurons', 'aurez', 'auront', 'aurais', 'aurait', 'aurions', 'auriez', 'auraient', 'avais', 'avait', 'avions', 'aviez', 'avaient', 'eut', 'eûmes', 'eûtes', 'eurent', 'aie', 'aies', 'ait', 'ayons', 'ayez', 'aient', 'eusse', 'eusses', 'eût', 'eussions', 'eussiez', 'eussent', 'ceci', 'cela', 'celà', 'cet', 'cette', 'ici', 'ils', 'les', 'leurs', 'quel', 'quels', 'quelle', 'quelles', 'sans', 'soi'
-    ])
-    
-    # German stopwords fallback (minimal list, can be expanded)
-    GERMAN_STOPWORDS = set([
-        'aber', 'alle', 'allem', 'allen', 'aller', 'alles', 'als', 'also', 'am', 'an', 'ander', 'andere', 'anderem', 'anderen', 'anderer', 'anderes', 'anderm', 'andern', 'anderr', 'anders', 'auch', 'auf', 'aus', 'bei', 'bin', 'bis', 'bist', 'da', 'damit', 'dann', 'der', 'den', 'des', 'dem', 'die', 'das', 'daß', 'derselbe', 'derselben', 'denselben', 'desselben', 'demselben', 'dieselbe', 'dieselben', 'dasselbe', 'dazu', 'dein', 'deine', 'deinem', 'deinen', 'deiner', 'deines', 'denn', 'derer', 'dessen', 'dich', 'dir', 'du', 'dies', 'diese', 'diesem', 'diesen', 'dieser', 'dieses', 'doch', 'dort', 'durch', 'ein', 'eine', 'einem', 'einen', 'einer', 'eines', 'einig', 'einige', 'einigem', 'einigen', 'einiger', 'einiges', 'einmal', 'er', 'ihn', 'ihm', 'es', 'etwas', 'euer', 'eure', 'eurem', 'euren', 'eurer', 'eures', 'für', 'gegen', 'gewesen', 'hab', 'habe', 'haben', 'hat', 'hatte', 'hatten', 'hier', 'hin', 'hinter', 'ich', 'mich', 'mir', 'ihr', 'ihre', 'ihrem', 'ihren', 'ihrer', 'ihres', 'euch', 'im', 'in', 'indem', 'ins', 'ist', 'jede', 'jedem', 'jeden', 'jeder', 'jedes', 'jene', 'jenem', 'jenen', 'jener', 'jenes', 'jetzt', 'kann', 'kein', 'keine', 'keinem', 'keinen', 'keiner', 'keines', 'können', 'könnte', 'machen', 'man', 'manche', 'manchem', 'manchen', 'mancher', 'manches', 'mein', 'meine', 'meinem', 'meinen', 'meiner', 'meines', 'mit', 'muss', 'musste', 'nach', 'nicht', 'nichts', 'noch', 'nun', 'nur', 'ob', 'oder', 'ohne', 'sehr', 'sein', 'seine', 'seinem', 'seinen', 'seiner', 'seines', 'selbst', 'sich', 'sie', 'ihnen', 'sind', 'so', 'solche', 'solchem', 'solchen', 'solcher', 'solches', 'soll', 'sollte', 'sondern', 'sonst', 'über', 'um', 'und', 'uns', 'unser', 'unserem', 'unseren', 'unserer', 'unseres', 'unter', 'viel', 'vom', 'von', 'vor', 'während', 'war', 'waren', 'warst', 'was', 'weg', 'weil', 'weiter', 'welche', 'welchem', 'welchen', 'welcher', 'welches', 'wenn', 'werde', 'werden', 'wie', 'wieder', 'will', 'wir', 'wird', 'wirst', 'wo', 'wollen', 'wollte', 'würde', 'würden', 'zu', 'zum', 'zur', 'zwar', 'zwischen'
-    ])
-    
-    @staticmethod
-    def get_stopwords(langs=("fr", "de")):
-        """
-        Get stopwords for specified languages (default: French + German).
-        """
-        stopwords = set()
-        try:
-            import stopwordsiso as stopwordsiso
-            for lang in langs:
-                stopwords.update(stopwordsiso.stopwords(lang))
-        except Exception:
-            # Fallback to NLTK/hardcoded if stopwordsiso unavailable
-            try:
-                import nltk
-                from nltk.corpus import stopwords as nltk_stopwords
-                for lang in langs:
-                    try:
-                        nltk.data.find('corpora/stopwords')
-                    except LookupError:
-                        nltk.download('stopwords')
-                    stopwords.update(nltk_stopwords.words({'fr': 'french', 'de': 'german'}.get(lang, lang)))
-            except Exception:
-                stopwords = TopicModeler.FRENCH_STOPWORDS.union(TopicModeler.GERMAN_STOPWORDS)
-        # Ajout manuel de mots fréquents si besoin
-        extra_fr = {'plus', 'être', 'fait', 'sans', 'tout', 'bien', 'très', 'comme', 'peut', 'cette', 'dont', 'ainsi', 'encore', 'entre', 'aussi', 'ans', 'depuis', 'avant', 'après', 'lors', 'chez'}
-        extra_de = {'auch', 'noch', 'schon', 'immer', 'gibt', 'kann', 'sich', 'wird', 'wurden', 'werden', 'diese', 'dieser', 'dieses', 'uns', 'unser', 'euch', 'euer', 'eure', 'ihnen', 'ihre', 'ihrem', 'ihren', 'ihres', 'ihm', 'ihn', 'ihr', 'sein', 'seine', 'seinem', 'seinen', 'seiner', 'seines', 'mein', 'meine', 'meinem', 'meinen', 'meiner', 'meines', 'dein', 'deine', 'deinem', 'deinen', 'deiner', 'deines'}
-        return stopwords.union(extra_fr).union(extra_de)
-
-    @staticmethod
-    def get_french_stopwords():
-        return TopicModeler.get_stopwords(langs=("fr",))
     
     def __init__(self, config: Dict[str, Any]):
         """
@@ -148,7 +107,7 @@ class TopicModeler:
         """
         # Exclude numbers but keep French/Unicode words
         token_pattern = r"(?u)\b[^\d\W]{2,}\b"  # words of at least 2 letters, no digits
-        stopwords = self.get_french_stopwords()
+        stopwords = get_stopwords("fr")
         self.logger.info(f"Using {len(stopwords)} French stopwords for vectorizer.")
         self.logger.debug(f"French stopwords: {sorted(stopwords)}")
         self.logger.info(f"First 3 texts before vectorization: {[t[:200] for t in texts[:3]]}")
@@ -198,8 +157,9 @@ class TopicModeler:
         Returns:
             Document-topic matrix (list of topic distributions per doc)
         """
-        stopwords = self.get_stopwords(langs=("fr", "de"))
-        self.logger.info(f"Using {len(stopwords)} French+German stopwords for Gensim.")
+        # Utilisation uniquement des stopwords français
+        stopwords = get_stopwords(("fr",))
+        self.logger.info(f"Using {len(stopwords)} French stopwords for Gensim.")
         # Tokenize texts with better cleaning: remove punctuation, digits, short tokens, lowercase
         tokenized_texts = [
             [
