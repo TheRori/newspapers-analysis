@@ -7,6 +7,7 @@ import pickle
 from typing import List, Dict, Any, Tuple, Optional
 import logging
 import re
+import requests
 
 import numpy as np
 import pandas as pd
@@ -17,7 +18,7 @@ import gensim
 from gensim.corpora import Dictionary
 from gensim.models import LdaModel, HdpModel, CoherenceModel
 from .utils import get_stopwords
-
+from .llm_utils import LLMClient
 
 class TopicModeler:
     """Class for topic modeling on newspaper articles."""
@@ -107,7 +108,7 @@ class TopicModeler:
         """
         # Exclude numbers but keep French/Unicode words
         token_pattern = r"(?u)\b[^\d\W]{2,}\b"  # words of at least 2 letters, no digits
-        stopwords = get_stopwords("fr")
+        stopwords = list(get_stopwords("fr"))
         self.logger.info(f"Using {len(stopwords)} French stopwords for vectorizer.")
         self.logger.debug(f"French stopwords: {sorted(stopwords)}")
         self.logger.info(f"First 3 texts before vectorization: {[t[:200] for t in texts[:3]]}")
@@ -120,10 +121,10 @@ class TopicModeler:
             )
         else:  # lda
             self.vectorizer = CountVectorizer(
-                max_df=self.max_df,
-                min_df=self.min_df,
                 stop_words=stopwords,
-                token_pattern=token_pattern  # Exclude numbers
+                token_pattern=token_pattern,
+                max_df=self.max_df,
+                min_df=self.min_df
             )
         
         # Create document-term matrix
@@ -553,3 +554,63 @@ class TopicModeler:
             topic_modeler.num_topics = topic_modeler.model.num_topics
         
         return topic_modeler
+
+    def get_topic_names_with_llm(self, top_words_per_topic, llm_config=None):
+        """
+        Génère des noms de topics automatiquement via un LLM externe (configurable).
+        Args:
+            top_words_per_topic: liste de listes de mots (top words par topic)
+            llm_config: dictionnaire de configuration (clé API, modèle, etc.)
+        Returns:
+            Liste des noms de topics (str)
+        """
+        if llm_config is None:
+            # Essaye de charger depuis self.config si disponible
+            llm_config = getattr(self, 'llm_config', {})
+        client = LLMClient(llm_config)
+        return client.get_topic_names(top_words_per_topic)
+
+    def get_topic_names_llm_direct(self, top_words_per_topic, llm_config=None):
+        """
+        Génère des noms de topics automatiquement via l'API Mistral (ou autre LLM compatible), sans dépendance externe.
+        Args:
+            top_words_per_topic: liste de listes de mots (top words par topic)
+            llm_config: dict avec au moins api_key, endpoint, model, language
+        Returns:
+            Liste des noms de topics (str)
+        """
+        if llm_config is None:
+            raise ValueError("llm_config requis (clé api_key, endpoint, model, language)")
+        api_key = llm_config.get("api_key")
+        endpoint = llm_config.get("endpoint", "https://api.mistral.ai/v1/chat/completions")
+        model = llm_config.get("model", "mistral-small")
+        language = llm_config.get("language", "fr")
+        if not api_key:
+            raise ValueError("Clé API LLM manquante dans la config!")
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        topic_names = []
+        for words in top_words_per_topic:
+            prompt = (
+                f"Donne uniquement un titre court, explicite, nominal (sans verbe), en français, "
+                f"de moins de 6 mots (maximum 6 mots), qui résume le thème principal représenté par ces mots-clés extraits d'un topic modeling. "
+                f"Les mots-clés du topic sont : {', '.join(words)}. "
+                f"Réponds uniquement par le titre proposé, sans phrase introductive, sans ponctuation finale."
+            )
+            data = {
+                "model": model,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": 20,
+                "temperature": 0.3
+            }
+            response = requests.post(endpoint, headers=headers, json=data)
+            if response.status_code == 200:
+                content = response.json()["choices"][0]["message"]["content"]
+                topic_names.append(content.strip())
+            else:
+                topic_names.append(f"(Erreur API: {response.status_code})")
+        return topic_names

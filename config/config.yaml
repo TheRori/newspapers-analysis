@@ -41,6 +41,14 @@ analysis:
     max_length: 512
     batch_size: 16
 
+# LLM (IA) settings
+llm:
+  provider: mistral
+  api_key: feMLPgurZBqgTtUb2ENswldmMUZNBf53
+  model: mistral-small
+  endpoint: https://api.mistral.ai/v1/chat/completions
+  language: fr
+
 # MongoDB settings
 mongodb:
   uri: "mongodb+srv://therori-mac:xzSI4OZiwhPV3zrh@articles.futmiee.mongodb.net/?retryWrites=true&w=majority&appName=articles"

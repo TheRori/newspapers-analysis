@@ -18,6 +18,7 @@ sys.path.append(str(project_root))
 
 from src.analysis.topic_modeling import TopicModeler
 from src.utils.config_loader import load_config
+from src.analysis.utils import get_french_stopwords, get_stopwords
 
 def find_best_num_topics_bisect(corpus, id2word, texts, k_min=5, k_max=20, tol=1, logger=None):
     results = {}
@@ -84,7 +85,7 @@ def main():
     parser.add_argument('--versioned', action='store_true', help='Save results with unique versioned filenames (default: True)')
     parser.add_argument('--no-versioned', dest='versioned', action='store_false', help='Save results only with generic names (overwrites previous)')
     parser.set_defaults(versioned=True)
-    parser.add_argument('--engine', choices=['sklearn', 'gensim'], default='sklearn', help='Choose topic modeling engine: sklearn or gensim (default: sklearn)')
+    parser.add_argument('--engine', choices=['sklearn', 'gensim'], default='gensim', help='Choose topic modeling engine: sklearn or gensim (default: sklearn)')
     parser.add_argument('--algorithm', type=str, default=None, help='Topic modeling algorithm (e.g., lda, hdp, nmf). Overrides config file.')
     parser.add_argument('--auto-num-topics', action='store_true', help='Automatically find the best num_topics (LDA only, Gensim)')
     parser.add_argument('--num-topics', type=int, default=None, help='Nombre de topics à utiliser si on ne fait pas de recherche du meilleur k (k).')
@@ -92,6 +93,7 @@ def main():
     parser.add_argument('--k-max', type=int, default=20, help='Max num_topics for search (default: 20)')
     parser.add_argument('--search-mode', choices=['linear', 'bisect'], default='linear', help='Mode de recherche du meilleur num_topics (linear ou bisect, défaut: linear)')
     parser.add_argument('--bisect-tol', type=int, default=1, help='Tolérance (écart min) pour arrêt dichotomique (défaut: 1)')
+    parser.add_argument('--llm-topic-names', action='store_true', help='Générer automatiquement les noms de topics via LLM (cf. config llm)')
     args = parser.parse_args()
 
     # Configure logging
@@ -135,7 +137,11 @@ def main():
     if args.auto_num_topics and args.engine == 'gensim' and topic_config.get('algorithm', 'lda') == 'lda':
         logger.info(f"Searching best num_topics (coherence) in [{args.k_min}, {args.k_max}] with mode {args.search_mode}...")
         # Prepare texts and corpus for Gensim
-        stopwords = modeler.get_french_stopwords()
+        lang = "fr"  # default language
+        if lang == "fr":
+            stopwords = get_french_stopwords()
+        else:
+            stopwords = get_stopwords(lang)
         import re
         tokenized_texts = [
             [
@@ -209,10 +215,31 @@ def main():
         "run_id": run_id,
         "top_words_per_topic": top_words_per_topic
     }
-    top_words_path = topwords_dir / f'top_words_per_topic_{run_id}.json' if args.versioned else topwords_dir / 'top_words_per_topic.json'
-    with open(top_words_path, 'w', encoding='utf-8') as f:
-        json.dump(results_summary, f, ensure_ascii=False, indent=2)
-    logger.info(f"Saved top words per topic to {top_words_path}")
+
+    # Génération automatique des noms de topics via LLM si demandé (appel direct, sans llm_utils)
+    if args.llm_topic_names:
+        logger.info("Génération des noms de topics via LLM (appel direct)...")
+        llm_config = config.get('llm', {})
+        top_words_lists = list(top_words_per_topic.values())
+        topic_names = modeler.get_topic_names_llm_direct(top_words_lists, llm_config=llm_config)
+        results_summary['topic_names_llm'] = {f"topic_{i}": name for i, name in enumerate(topic_names)}
+        # Ajoute le nom du modèle LLM utilisé
+        llm_name = llm_config.get('model', None)
+        results_summary['llm_name'] = llm_name
+        # Propagation explicite pour analyses avancées
+        modeler.llm_name_used = llm_name
+        modeler.topic_names_llm = {f"topic_{i}": name for i, name in enumerate(topic_names)}
+        logger.info(f"Noms de topics générés par LLM : {results_summary['topic_names_llm']}")
+        # Sauvegarde avec les noms de topics
+        top_words_path = topwords_dir / f'top_words_per_topic_{run_id}.json' if args.versioned else topwords_dir / 'top_words_per_topic.json'
+        with open(top_words_path, 'w', encoding='utf-8') as f:
+            json.dump(results_summary, f, ensure_ascii=False, indent=2)
+        logger.info(f"Top words + noms LLM sauvegardés dans {top_words_path}")
+    else:
+        top_words_path = topwords_dir / f'top_words_per_topic_{run_id}.json' if args.versioned else topwords_dir / 'top_words_per_topic.json'
+        with open(top_words_path, 'w', encoding='utf-8') as f:
+            json.dump(results_summary, f, ensure_ascii=False, indent=2)
+        logger.info(f"Saved top words per topic to {top_words_path}")
 
     # Also save/update latest version for convenience
     latest_top_words_path = topwords_dir / 'top_words_per_topic.json'
@@ -268,12 +295,17 @@ def main():
             logger.info(f"Topic #{topic_idx}: {doc_indices}")
 
         # 5. Sauvegarde des scores et analyses avancées dans results
+        # Utilise le nom du LLM effectivement utilisé pour nommer les topics
+        llm_name = getattr(modeler, 'llm_name_used', None)
+        topic_names_llm = getattr(modeler, 'topic_names_llm', None)
         advanced_results = {
             "run_id": run_id,
             "coherence_score": coherence,
             "topic_distribution": topic_dist,
             "weighted_words": {str(k): [(w, float(f"{wgt:.5f}")) for w, wgt in v] for k, v in weighted_words.items()},
-            "representative_docs": {str(k): v for k, v in rep_docs.items()}
+            "representative_docs": {str(k): v for k, v in rep_docs.items()},
+            "llm_name": llm_name,
+            "topic_names_llm": topic_names_llm
         }
         adv_path = advanced_dir / f'advanced_topic_analysis_{run_id}.json' if args.versioned else advanced_dir / 'advanced_topic_analysis.json'
         with open(adv_path, 'w', encoding='utf-8') as f:
