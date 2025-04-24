@@ -4,6 +4,7 @@ Script for loading articles from MongoDB with various filtering options.
 This script demonstrates how to use the MongoDBClient to retrieve and filter articles.
 """
 
+import logging
 import os
 import sys
 import json
@@ -11,6 +12,13 @@ import argparse
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
+
+# Configure the logging system
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 # Add the project root to the path to allow imports from other modules
 project_root = Path(__file__).parent.parent.parent
@@ -158,7 +166,7 @@ def main():
         )
         
         # Print summary
-        print(f"Retrieved {len(articles)} articles")
+        logger.info(f"Retrieved {len(articles)} articles")
         
         # Save to file if output is specified
         if args.output:
