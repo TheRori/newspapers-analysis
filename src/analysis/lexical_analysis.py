@@ -84,16 +84,19 @@ def mark_special_words(text, technical_words=None, technical_pos=None):
         }))
     return results
 
-def build_cooc_graph(texts, window_size=4, min_freq=2):
+def build_cooc_graph(texts, window_size=4, min_freq=2, stopwords=None):
     """
     Construit un graphe de cooccurrences glissantes à partir d'une liste de textes.
     - window_size : taille de la fenêtre glissante
     - min_freq : seuil minimal de fréquence pour créer une arête
+    - stopwords : set de stopwords à filtrer (optionnel)
     Retourne un networkx.Graph.
     """
     cooc = defaultdict(int)
     for text in texts:
         tokens = [t for t in text.lower().split() if t.isalpha()]
+        if stopwords:
+            tokens = [t for t in tokens if t not in stopwords]
         for i in range(len(tokens)):
             for j in range(i+1, min(i+window_size, len(tokens))):
                 pair = tuple(sorted((tokens[i], tokens[j])))

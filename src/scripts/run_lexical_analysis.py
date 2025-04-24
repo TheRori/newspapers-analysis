@@ -16,7 +16,8 @@ import csv
 import numpy as np
 sys.path.append(str(Path(__file__).parent.parent))
 from analysis.lexical_analysis import get_lexical_stats, mark_special_words, build_cooc_graph
-
+from analysis.utils import get_stopwords
+import networkx as nx
 
 def read_texts_from_file(path):
     # Détecte le format JSON ou TXT
@@ -44,6 +45,8 @@ def main():
     parser.add_argument('--config', type=str, default='config/config.yaml', help='Fichier de configuration YAML')
     parser.add_argument('--csv', action='store_true', help='Exporte les statistiques lexicales de tous les documents en CSV + stats globales')
     parser.add_argument('--n-process', type=int, default=1, help='Nombre de processus spaCy (batch lexical stats)')
+    parser.add_argument('--stopwords-cooc', action='store_true', help='Filtrer les stopwords dans le graphe de cooccurrence')
+    parser.add_argument('--min-edge-weight', type=int, default=0, help="Poids minimal des arêtes à conserver dans le graphe de cooccurrence")
     args = parser.parse_args()
 
     # Charger config YAML pour récupérer le dossier de résultats
@@ -54,6 +57,10 @@ def main():
 
     texts = read_texts_from_file(args.input)
     tech_words = read_tech_list(args.techlist) if args.techlist else None
+
+    stopwords = set()
+    if args.stopwords_cooc:
+        stopwords = get_stopwords(('fr',))
 
     if args.csv:
         print("\n--- Export CSV et stats globales sur tout le corpus (mode batch spaCy) ---")
@@ -109,35 +116,52 @@ def main():
 
     if args.cooc:
         print("\n--- Graphe de cooccurrences (global) ---")
-        G = build_cooc_graph(texts)
+        G = build_cooc_graph(texts, stopwords=stopwords)
+        # Garder seulement la composante connexe géante
+        if G.number_of_nodes() > 0:
+            largest_cc = max(nx.connected_components(G), key=len)
+            G = G.subgraph(largest_cc).copy()
+        # Filtrer les arêtes les plus faibles
+        if args.min_edge_weight > 0:
+            edges_to_keep = [(u, v) for u, v, d in G.edges(data=True) if d["weight"] >= args.min_edge_weight]
+            G = G.edge_subgraph(edges_to_keep).copy()
         print(f"Nombre de noeuds: {G.number_of_nodes()}, arêtes: {G.number_of_edges()}")
         # Affiche les 10 arêtes les plus fortes
         top_edges = sorted(G.edges(data=True), key=lambda x: x[2]['weight'], reverse=True)[:10]
-        for w1, w2, data in top_edges:
-            print(f"{w1} - {w2} : {data['weight']}")
-        # Sauvegarde les arêtes principales
-        with open(os.path.join(res_dir, 'top_cooc_edges.yaml'), 'w', encoding='utf-8') as f:
-            yaml.dump([
-                {'w1': w1, 'w2': w2, 'weight': data['weight']} for w1, w2, data in top_edges
-            ], f, allow_unicode=True)
+        for u, v, d in top_edges:
+            print(f"{u} -- {v} (poids: {d['weight']})")
+        # Export Gephi
+        outdir = config['results_dir'] if 'results_dir' in config else 'data/results/lexical_analysis'
+        os.makedirs(outdir, exist_ok=True)
+        nx.write_gexf(G, os.path.join(outdir, 'cooc_graph_global.gexf'))
+        print(f"Graphe global exporté pour Gephi : {os.path.join(outdir, 'cooc_graph_global.gexf')}")
 
     if args.graph:
         print("\n--- Visualisation et export du graphe global de cooccurrence ---")
-        G = build_cooc_graph(texts)
-        import networkx as nx
+        G = build_cooc_graph(texts, stopwords=stopwords)
+        # Garder seulement la composante connexe géante
+        if G.number_of_nodes() > 0:
+            largest_cc = max(nx.connected_components(G), key=len)
+            G = G.subgraph(largest_cc).copy()
+        # Filtrer les arêtes les plus faibles
+        if args.min_edge_weight > 0:
+            edges_to_keep = [(u, v) for u, v, d in G.edges(data=True) if d["weight"] >= args.min_edge_weight]
+            G = G.edge_subgraph(edges_to_keep).copy()
         import matplotlib.pyplot as plt
         # Visualisation des 50 nœuds les plus connectés
-        top_nodes = sorted(G.degree, key=lambda x: x[1], reverse=True)[:50]
-        H = G.subgraph([n for n, _ in top_nodes])
-        plt.figure(figsize=(14, 10))
-        pos = nx.spring_layout(H, k=0.2)
-        nx.draw(H, pos, with_labels=True, node_size=300, font_size=10, edge_color='gray')
-        plt.title("Graphe global de cooccurrence (top 50 noeuds)")
-        plt.show()
-        # Export GEXF pour Gephi
-        gexf_path = os.path.join(res_dir, "cooc_graph_global.gexf")
-        nx.write_gexf(G, gexf_path)
-        print(f"Graphe global exporté pour Gephi : {gexf_path}")
+        degrees = sorted(G.degree, key=lambda x: x[1], reverse=True)
+        top_nodes = [n for n, d in degrees[:50]]
+        H = G.subgraph(top_nodes)
+        plt.figure(figsize=(12, 10))
+        pos = nx.spring_layout(H, seed=42)
+        nx.draw_networkx(H, pos, with_labels=True, node_size=400, font_size=10)
+        plt.title("Top 50 nœuds les plus connectés du sous-graphe géant")
+        plt.tight_layout()
+        outdir = config['results_dir'] if 'results_dir' in config else 'data/results/lexical_analysis'
+        plt.savefig(os.path.join(outdir, 'cooc_graph_top50.png'))
+        print(f"Graphique sauvegardé : {os.path.join(outdir, 'cooc_graph_top50.png')}")
+        nx.write_gexf(G, os.path.join(outdir, 'cooc_graph_global.gexf'))
+        print(f"Graphe global exporté pour Gephi : {os.path.join(outdir, 'cooc_graph_global.gexf')}")
 
 if __name__ == "__main__":
     main()
