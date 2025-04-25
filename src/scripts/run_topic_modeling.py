@@ -80,8 +80,7 @@ def save_coherence_stats(run_id, coherences, coherence_dir, start_time, end_time
         json.dump(stats, f, ensure_ascii=False, indent=2)
     return path
 
-def main():
-    # Parse arguments for versioning
+def get_parser():
     parser = argparse.ArgumentParser(description="Run topic modeling on articles.")
     parser.add_argument('--versioned', action='store_true', help='Save results with unique versioned filenames (default: True)')
     parser.add_argument('--no-versioned', dest='versioned', action='store_false', help='Save results only with generic names (overwrites previous)')
@@ -98,11 +97,22 @@ def main():
     parser.add_argument('--search-mode', choices=['linear', 'bisect'], default='linear', help='Mode de recherche du meilleur num_topics (linear ou bisect, défaut: linear)')
     parser.add_argument('--bisect-tol', type=int, default=1, help='Tolérance (écart min) pour arrêt dichotomique (défaut: 1)')
     parser.add_argument('--llm-topic-names', action='store_true', help='Générer automatiquement les noms de topics via LLM (cf. config llm)')
-    args = parser.parse_args()
+    parser.add_argument('--use-cache', action='store_true', help='Use cached preprocessed documents if available')
+    return parser
 
-    # Configure logging
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-    logger = logging.getLogger(__name__)
+def main():
+    # Parse arguments for versioning
+    parser = get_parser()
+    args = parser.parse_args()
+    # Set up logging to always print to stdout for Dash
+    import sys
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    logger = logging.getLogger()
+    logger.handlers = [handler]
+    logger.setLevel(logging.INFO)
 
     # Paths
     config_path = project_root / 'config' / 'config.yaml'
@@ -110,9 +120,11 @@ def main():
     results_dir = project_root / 'data' / 'results'
     os.makedirs(results_dir, exist_ok=True)
     
-    # Dossier pour sauvegarder les modèles
+    # Dossier pour sauvegarder les modèles et le cache
     models_dir = project_root / 'data' / 'models'
+    cache_dir = project_root / 'data' / 'cache'
     os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(cache_dir, exist_ok=True)
 
     # Ensure result subdirectories exist
     advanced_dir = results_dir / "advanced_topic"
@@ -153,25 +165,82 @@ def main():
     # Initialize SpaCy preprocessor for tokenization
     spacy_preprocessor = SpacyPreprocessor(topic_config.get('preprocessing', {}))
     
-    # Extract text from articles
+    # Check for cache and use it if available
+    import pickle
+    import hashlib
+    
+    # Create a cache key based on preprocessing parameters and input file
+    preproc_config = topic_config.get('preprocessing', {})
+    cache_key_data = {
+        'articles_path': str(articles_path),
+        'spacy_model': preproc_config.get('spacy_model', 'fr_core_news_md'),
+        'allowed_pos': preproc_config.get('allowed_pos', ["NOUN", "PROPN", "ADJ"]),
+        'min_token_length': preproc_config.get('min_token_length', 3),
+        'articles_count': len(articles),
+        'articles_last_modified': os.path.getmtime(articles_path)
+    }
+    
+    # Ajouter des paramètres optionnels s'ils existent
+    for param in ['min_doc_length', 'min_word_length', 'max_word_length']:
+        if hasattr(args, param):
+            cache_key_data[param] = getattr(args, param)
+    
+    # Create a hash of the cache key
+    cache_key = hashlib.md5(json.dumps(cache_key_data, sort_keys=True).encode()).hexdigest()
+    cache_file = cache_dir / f"preprocessed_docs_{cache_key}.pkl"
+    
+    # Extract text from articles and preprocess
     texts = []
     tokenized_texts = []
-    for doc in articles:
-        if 'cleaned_text' in doc:
-            text = doc['cleaned_text']
-        elif 'content' in doc:
-            text = doc['content']
-        elif 'text' in doc:
-            text = doc['text']
-        else:
-            text = ""
-            logger.warning(f"No text content found for document {doc.get('id', 'unknown')}")
-        
-        texts.append(text)
-        # Tokenize with SpaCy for better topic modeling
-        tokenized_texts.append(spacy_preprocessor.preprocess_text(text))
     
-    logger.info(f"Preprocessed {len(texts)} articles with SpaCy")
+    # Try to load from cache if requested
+    cache_loaded = False
+    if args.use_cache and cache_file.exists():
+        try:
+            logger.info(f"Loading preprocessed documents from cache: {cache_file}")
+            with open(cache_file, 'rb') as f:
+                cache_data = pickle.load(f)
+                texts = cache_data['texts']
+                tokenized_texts = cache_data['tokenized_texts']
+                logger.info(f"Successfully loaded {len(texts)} documents from cache")
+                cache_loaded = True
+        except Exception as e:
+            logger.warning(f"Failed to load cache: {e}")
+            cache_loaded = False
+    
+    # Preprocess if cache not loaded
+    if not cache_loaded:
+        logger.info("Preprocessing documents with spaCy (this may take a while)...")
+        for doc in articles:
+            if 'cleaned_text' in doc:
+                text = doc['cleaned_text']
+            elif 'content' in doc:
+                text = doc['content']
+            elif 'text' in doc:
+                text = doc['text']
+            else:
+                text = ""
+                logger.warning(f"No text content found for document {doc.get('id', 'unknown')}")
+            
+            texts.append(text)
+            # Tokenize with SpaCy for better topic modeling
+            tokenized_texts.append(spacy_preprocessor.preprocess_text(text))
+        
+        logger.info(f"Preprocessed {len(texts)} articles with SpaCy")
+        
+        # Save to cache
+        try:
+            logger.info(f"Saving preprocessed documents to cache: {cache_file}")
+            with open(cache_file, 'wb') as f:
+                pickle.dump({
+                    'texts': texts,
+                    'tokenized_texts': tokenized_texts,
+                    'cache_key_data': cache_key_data
+                }, f)
+            logger.info("Cache saved successfully")
+        except Exception as e:
+            logger.warning(f"Failed to save cache: {e}")
+    
     logger.info(f"Sample tokens from first document: {tokenized_texts[0][:10] if tokenized_texts else []}")
 
     # If requested, automatically find the best num_topics using coherence (LDA + Gensim engine only)

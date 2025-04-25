@@ -22,6 +22,8 @@ import numpy as np
 from src.visualization.visualizer import Visualizer
 from src.utils.config_loader import load_config
 from src.webapp.lexical_analysis_viz import get_lexical_analysis_layout, register_lexical_analysis_callbacks
+from src.webapp.topic_modeling_viz import get_topic_modeling_layout, register_topic_modeling_callbacks
+from src.webapp.topic_clustering_viz import get_clustering_layout, get_clustering_args, register_clustering_callbacks
 
 # Load configuration
 config_path = str(project_root / "config" / "config.yaml")
@@ -39,6 +41,11 @@ server = app.server  # Expose the server for deployment platforms
 
 # Register callbacks for lexical analysis form
 register_lexical_analysis_callbacks(app)
+# Register callbacks for topic modeling page
+register_topic_modeling_callbacks(app)
+# Register callbacks for clustering page
+register_clustering_callbacks(app)
+# (Ajout futur : callbacks clustering)
 
 # Define the app layout
 app.layout = dbc.Container([
@@ -69,28 +76,15 @@ app.layout = dbc.Container([
 def display_page(btn_lexical, btn_topic, btn_clustering):
     ctx = dash.callback_context
     if not ctx.triggered:
-        return html.Div([
-            html.H3("Bienvenue sur le tableau de bord Newspapers Analysis!", className="text-info"),
-            html.P("Utilisez les boutons ci-dessus pour naviguer entre les différentes analyses.", className="text-secondary")
-        ])
+        return get_lexical_analysis_layout()
     button_id = ctx.triggered[0]["prop_id"].split(".")[0]
     if button_id == "btn-lexical":
         return get_lexical_analysis_layout()
     elif button_id == "btn-topic":
-        return html.Div([
-            html.H3("Topic Modeling", className="text-info"),
-            html.P("Section à venir…", className="text-secondary")
-        ])
+        return get_topic_modeling_layout()
     elif button_id == "btn-clustering":
-        return html.Div([
-            html.H3("Clustering", className="text-info"),
-            html.P("Section à venir…", className="text-secondary")
-        ])
-    else:
-        return html.Div([
-            html.H3("Bienvenue sur le tableau de bord Newspapers Analysis!", className="text-info"),
-            html.P("Utilisez les boutons ci-dessus pour naviguer entre les différentes analyses.", className="text-secondary")
-        ])
+        return get_clustering_layout()
+    return get_lexical_analysis_layout()
 
 # Callback to update data selection controls based on analysis type
 @app.callback(
