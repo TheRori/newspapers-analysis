@@ -19,6 +19,7 @@ sys.path.append(str(project_root))
 from src.analysis.topic_modeling import TopicModeler
 from src.utils.config_loader import load_config
 from src.analysis.utils import get_french_stopwords, get_stopwords
+from src.preprocessing import SpacyPreprocessor, preprocess_with_spacy
 
 def find_best_num_topics_bisect(corpus, id2word, texts, k_min=5, k_max=20, tol=1, logger=None):
     results = {}
@@ -138,27 +139,45 @@ def main():
     # Initialize topic modeler
     modeler = TopicModeler(topic_config)
 
-    # Preprocess articles for sklearn (using 'content' as text field)
+    # Preprocess articles for topic modeling
     doc_ids = [doc.get('id', f"doc_{i}") for i, doc in enumerate(articles)]
-    texts = [doc['content'] for doc in articles]
+    
+    # Add preprocessing configuration to topic_config if not present
+    if 'preprocessing' not in topic_config:
+        topic_config['preprocessing'] = {
+            'spacy_model': 'fr_core_news_md',
+            'allowed_pos': ["NOUN", "PROPN", "ADJ"],
+            'min_token_length': 3
+        }
+    
+    # Initialize SpaCy preprocessor for tokenization
+    spacy_preprocessor = SpacyPreprocessor(topic_config.get('preprocessing', {}))
+    
+    # Extract text from articles
+    texts = []
+    tokenized_texts = []
+    for doc in articles:
+        if 'cleaned_text' in doc:
+            text = doc['cleaned_text']
+        elif 'content' in doc:
+            text = doc['content']
+        elif 'text' in doc:
+            text = doc['text']
+        else:
+            text = ""
+            logger.warning(f"No text content found for document {doc.get('id', 'unknown')}")
+        
+        texts.append(text)
+        # Tokenize with SpaCy for better topic modeling
+        tokenized_texts.append(spacy_preprocessor.preprocess_text(text))
+    
+    logger.info(f"Preprocessed {len(texts)} articles with SpaCy")
+    logger.info(f"Sample tokens from first document: {tokenized_texts[0][:10] if tokenized_texts else []}")
 
     # If requested, automatically find the best num_topics using coherence (LDA + Gensim engine only)
     if args.auto_num_topics and args.engine == 'gensim' and topic_config.get('algorithm', 'lda') == 'lda':
         logger.info(f"Searching best num_topics (coherence) in [{args.k_min}, {args.k_max}] with mode {args.search_mode}...")
-        # Prepare texts and corpus for Gensim
-        lang = "fr"  # default language
-        if lang == "fr":
-            stopwords = get_french_stopwords()
-        else:
-            stopwords = get_stopwords(lang)
-        import re
-        tokenized_texts = [
-            [
-                word for word in re.findall(r"\b\w{2,}\b", text.lower())
-                if word not in stopwords and not word.isdigit()
-            ]
-            for text in texts
-        ]
+        # Use the SpaCy tokenized texts directly for Gensim
         from gensim.corpora import Dictionary
         id2word = Dictionary(tokenized_texts)
         corpus = [id2word.doc2bow(text) for text in tokenized_texts]
@@ -246,7 +265,8 @@ def main():
         feature_names = None  # Not used for BERTopic
         model_components = results['top_terms']
     else:  # gensim
-        doc_topic_matrix = modeler.fit_transform_gensim(texts)
+        # Pass the tokenized texts directly to the Gensim engine
+        doc_topic_matrix = modeler.fit_transform_gensim(tokenized_texts)
         feature_names = modeler.feature_names
         model_components = modeler.model.get_topics()
 

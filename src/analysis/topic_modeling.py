@@ -23,6 +23,7 @@ from bertopic.vectorizers import ClassTfidfTransformer
 from .utils import get_stopwords
 from .llm_utils import LLMClient
 from sentence_transformers import SentenceTransformer
+from src.preprocessing import preprocess_with_spacy, SpacyPreprocessor
 
 class TopicModeler:
     """Class for topic modeling on newspaper articles."""
@@ -52,6 +53,12 @@ class TopicModeler:
         # BERTopic specific attributes
         self.bertopic_topics = None
         self.bertopic_probs = None
+
+        # Initialize SpaCy preprocessor if needed
+        self.spacy_preprocessor = None
+        if config.get('use_spacy_preprocessing', True):
+            preproc_config = config.get('preprocessing', {})
+            self.spacy_preprocessor = SpacyPreprocessor(preproc_config)
         
     def preprocess_for_sklearn(self, documents: List[Dict[str, Any]]) -> Tuple[List[str], List[str]]:
         """
@@ -91,17 +98,38 @@ class TopicModeler:
         """
         doc_ids = [doc.get('doc_id', doc.get('id', f"doc_{i}")) for i, doc in enumerate(documents)]
         
-        # Get tokenized texts
+        # Get tokenized texts - prioritize tokens field which should be populated by SpaCy preprocessor
         tokenized_texts = []
         for doc in documents:
             if 'tokens' in doc:
                 tokenized_texts.append(doc['tokens'])
             elif 'cleaned_text' in doc:
-                tokenized_texts.append(doc['cleaned_text'].split())
+                # If we have a SpaCy preprocessor, use it to tokenize the text
+                if self.spacy_preprocessor:
+                    tokenized_texts.append(
+                        self.spacy_preprocessor.preprocess_text(doc['cleaned_text'])
+                    )
+                else:
+                    # Fallback to simple splitting (not recommended)
+                    tokenized_texts.append(doc['cleaned_text'].split())
             elif 'text' in doc:
-                tokenized_texts.append(doc['text'].split())
+                # If we have a SpaCy preprocessor, use it to tokenize the text
+                if self.spacy_preprocessor:
+                    tokenized_texts.append(
+                        self.spacy_preprocessor.preprocess_text(doc['text'])
+                    )
+                else:
+                    # Fallback to simple splitting (not recommended)
+                    tokenized_texts.append(doc['text'].split())
             elif 'content' in doc:
-                tokenized_texts.append(doc['content'].split())
+                # If we have a SpaCy preprocessor, use it to tokenize the text
+                if self.spacy_preprocessor:
+                    tokenized_texts.append(
+                        self.spacy_preprocessor.preprocess_text(doc['content'])
+                    )
+                else:
+                    # Fallback to simple splitting (not recommended)
+                    tokenized_texts.append(doc['content'].split())
             else:
                 raise KeyError("Documents must contain 'tokens', 'cleaned_text', 'text', or 'content' key")
         
@@ -117,23 +145,14 @@ class TopicModeler:
         Returns:
             Document-topic matrix
         """
-        # Exclude numbers but keep French/Unicode words
-        token_pattern = r"(?u)\b[^\d\W]{2,}\b"  # words of at least 2 letters, no digits
-        stopwords = list(get_stopwords("fr"))
-        self.logger.info(f"Using {len(stopwords)} French stopwords for vectorizer.")
-        self.logger.debug(f"French stopwords: {sorted(stopwords)}")
-        self.logger.info(f"First 3 texts before vectorization: {[t[:200] for t in texts[:3]]}")
+        # Create vectorizer without stopwords (handled by SpaCy preprocessing)
         if self.algorithm == 'nmf':
             self.vectorizer = TfidfVectorizer(
                 max_df=self.max_df,
-                min_df=self.min_df,
-                stop_words=stopwords,
-                token_pattern=token_pattern  # Exclude numbers
+                min_df=self.min_df
             )
         else:  # lda
             self.vectorizer = CountVectorizer(
-                stop_words=stopwords,
-                token_pattern=token_pattern,
                 max_df=self.max_df,
                 min_df=self.min_df
             )
@@ -159,28 +178,30 @@ class TopicModeler:
         
         return doc_topic_matrix
     
-    def fit_transform_gensim(self, texts: List[str]) -> np.ndarray:
+    def fit_transform_gensim(self, tokenized_texts: List[List[str]]) -> np.ndarray:
         """
         Fit and transform texts using gensim LDA or HDP.
         
         Args:
-            texts: List of document texts (untokenized)
+            tokenized_texts: List of tokenized documents (list of lists of tokens)
         
         Returns:
             Document-topic matrix (list of topic distributions per doc)
         """
-        # Utilisation uniquement des stopwords français
-        stopwords = get_stopwords(("fr",))
-        self.logger.info(f"Using {len(stopwords)} French stopwords for Gensim.")
-        # Tokenize texts with better cleaning: remove punctuation, digits, short tokens, lowercase
-        tokenized_texts = [
-            [
-                word for word in re.findall(r"\b\w{2,}\b", text.lower())
-                if word not in stopwords and not word.isdigit()
-            ]
-            for text in texts
-        ]
+        # Use the tokenized texts directly - preprocessing is done by SpaCy
         self.tokenized_texts = tokenized_texts
+        
+        # Ensure all items in tokenized_texts are lists of tokens, not strings
+        for i, tokens in enumerate(tokenized_texts):
+            if isinstance(tokens, str):
+                self.logger.warning(f"Found string instead of token list at index {i}, converting...")
+                # If it's a string, convert it to a list of tokens using SpaCy
+                if self.spacy_preprocessor:
+                    tokenized_texts[i] = self.spacy_preprocessor.preprocess_text(tokens)
+                else:
+                    # Fallback to simple splitting if no SpaCy preprocessor
+                    tokenized_texts[i] = tokens.split()
+        
         self.gensim_dictionary = Dictionary(tokenized_texts)
         self.gensim_corpus = [self.gensim_dictionary.doc2bow(text) for text in tokenized_texts]
         
@@ -238,15 +259,8 @@ class TopicModeler:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.logger.info(f"Using device for BERTopic: {device}")
         
-        # Retrieve French stopwords
-        stopwords = list(get_stopwords("fr"))
-        # Ajoute les tokens numériques courants comme stopwords (0-100 et années courantes)
-        stopwords += [str(i) for i in range(0, 100)]  # 0-99
-        stopwords += [str(i) for i in range(1900, 2030)]  # Années courantes
-        
-        # Configure BERTopic avec des stopwords mais sans token_pattern personnalisé
-        # qui pourrait être trop restrictif
-        vectorizer_model = CountVectorizer(stop_words=stopwords)
+        # No need for stopwords as preprocessing is done by SpaCy
+        vectorizer_model = CountVectorizer()
         
         # Initialiser le modèle d'embedding avec le device spécifié
         embedding_model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", device=device)
@@ -295,6 +309,15 @@ class TopicModeler:
         """
         self.logger.info(f"Fitting topic model with algorithm: {self.algorithm}")
         
+        # Preprocess documents with SpaCy if needed and not already done
+        if self.spacy_preprocessor and not any('tokens' in doc for doc in documents[:10]):
+            self.logger.info("Preprocessing documents with SpaCy...")
+            documents = self.spacy_preprocessor.process_documents(
+                documents, 
+                text_key="cleaned_text" if "cleaned_text" in documents[0] else "text"
+            )
+            self.logger.info(f"SpaCy preprocessing complete. First document tokens: {documents[0]['tokens'][:10]}")
+        
         if self.algorithm in ['lda', 'nmf']:
             # Sklearn-based modeling
             doc_ids, texts = self.preprocess_for_sklearn(documents)
@@ -312,7 +335,7 @@ class TopicModeler:
             top_terms = self.get_top_terms_sklearn(n_terms=10)
         elif self.algorithm == 'hdp':
             doc_ids, tokenized_texts = self.preprocess_for_gensim(documents)
-            doc_topic_matrix = self.fit_transform_gensim([' '.join(toks) for toks in tokenized_texts])
+            doc_topic_matrix = self.fit_transform_gensim(tokenized_texts)
             doc_topics = {}
             for i, doc_id in enumerate(doc_ids):
                 doc_topics[doc_id] = {
@@ -332,7 +355,7 @@ class TopicModeler:
             top_terms = self.get_top_terms_bertopic(n_terms=10)
         else:
             doc_ids, tokenized_texts = self.preprocess_for_gensim(documents)
-            doc_topic_matrix = self.fit_transform_gensim([' '.join(toks) for toks in tokenized_texts])
+            doc_topic_matrix = self.fit_transform_gensim(tokenized_texts)
             doc_topics = {}
             for i, doc_id in enumerate(doc_ids):
                 doc_topics[doc_id] = {
@@ -401,6 +424,7 @@ class TopicModeler:
         
         top_terms = {}
         topic_info = self.model.get_topic_info()
+        
         # Skip the outlier topic (-1)
         for topic_id in topic_info[topic_info['Topic'] != -1]['Topic'].values:
             topic_words = self.model.get_topic(topic_id)

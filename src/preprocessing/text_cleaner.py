@@ -19,9 +19,9 @@ try:
     nltk.data.find('corpora/stopwords')
     nltk.data.find('corpora/wordnet')
 except LookupError:
-    nltk.download('punkt')
-    nltk.download('stopwords')
-    nltk.download('wordnet')
+    nltk.download('punkt', quiet=True)
+    nltk.download('stopwords', quiet=True)
+    nltk.download('wordnet', quiet=True)
 
 
 class TextCleaner:
