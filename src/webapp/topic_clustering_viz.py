@@ -491,6 +491,9 @@ def get_clustering_layout():
         # Store pour les données de clustering
         dcc.Store(id="cluster-data-store", storage_type="memory"),
         
+        # Store pour l'ID de l'article sélectionné
+        dcc.Store(id="selected-article-id-store", storage_type="memory"),
+        
         # Page d'exploration des articles (initialement cachée)
         html.Div(id="article-browser-container", style={"display": "none"})
     ], fluid=True)
@@ -620,6 +623,10 @@ def register_clustering_callbacks(app):
         if not ctx.triggered:
             return no_update
         
+        # Vérifier si un bouton a été cliqué
+        if not any(n_clicks_list):
+            return no_update
+            
         # Identifier quel bouton a été cliqué
         button_id = ctx.triggered[0]['prop_id'].split('.')[0]
         if button_id:
@@ -645,7 +652,13 @@ def register_clustering_callbacks(app):
         prevent_initial_call=True
     )
     def open_article_modal(selected_article_id, stored_data, is_open):
+        # Vérifier si l'ID d'article est valide et si la demande vient d'un clic de bouton
         if not selected_article_id:
+            return no_update, no_update
+            
+        # Vérifier si l'appel vient du callback_context
+        ctx = callback_context
+        if not ctx.triggered or ctx.triggered[0]['prop_id'] != 'selected-article-id-store.data':
             return no_update, no_update
         
         print(f"Ouverture de l'article: {selected_article_id}")
@@ -669,14 +682,19 @@ def register_clustering_callbacks(app):
     
     # Callback pour fermer automatiquement la modale lors d'un changement d'onglet ou d'un retour aux visualisations
     @app.callback(
-        Output('article-modal', 'is_open', allow_duplicate=True),
+        [Output('article-modal', 'is_open', allow_duplicate=True),
+         Output('selected-article-id-store', 'data', allow_duplicate=True)],
         [Input('cluster-tabs', 'active_tab'),
          Input('btn-back-to-viz', 'n_clicks')],
+        [State('article-modal', 'is_open')],
         prevent_initial_call=True
     )
-    def close_modal_on_tab_change(active_tab, back_clicks):
-        # Fermer la modale lors d'un changement d'onglet ou retour aux visualisations
-        return False
+    def close_modal_on_tab_change(active_tab, back_clicks, is_open):
+        # Seulement fermer la modale si elle est ouverte
+        if (active_tab or back_clicks) and is_open:
+            # Fermer la modale et réinitialiser l'article sélectionné
+            return False, None
+        return no_update, no_update
 
     # Callback pour la pagination des tables de cluster
     @app.callback(
@@ -867,12 +885,26 @@ def register_clustering_callbacks(app):
     # Callback pour revenir à la visualisation depuis la page d'exploration
     @app.callback(
         [Output("clustering-stats-output", "style", allow_duplicate=True),
-         Output("article-browser-container", "style", allow_duplicate=True)],
+         Output("article-browser-container", "style", allow_duplicate=True),
+         Output('article-modal', 'is_open', allow_duplicate=True)],
         [Input("btn-back-to-viz", "n_clicks")],
         prevent_initial_call=True
     )
     def back_to_visualization(back_clicks):
         if back_clicks:
-            # Revenir à la page de visualisation
-            return {"display": "block"}, {"display": "none"}
-        return no_update, no_update
+            # Revenir à la page de visualisation et s'assurer que la modale est fermée
+            return {"display": "block"}, {"display": "none"}, False
+        return no_update, no_update, no_update
+    
+    # Callback pour fermer automatiquement la modale lors d'un changement d'onglet
+    @app.callback(
+        Output('article-modal', 'is_open', allow_duplicate=True),
+        [Input('cluster-tabs', 'active_tab')],
+        [State('article-modal', 'is_open')],
+        prevent_initial_call=True
+    )
+    def close_modal_on_tab_change(active_tab, is_open):
+        if active_tab and is_open:
+            # Seulement fermer la modale si elle est ouverte
+            return False
+        return no_update

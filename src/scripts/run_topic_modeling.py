@@ -20,6 +20,7 @@ from src.analysis.topic_modeling import TopicModeler
 from src.utils.config_loader import load_config
 from src.analysis.utils import get_french_stopwords, get_stopwords
 from src.preprocessing import SpacyPreprocessor, preprocess_with_spacy
+from src.utils.filter_utils import apply_all_filters, get_filter_summary
 
 def find_best_num_topics_bisect(corpus, id2word, texts, k_min=5, k_max=20, tol=1, logger=None):
     results = {}
@@ -98,6 +99,16 @@ def get_parser():
     parser.add_argument('--bisect-tol', type=int, default=1, help='Tolérance (écart min) pour arrêt dichotomique (défaut: 1)')
     parser.add_argument('--llm-topic-names', action='store_true', help='Générer automatiquement les noms de topics via LLM (cf. config llm)')
     parser.add_argument('--use-cache', action='store_true', help='Use cached preprocessed documents if available')
+    
+    # Add filtering options
+    parser.add_argument('--start-date', type=str, help='Filter articles starting from this date (format: YYYY-MM-DD)')
+    parser.add_argument('--end-date', type=str, help='Filter articles until this date (format: YYYY-MM-DD)')
+    parser.add_argument('--newspaper', type=str, help='Filter articles by newspaper name')
+    parser.add_argument('--canton', type=str, help='Filter articles by canton (e.g., FR, VD)')
+    parser.add_argument('--topic', type=str, help='Filter articles by existing topic tag')
+    parser.add_argument('--min-words', type=int, help='Filter articles with at least this many words')
+    parser.add_argument('--max-words', type=int, help='Filter articles with at most this many words')
+    
     return parser
 
 def main():
@@ -147,6 +158,48 @@ def main():
     with open(articles_path, 'r', encoding='utf-8') as f:
         articles = json.load(f)
     logger.info(f"Loaded {len(articles)} articles from {articles_path}")
+    
+    # Apply filters if specified
+    original_count = len(articles)
+    filtered_articles = apply_all_filters(
+        articles,
+        start_date=args.start_date,
+        end_date=args.end_date,
+        newspaper=args.newspaper,
+        canton=args.canton,
+        topic=args.topic,
+        min_words=args.min_words,
+        max_words=args.max_words
+    )
+    
+    # Log filter results
+    if original_count != len(filtered_articles):
+        filter_summary = get_filter_summary(
+            original_count,
+            len(filtered_articles),
+            start_date=args.start_date,
+            end_date=args.end_date,
+            newspaper=args.newspaper,
+            canton=args.canton,
+            topic=args.topic,
+            min_words=args.min_words,
+            max_words=args.max_words
+        )
+        
+        # Log each filter that was applied
+        for filter_name, filter_value in filter_summary['filters_applied'].items():
+            logger.info(f"Filtered by {filter_name} {filter_value}: {len(filtered_articles)}/{original_count} articles remaining")
+    
+    # Check if we have enough articles after filtering
+    if len(filtered_articles) < 10:
+        logger.warning(f"Only {len(filtered_articles)} articles remain after filtering. This may be too few for meaningful topic modeling.")
+        if len(filtered_articles) == 0:
+            logger.error("No articles remain after filtering. Exiting.")
+            sys.exit(1)
+    
+    # Update articles to use filtered set
+    articles = filtered_articles
+    logger.info(f"Using {len(articles)} articles after applying filters")
 
     # Initialize topic modeler
     modeler = TopicModeler(topic_config)
