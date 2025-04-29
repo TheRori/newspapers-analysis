@@ -480,23 +480,34 @@ def generate_dash_controls_for_clustering(args_list):
 
 # Layout for clustering page (dynamic controls + results)
 def get_clustering_layout():
+    # Charger les arguments du script
     args_list = get_clustering_args()
-    controls = generate_dash_controls_for_clustering(args_list)
+    
     return dbc.Container([
-        html.H2("Analyse de Clustering des Articles"),
-        dbc.Form(controls, id="clustering-form", className="mb-3"),
-        dbc.Button("Lancer le clustering", id="btn-run-clustering", color="info", className="mb-3"),
-        html.Div(id="clustering-stats-output"),
-        
-        # Store pour les données de clustering
-        dcc.Store(id="cluster-data-store", storage_type="memory"),
-        
-        # Store pour l'ID de l'article sélectionné
-        dcc.Store(id="selected-article-id-store", storage_type="memory"),
-        
-        # Page d'exploration des articles (initialement cachée)
-        html.Div(id="article-browser-container", style={"display": "none"})
-    ], fluid=True)
+        dbc.Row([
+            dbc.Col([
+                html.H2("Analyse de Clustering", className="text-center mb-4"),
+                dbc.Card([
+                    dbc.CardHeader(html.H3("Paramètres du Clustering", className="mb-0")),
+                    dbc.CardBody([
+                        html.P("Configurez les paramètres du clustering ci-dessous, puis cliquez sur 'Lancer'.", className="text-muted mb-3"),
+                        html.Div(generate_dash_controls_for_clustering(args_list), id="clustering-controls"),
+                        dbc.Button("Lancer le Clustering", id="btn-run-clustering", color="primary", className="mt-3"),
+                        dbc.Button("Voir la Carte des Clusters", id="btn-view-cluster-map", color="success", className="mt-3 ms-3"),
+                    ])
+                ], className="mb-4"),
+                
+                # Résultats du clustering
+                html.Div(id="clustering-stats-output"),
+                
+                # Container pour l'explorateur d'articles (initialement caché)
+                html.Div(id="article-browser-container", style={"display": "none"}),
+                
+                # Store pour les données de clustering
+                dcc.Store(id="cluster-data-store")
+            ], width=12)
+        ])
+    ])
 
 # Callback registration for clustering (to be called from app.py)
 def register_clustering_callbacks(app):
@@ -896,15 +907,17 @@ def register_clustering_callbacks(app):
             return {"display": "block"}, {"display": "none"}, False
         return no_update, no_update, no_update
     
-    # Callback pour fermer automatiquement la modale lors d'un changement d'onglet
+    # Callback pour naviguer vers la carte des clusters
     @app.callback(
-        Output('article-modal', 'is_open', allow_duplicate=True),
-        [Input('cluster-tabs', 'active_tab')],
-        [State('article-modal', 'is_open')],
+        Output("page-content", "children", allow_duplicate=True),
+        [Input("btn-view-cluster-map", "n_clicks")],
+        [State("cluster-data-store", "data")],
         prevent_initial_call=True
     )
-    def close_modal_on_tab_change(active_tab, is_open):
-        if active_tab and is_open:
-            # Seulement fermer la modale si elle est ouverte
-            return False
+    def navigate_to_cluster_map(view_map_clicks, cluster_data):
+        from src.webapp.cluster_map_viz import get_cluster_map_layout
+        
+        if view_map_clicks:
+            return get_cluster_map_layout()
+            
         return no_update

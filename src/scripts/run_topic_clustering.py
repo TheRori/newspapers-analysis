@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 from analysis.topic_clustering import cluster_documents_from_matrix
-from src.utils.filter_utils import get_filter_summary
+from utils.filter_utils import get_filter_summary
 
 
 def get_parser():

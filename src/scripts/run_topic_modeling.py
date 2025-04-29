@@ -147,11 +147,25 @@ def main():
     # Load config
     config = load_config(str(config_path))
     topic_config = config.get('analysis', {}).get('topic_modeling', {})
-    # Override algorithm if provided via CLI
+    
+    # Override config with command-line arguments if provided
     if args.algorithm:
         topic_config['algorithm'] = args.algorithm
     elif args.engine == 'bertopic':
         topic_config['algorithm'] = 'bertopic'
+    
+    # Explicitly override num_topics if provided via command line
+    if args.num_topics is not None and not args.auto_num_topics:
+        if args.engine == "bertopic" and str(args.num_topics).lower() == "auto":
+            topic_config['num_topics'] = "auto"
+            logger.info("Setting num_topics to 'auto' for BERTopic (from command line)")
+        else:
+            try:
+                topic_config['num_topics'] = int(args.num_topics)
+                logger.info(f"Setting num_topics to {args.num_topics} (from command line)")
+            except ValueError:
+                logger.warning(f"Invalid num_topics value: {args.num_topics}. Using config value: {topic_config.get('num_topics', 'default')}")
+    
     logger.info(f"Loaded topic modeling config: {topic_config}")
 
     # Load articles
@@ -324,7 +338,14 @@ def main():
             "before": cpu_times_before._asdict() if psutil and cpu_times_before else None,
             "after": cpu_times_after._asdict() if psutil and cpu_times_after else None
         }
+        # Set the best number of topics in the config AND override any user-provided num_topics
         topic_config['num_topics'] = best_k
+        # If num_topics was explicitly provided, log that we're overriding it
+        if args.num_topics is not None:
+            logger.info(f"Auto-search found best num_topics={best_k}. Overriding user-provided num_topics={args.num_topics}")
+        else:
+            logger.info(f"Auto-search found best num_topics={best_k}")
+        
         # Save all stats for this run
         stats_path = save_coherence_stats(run_id, coherence_dict, coherence_dir, start_time, end_time, cpu_times)
         logger.info(f"Saved coherence trials to {stats_path}")

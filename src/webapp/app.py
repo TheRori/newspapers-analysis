@@ -24,6 +24,7 @@ from src.utils.config_loader import load_config
 from src.webapp.lexical_analysis_viz import get_lexical_analysis_layout, register_lexical_analysis_callbacks
 from src.webapp.topic_modeling_viz import get_topic_modeling_layout, register_topic_modeling_callbacks
 from src.webapp.topic_clustering_viz import get_clustering_layout, get_clustering_args, register_clustering_callbacks
+from src.webapp.cluster_map_viz import get_cluster_map_layout, register_cluster_map_callbacks
 
 # Load configuration
 config_path = str(project_root / "config" / "config.yaml")
@@ -45,7 +46,8 @@ register_lexical_analysis_callbacks(app)
 register_topic_modeling_callbacks(app)
 # Register callbacks for clustering page
 register_clustering_callbacks(app)
-# (Ajout futur : callbacks clustering)
+# Register callbacks for cluster map page
+register_cluster_map_callbacks(app)
 
 # Define the app layout
 app.layout = dbc.Container([
@@ -55,7 +57,8 @@ app.layout = dbc.Container([
             html.Div([
                 dbc.Button("Lexical Analysis", id="btn-lexical", color="primary", className="me-2", n_clicks=0),
                 dbc.Button("Topic Modeling", id="btn-topic", color="secondary", className="me-2", n_clicks=0),
-                dbc.Button("Clustering", id="btn-clustering", color="info", n_clicks=0),
+                dbc.Button("Clustering", id="btn-clustering", color="info", className="me-2", n_clicks=0),
+                dbc.Button("Carte des Clusters", id="btn-cluster-map", color="success", n_clicks=0),
             ], className="text-center mb-4"),
         ], width=12)
     ], className="mt-4"),
@@ -71,9 +74,10 @@ app.layout = dbc.Container([
     dash.dependencies.Output("page-content", "children"),
     [dash.dependencies.Input("btn-lexical", "n_clicks"),
      dash.dependencies.Input("btn-topic", "n_clicks"),
-     dash.dependencies.Input("btn-clustering", "n_clicks")],
+     dash.dependencies.Input("btn-clustering", "n_clicks"),
+     dash.dependencies.Input("btn-cluster-map", "n_clicks")],
 )
-def display_page(btn_lexical, btn_topic, btn_clustering):
+def display_page(btn_lexical, btn_topic, btn_clustering, btn_cluster_map):
     ctx = dash.callback_context
     if not ctx.triggered:
         return get_lexical_analysis_layout()
@@ -84,6 +88,8 @@ def display_page(btn_lexical, btn_topic, btn_clustering):
         return get_topic_modeling_layout()
     elif button_id == "btn-clustering":
         return get_clustering_layout()
+    elif button_id == "btn-cluster-map":
+        return get_cluster_map_layout()
     return get_lexical_analysis_layout()
 
 # Callback to update data selection controls based on analysis type

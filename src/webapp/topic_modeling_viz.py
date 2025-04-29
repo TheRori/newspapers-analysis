@@ -81,9 +81,30 @@ def get_topic_modeling_controls():
                 className="mb-2"
             ))
         elif arg['type'] == 'int':
-            min_ = arg['default'] if arg['default'] is not None else 0
-            max_ = min_ + 20 if min_ is not None else 100
-            row.append(dcc.Input(id=input_id, type="number", value=arg['default'], required=arg['required'], className="mb-2", min=min_, max=max_))
+            # Set appropriate min/max values based on parameter name
+            if arg['name'] == 'k_min':
+                min_val = 2  # Allow k_min to be as low as 2
+                max_val = 50  # Reasonable upper limit
+            elif arg['name'] == 'k_max':
+                min_val = 5
+                max_val = 100
+            elif arg['name'] == 'num_topics':
+                min_val = 2
+                max_val = 50
+            else:
+                # Default values for other integer parameters
+                min_val = 0
+                max_val = 100
+                
+            row.append(dcc.Input(
+                id=input_id, 
+                type="number", 
+                value=arg['default'], 
+                required=arg['required'], 
+                className="mb-2", 
+                min=min_val, 
+                max=max_val
+            ))
         elif arg['type'] == 'bool':
             row.append(dbc.Checkbox(id=input_id, value=bool(arg['default']), className="mb-2"))
         else:
@@ -94,7 +115,6 @@ def get_topic_modeling_controls():
     return controls
 
 # Layout for the topic modeling page
-
 def get_topic_modeling_layout():
     return dbc.Container([
         dbc.Row([
@@ -103,6 +123,124 @@ def get_topic_modeling_layout():
                     dbc.CardHeader(_html.H3("Paramètres du Topic Modeling", className="mb-0")),
                     dbc.CardBody([
                         _html.P("Configurez les paramètres de l'analyse thématique ci-dessous, puis cliquez sur 'Lancer'.", className="text-muted mb-3"),
+                        
+                        # Add collapsible filter section
+                        dbc.Button(
+                            "Filtres d'articles",
+                            id="collapse-filter-button",
+                            className="mb-3",
+                            color="secondary",
+                            outline=True,
+                        ),
+                        dbc.Collapse(
+                            dbc.Card(
+                                dbc.CardBody([
+                                    dbc.Row([
+                                        dbc.Col([
+                                            _html.H5("Filtres par date", className="mb-2"),
+                                            dbc.Row([
+                                                dbc.Col([
+                                                    dbc.Label("Date de début", html_for="arg-start-date"),
+                                                    dcc.Input(
+                                                        id="arg-start-date",
+                                                        type="text",
+                                                        placeholder="YYYY-MM-DD",
+                                                        className="form-control mb-2",
+                                                    ),
+                                                ], width=6),
+                                                dbc.Col([
+                                                    dbc.Label("Date de fin", html_for="arg-end-date"),
+                                                    dcc.Input(
+                                                        id="arg-end-date",
+                                                        type="text",
+                                                        placeholder="YYYY-MM-DD",
+                                                        className="form-control mb-2",
+                                                    ),
+                                                ], width=6),
+                                            ]),
+                                        ], width=12),
+                                    ]),
+                                    dbc.Row([
+                                        dbc.Col([
+                                            _html.H5("Filtres par source", className="mb-2 mt-3"),
+                                            dbc.Row([
+                                                dbc.Col([
+                                                    dbc.Label("Journal", html_for="arg-newspaper"),
+                                                    dcc.Input(
+                                                        id="arg-newspaper",
+                                                        type="text",
+                                                        placeholder="Nom du journal",
+                                                        className="form-control mb-2",
+                                                    ),
+                                                ], width=6),
+                                                dbc.Col([
+                                                    dbc.Label("Canton", html_for="arg-canton"),
+                                                    dcc.Input(
+                                                        id="arg-canton",
+                                                        type="text",
+                                                        placeholder="Code canton (ex: FR)",
+                                                        className="form-control mb-2",
+                                                    ),
+                                                ], width=6),
+                                            ]),
+                                        ], width=12),
+                                    ]),
+                                    dbc.Row([
+                                        dbc.Col([
+                                            _html.H5("Filtres par contenu", className="mb-2 mt-3"),
+                                            dbc.Row([
+                                                dbc.Col([
+                                                    dbc.Label("Tag thématique", html_for="arg-topic"),
+                                                    dcc.Input(
+                                                        id="arg-topic",
+                                                        type="text",
+                                                        placeholder="Tag thématique",
+                                                        className="form-control mb-2",
+                                                    ),
+                                                ], width=12),
+                                            ]),
+                                            dbc.Row([
+                                                dbc.Col([
+                                                    dbc.Label("Nombre min. de mots", html_for="arg-min-words"),
+                                                    dcc.Input(
+                                                        id="arg-min-words",
+                                                        type="number",
+                                                        placeholder="Min",
+                                                        className="form-control mb-2",
+                                                        min=0,
+                                                    ),
+                                                ], width=6),
+                                                dbc.Col([
+                                                    dbc.Label("Nombre max. de mots", html_for="arg-max-words"),
+                                                    dcc.Input(
+                                                        id="arg-max-words",
+                                                        type="number",
+                                                        placeholder="Max",
+                                                        className="form-control mb-2",
+                                                        min=0,
+                                                    ),
+                                                ], width=6),
+                                            ]),
+                                        ], width=12),
+                                    ]),
+                                    dbc.Row([
+                                        dbc.Col([
+                                            dbc.Button(
+                                                "Réinitialiser les filtres",
+                                                id="reset-filters-button",
+                                                color="secondary",
+                                                outline=True,
+                                                className="mt-3",
+                                                size="sm",
+                                            ),
+                                        ], width=12, className="text-end"),
+                                    ]),
+                                ]),
+                            ),
+                            id="collapse-filter",
+                            is_open=False,
+                        ),
+                        
                         dbc.Form(get_topic_modeling_controls()),
                         dbc.Button("Lancer le Topic Modeling", id="btn-run-topic-modeling", color="primary", n_clicks=0, className="mt-3 mb-2"),
                         _html.Div(id="topic-modeling-run-status", className="mb-3"),
@@ -119,14 +257,29 @@ def get_topic_modeling_layout():
                     children=_html.Div(id="advanced-topic-stats-content")
                 )
             ], width=12)
-        ])
+        ]),
+        # Store for filter state
+        dcc.Store(id="filter-state"),
     ], fluid=True)
 
 # Callback registration
 def register_topic_modeling_callbacks(app):
     parser_args = get_topic_modeling_args()
-    input_list = [Input(f"arg-{arg['name']}", "value") for arg in parser_args]
+    
+    # Filter out the filter arguments that we're handling separately
+    filter_arg_names = ['start_date', 'end_date', 'newspaper', 'canton', 'topic', 'min_words', 'max_words']
+    filtered_parser_args = [arg for arg in parser_args if arg['name'] not in filter_arg_names]
+    
+    # Create input list for all arguments (filtered + filter arguments)
+    input_list = [Input(f"arg-{arg['name']}", "value") for arg in filtered_parser_args]
+    
+    # Add filter inputs
+    for filter_name in filter_arg_names:
+        input_list.append(Input(f"arg-{filter_name}", "value"))
+    
+    # Add other inputs
     input_list += [Input("btn-run-topic-modeling", "n_clicks"), Input("page-content", "children")]
+    
     @app.callback(
         [Output("topic-modeling-run-status", "children"),
          Output("advanced-topic-stats-content", "children")],
@@ -137,22 +290,32 @@ def register_topic_modeling_callbacks(app):
         ctx = dash.callback_context
         status = ""
         stats_content = None
-        # Split args: parser values, n_clicks, page_content
-        parser_values = args[:len(parser_args)]
-        n_clicks = args[len(parser_args)]
-        page_content = args[len(parser_args)+1]
+        
+        # Split args: filtered parser values, filter values, n_clicks, page_content
+        filtered_parser_values = args[:len(filtered_parser_args)]
+        filter_values = args[len(filtered_parser_args):len(filtered_parser_args)+len(filter_arg_names)]
+        n_clicks = args[len(filtered_parser_args)+len(filter_arg_names)]
+        page_content = args[len(filtered_parser_args)+len(filter_arg_names)+1]
+        
         trigger_id = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
         project_root, config, advanced_topic_json = get_config_and_paths()
+        
         if trigger_id == "btn-run-topic-modeling" and n_clicks:
-            # Build argument list
+            # Build argument list for filtered parser args
             arg_list = []
-            for arg, val in zip(parser_args, parser_values):
+            for arg, val in zip(filtered_parser_args, filtered_parser_values):
                 if arg['type'] == 'bool':
                     if val:
                         arg_list.append(f"--{arg['name'].replace('_','-')}")
                 elif val is not None and val != "":
                     arg_list.append(f"--{arg['name'].replace('_','-')}")
                     arg_list.append(str(val))
+            
+            # Add filter arguments
+            for filter_name, filter_value in zip(filter_arg_names, filter_values):
+                if filter_value is not None and filter_value != "":
+                    arg_list.append(f"--{filter_name.replace('_','-')}")
+                    arg_list.append(str(filter_value))
 
             script_path = project_root / 'src' / 'scripts' / 'run_topic_modeling.py'
             try:
@@ -201,6 +364,7 @@ def register_topic_modeling_callbacks(app):
                 print("===== [run_topic_modeling.py ERROR] =====")
                 print(e.stderr)
                 status = dbc.Alert(f"Erreur lors de l'exécution : {e.stderr}", color="danger")
+        
         # Charger les stats avancées si dispo
         if advanced_topic_json.exists():
             with open(advanced_topic_json, encoding='utf-8') as f:
@@ -208,7 +372,30 @@ def register_topic_modeling_callbacks(app):
             stats_content = render_advanced_topic_stats(stats)
         else:
             stats_content = dbc.Alert("Fichier de statistiques avancées introuvable.", color="warning")
+        
         return status, stats_content
+    
+    # Add callback for filter collapse
+    @app.callback(
+        Output("collapse-filter", "is_open"),
+        [Input("collapse-filter-button", "n_clicks")],
+        [State("collapse-filter", "is_open")],
+    )
+    def toggle_collapse(n, is_open):
+        if n:
+            return not is_open
+        return is_open
+    
+    # Add callback for reset filters button
+    @app.callback(
+        [Output(f"arg-{filter_name}", "value") for filter_name in filter_arg_names],
+        [Input("reset-filters-button", "n_clicks")],
+        prevent_initial_call=True,
+    )
+    def reset_filters(n):
+        if n:
+            return ["", "", "", "", "", None, None]  # Empty values for all filters
+        return dash.no_update
 
 # Helper to render advanced stats (adapt to your JSON structure)
 def render_advanced_topic_stats(stats):
