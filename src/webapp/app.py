@@ -25,6 +25,9 @@ from src.webapp.lexical_analysis_viz import get_lexical_analysis_layout, registe
 from src.webapp.topic_modeling_viz import get_topic_modeling_layout, register_topic_modeling_callbacks
 from src.webapp.topic_clustering_viz import get_clustering_layout, get_clustering_args, register_clustering_callbacks
 from src.webapp.cluster_map_viz import get_cluster_map_layout, register_cluster_map_callbacks
+from src.webapp.sentiment_analysis_viz import get_sentiment_analysis_layout, register_sentiment_analysis_callbacks
+from src.webapp.entity_recognition_viz import get_entity_recognition_layout, register_entity_recognition_callbacks
+from src.webapp.integrated_analysis_viz import get_integrated_analysis_layout, register_integrated_analysis_callbacks
 
 # Load configuration
 config_path = str(project_root / "config" / "config.yaml")
@@ -48,6 +51,12 @@ register_topic_modeling_callbacks(app)
 register_clustering_callbacks(app)
 # Register callbacks for cluster map page
 register_cluster_map_callbacks(app)
+# Register callbacks for sentiment analysis page
+register_sentiment_analysis_callbacks(app)
+# Register callbacks for entity recognition page
+register_entity_recognition_callbacks(app)
+# Register callbacks for integrated analysis page
+register_integrated_analysis_callbacks(app)
 
 # Define the app layout
 app.layout = dbc.Container([
@@ -58,7 +67,10 @@ app.layout = dbc.Container([
                 dbc.Button("Lexical Analysis", id="btn-lexical", color="primary", className="me-2", n_clicks=0),
                 dbc.Button("Topic Modeling", id="btn-topic", color="secondary", className="me-2", n_clicks=0),
                 dbc.Button("Clustering", id="btn-clustering", color="info", className="me-2", n_clicks=0),
-                dbc.Button("Carte des Clusters", id="btn-cluster-map", color="success", n_clicks=0),
+                dbc.Button("Carte des Clusters", id="btn-cluster-map", color="success", className="me-2", n_clicks=0),
+                dbc.Button("Analyse de Sentiment", id="btn-sentiment", color="warning", className="me-2", n_clicks=0),
+                dbc.Button("Entités Nommées", id="btn-entity", color="danger", className="me-2", n_clicks=0),
+                dbc.Button("Analyse Intégrée", id="btn-integrated", color="primary", n_clicks=0),
             ], className="text-center mb-4"),
         ], width=12)
     ], className="mt-4"),
@@ -75,9 +87,12 @@ app.layout = dbc.Container([
     [dash.dependencies.Input("btn-lexical", "n_clicks"),
      dash.dependencies.Input("btn-topic", "n_clicks"),
      dash.dependencies.Input("btn-clustering", "n_clicks"),
-     dash.dependencies.Input("btn-cluster-map", "n_clicks")],
+     dash.dependencies.Input("btn-cluster-map", "n_clicks"),
+     dash.dependencies.Input("btn-sentiment", "n_clicks"),
+     dash.dependencies.Input("btn-entity", "n_clicks"),
+     dash.dependencies.Input("btn-integrated", "n_clicks")],
 )
-def display_page(btn_lexical, btn_topic, btn_clustering, btn_cluster_map):
+def display_page(btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_sentiment, btn_entity, btn_integrated):
     ctx = dash.callback_context
     if not ctx.triggered:
         return get_lexical_analysis_layout()
@@ -90,6 +105,12 @@ def display_page(btn_lexical, btn_topic, btn_clustering, btn_cluster_map):
         return get_clustering_layout()
     elif button_id == "btn-cluster-map":
         return get_cluster_map_layout()
+    elif button_id == "btn-sentiment":
+        return get_sentiment_analysis_layout()
+    elif button_id == "btn-entity":
+        return get_entity_recognition_layout()
+    elif button_id == "btn-integrated":
+        return get_integrated_analysis_layout()
     return get_lexical_analysis_layout()
 
 # Callback to update data selection controls based on analysis type
