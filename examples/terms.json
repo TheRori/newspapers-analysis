@@ -1,0 +1,38 @@
+{
+  "politique": [
+    "président",
+    "gouvernement",
+    "ministre",
+    "élection",
+    "parlement",
+    "député",
+    "politique"
+  ],
+  "économie": [
+    "économie",
+    "finance",
+    "marché",
+    "entreprise",
+    "inflation",
+    "croissance",
+    "budget"
+  ],
+  "santé": [
+    "santé",
+    "hôpital",
+    "médecin",
+    "patient",
+    "maladie",
+    "traitement",
+    "vaccin"
+  ],
+  "environnement": [
+    "climat",
+    "environnement",
+    "pollution",
+    "écologie",
+    "biodiversité",
+    "développement durable",
+    "réchauffement"
+  ]
+}
