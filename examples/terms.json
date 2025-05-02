@@ -1,38 +1,47 @@
 {
-  "politique": [
-    "président",
-    "gouvernement",
-    "ministre",
-    "élection",
-    "parlement",
-    "député",
-    "politique"
+  "technologie": [
+    "informatique",
+    "ordinateur",
+    "microprocesseur",
+    "logiciel",
+    "programme",
+    "numérique",
+    "cybersécurité"
   ],
-  "économie": [
-    "économie",
-    "finance",
-    "marché",
-    "entreprise",
-    "inflation",
-    "croissance",
-    "budget"
+  "internet_et_réseaux": [
+    "internet",
+    "web",
+    "site web",
+    "email",
+    "navigateur",
+    "réseau",
+    "serveur"
   ],
-  "santé": [
-    "santé",
-    "hôpital",
-    "médecin",
-    "patient",
-    "maladie",
-    "traitement",
-    "vaccin"
+  "entreprises_et_marques": [
+    "apple",
+    "ibm",
+    "microsoft",
+    "google",
+    "epfl",
+    "cern",
+    "intel"
   ],
-  "environnement": [
-    "climat",
-    "environnement",
-    "pollution",
-    "écologie",
-    "biodiversité",
-    "développement durable",
-    "réchauffement"
+  "produits_et_usages": [
+    "macintosh",
+    "windows",
+    "linux",
+    "modem",
+    "imprimante",
+    "smartphone",
+    "cloud"
+  ],
+  "société_et_impact": [
+    "vie privée",
+    "surveillance",
+    "intelligence artificielle",
+    "automatisation",
+    "robot",
+    "emploi",
+    "éducation"
   ]
 }
