@@ -109,7 +109,8 @@ def main():
         sys.exit(1)
     
     # Charger la configuration
-    config = load_config()
+    config_path = os.path.join(project_root, "config", "config.yaml")
+    config = load_config(config_path)
     
     # Créer le répertoire de résultats s'il n'existe pas
     results_dir = Path(config['data']['results_dir']) / "term_tracking"
