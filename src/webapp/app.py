@@ -28,6 +28,7 @@ from src.webapp.cluster_map_viz import get_cluster_map_layout, register_cluster_
 from src.webapp.sentiment_analysis_viz import get_sentiment_analysis_layout, register_sentiment_analysis_callbacks
 from src.webapp.entity_recognition_viz import get_entity_recognition_layout, register_entity_recognition_callbacks
 from src.webapp.integrated_analysis_viz import get_integrated_analysis_layout, register_integrated_analysis_callbacks
+from src.webapp.term_tracking_viz import get_term_tracking_layout, register_term_tracking_callbacks
 
 # Load configuration
 config_path = str(project_root / "config" / "config.yaml")
@@ -57,6 +58,8 @@ register_sentiment_analysis_callbacks(app)
 register_entity_recognition_callbacks(app)
 # Register callbacks for integrated analysis page
 register_integrated_analysis_callbacks(app)
+# Register callbacks for term tracking page
+register_term_tracking_callbacks(app)
 
 # Define the app layout
 app.layout = dbc.Container([
@@ -70,7 +73,8 @@ app.layout = dbc.Container([
                 dbc.Button("Carte des Clusters", id="btn-cluster-map", color="success", className="me-2", n_clicks=0),
                 dbc.Button("Analyse de Sentiment", id="btn-sentiment", color="warning", className="me-2", n_clicks=0),
                 dbc.Button("Entités Nommées", id="btn-entity", color="danger", className="me-2", n_clicks=0),
-                dbc.Button("Analyse Intégrée", id="btn-integrated", color="primary", n_clicks=0),
+                dbc.Button("Analyse Intégrée", id="btn-integrated", color="primary", className="me-2", n_clicks=0),
+                dbc.Button("Suivi des Termes", id="btn-term-tracking", color="secondary", n_clicks=0),
             ], className="text-center mb-4"),
         ], width=12)
     ], className="mt-4"),
@@ -90,9 +94,10 @@ app.layout = dbc.Container([
      dash.dependencies.Input("btn-cluster-map", "n_clicks"),
      dash.dependencies.Input("btn-sentiment", "n_clicks"),
      dash.dependencies.Input("btn-entity", "n_clicks"),
-     dash.dependencies.Input("btn-integrated", "n_clicks")],
+     dash.dependencies.Input("btn-integrated", "n_clicks"),
+     dash.dependencies.Input("btn-term-tracking", "n_clicks")],
 )
-def display_page(btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_sentiment, btn_entity, btn_integrated):
+def display_page(btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_sentiment, btn_entity, btn_integrated, btn_term_tracking):
     ctx = dash.callback_context
     if not ctx.triggered:
         return get_lexical_analysis_layout()
@@ -111,6 +116,8 @@ def display_page(btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_se
         return get_entity_recognition_layout()
     elif button_id == "btn-integrated":
         return get_integrated_analysis_layout()
+    elif button_id == "btn-term-tracking":
+        return get_term_tracking_layout()
     return get_lexical_analysis_layout()
 
 # Callback to update data selection controls based on analysis type
