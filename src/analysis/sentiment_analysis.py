@@ -134,13 +134,15 @@ class SentimentAnalyzer:
         Returns:
             Document with added sentiment scores
         """
-        # Use cleaned_text if available, otherwise use text
+        # Use cleaned_text if available, otherwise use text or content
         if 'cleaned_text' in document:
             text = document['cleaned_text']
         elif 'text' in document:
             text = document['text']
+        elif 'content' in document:
+            text = document['content']
         else:
-            raise KeyError("Document must contain either 'cleaned_text' or 'text' key")
+            raise KeyError("Document must contain either 'cleaned_text', 'text', or 'content' key")
         
         sentiment = self.analyze_text(text)
         document['sentiment'] = sentiment

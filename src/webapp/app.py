@@ -6,13 +6,14 @@ import os
 import sys
 import json
 from pathlib import Path
+import logging
 
 # Add the project root to the path to allow imports from other modules
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
 import dash
-from dash import dcc, html, Input, Output, State
+from dash import dcc, html, Input, Output, State, ctx
 import dash_bootstrap_components as dbc
 import plotly.express as px
 import plotly.graph_objects as go
@@ -31,11 +32,18 @@ from src.webapp.integrated_analysis_viz import get_integrated_analysis_layout, r
 from src.webapp.term_tracking_viz import get_term_tracking_layout, register_term_tracking_callbacks
 from src.webapp.export_manager_viz import get_export_manager_layout, register_export_manager_callbacks
 
+# Configuration de la journalisation
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("webapp")
+
 # Load configuration
+logger.info("Chargement du fichier de configuration...")
 config_path = str(project_root / "config" / "config.yaml")
 config = load_config(config_path)
+logger.info(f"Configuration chargée : {config_path}")
 
 # Initialize the Dash app with a Bootstrap theme
+logger.info("Initialisation de l'application Dash...")
 app = dash.Dash(
     __name__,
     external_stylesheets=[dbc.themes.DARKLY],
@@ -44,27 +52,39 @@ app = dash.Dash(
 )
 app.title = "Newspaper Articles Analysis"
 server = app.server  # Expose the server for deployment platforms
+logger.info("Dash app initialisée.")
 
 # Register callbacks for lexical analysis form
+logger.info("Enregistrement des callbacks...")
 register_lexical_analysis_callbacks(app)
+logger.info("Callbacks lexical_analysis enregistrés.")
 # Register callbacks for topic modeling page
 register_topic_modeling_callbacks(app)
+logger.info("Callbacks topic_modeling enregistrés.")
 # Register callbacks for clustering page
 register_clustering_callbacks(app)
+logger.info("Callbacks clustering enregistrés.")
 # Register callbacks for cluster map page
 register_cluster_map_callbacks(app)
+logger.info("Callbacks cluster_map enregistrés.")
 # Register callbacks for sentiment analysis page
 register_sentiment_analysis_callbacks(app)
+logger.info("Callbacks sentiment_analysis enregistrés.")
 # Register callbacks for entity recognition page
 register_entity_recognition_callbacks(app)
+logger.info("Callbacks entity_recognition enregistrés.")
 # Register callbacks for integrated analysis page
 register_integrated_analysis_callbacks(app)
+logger.info("Callbacks integrated_analysis enregistrés.")
 # Register callbacks for term tracking page
 register_term_tracking_callbacks(app)
+logger.info("Callbacks term_tracking enregistrés.")
 # Register callbacks for export manager page
 register_export_manager_callbacks(app)
+logger.info("Callbacks export_manager enregistrés.")
 
 # Define the app layout
+logger.info("Définition du layout Dash...")
 app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
@@ -89,6 +109,7 @@ app.layout = dbc.Container([
         dbc.Col(html.Footer("Newspaper Articles Analysis Dashboard - Created with Dash", className="text-center text-muted mb-4"), width=12)
     ]),
 ], fluid=True, className="px-4")
+logger.info("Layout Dash défini.")
 
 @app.callback(
     dash.dependencies.Output("page-content", "children"),
@@ -103,10 +124,13 @@ app.layout = dbc.Container([
      dash.dependencies.Input("btn-export-manager", "n_clicks")],
 )
 def display_page(btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_sentiment, btn_entity, btn_integrated, btn_term_tracking, btn_export_manager):
-    ctx = dash.callback_context
-    if not ctx.triggered:
+    ctx_trigger = ctx.triggered
+    logger.info(f"display_page appelé, ctx.triggered = {ctx_trigger}")
+    if not ctx_trigger:
+        logger.info("Aucun bouton cliqué, affichage du layout lexical_analysis.")
         return get_lexical_analysis_layout()
-    button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    button_id = ctx_trigger[0]["prop_id"].split(".")[0]
+    logger.info(f"Bouton cliqué : {button_id}")
     if button_id == "btn-lexical":
         return get_lexical_analysis_layout()
     elif button_id == "btn-topic":
@@ -125,6 +149,7 @@ def display_page(btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_se
         return get_term_tracking_layout()
     elif button_id == "btn-export-manager":
         return get_export_manager_layout()
+    logger.warning("ID de bouton inconnu, affichage du layout lexical_analysis par défaut.")
     return get_lexical_analysis_layout()
 
 # Callback to update data selection controls based on analysis type

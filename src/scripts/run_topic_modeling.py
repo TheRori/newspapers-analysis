@@ -99,6 +99,7 @@ def get_parser():
     parser.add_argument('--bisect-tol', type=int, default=1, help='Tolérance (écart min) pour arrêt dichotomique (défaut: 1)')
     parser.add_argument('--llm-topic-names', action='store_true', help='Générer automatiquement les noms de topics via LLM (cf. config llm)')
     parser.add_argument('--use-cache', action='store_true', help='Use cached preprocessed documents if available')
+    parser.add_argument('--input-file', type=str, help='Chemin vers un fichier JSON d\'articles alternatif (remplace articles.json)')
     
     # Add filtering options
     parser.add_argument('--start-date', type=str, help='Filter articles starting from this date (format: YYYY-MM-DD)')
@@ -131,6 +132,11 @@ def main():
     results_dir = project_root / 'data' / 'results'
     os.makedirs(results_dir, exist_ok=True)
     
+    # Utiliser le fichier d'articles alternatif si spécifié
+    if args.input_file:
+        articles_path = Path(args.input_file)
+        logger.info(f"Utilisation du fichier d'articles alternatif: {articles_path}")
+    
     # Dossier pour sauvegarder les modèles et le cache
     models_dir = project_root / 'data' / 'models'
     cache_dir = project_root / 'data' / 'cache'
@@ -158,7 +164,7 @@ def main():
     if args.num_topics is not None and not args.auto_num_topics:
         if args.engine == "bertopic" and str(args.num_topics).lower() == "auto":
             topic_config['num_topics'] = "auto"
-            logger.info("Setting num_topics to 'auto' for BERTopic (from command line)")
+            logger.info("Nombre de topics en mode automatique (BERTopic)")
         else:
             try:
                 topic_config['num_topics'] = int(args.num_topics)

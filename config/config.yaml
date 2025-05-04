@@ -24,10 +24,19 @@ analysis:
     num_topics: 6
     max_df: 0.7  # Ignore terms that appear in more than 70% of documents
     min_df: 5    # Ignore terms that appear in fewer than 5 documents
+    # Clustering settings
+    n_clusters: 5     # Number of clusters to create from topic distributions
+    clustering_method: "kmeans"  # Options: kmeans, agglomerative, dbscan
+    # Preprocessing settings
+    use_spacy_preprocessing: true
+    preprocessing:
+      spacy_model: "fr_core_news_md"
+      allowed_pos: ["NOUN", "PROPN", "ADJ"]
+      min_token_length: 3
   
   # Named Entity Recognition
   ner:
-    model: "en_core_web_lg"  # spaCy model to use
+    model: "fr_core_news_md"  # spaCy model to use
     entities: ["PERSON", "ORG", "GPE", "LOC", "DATE"]
   
   # Sentiment Analysis

@@ -437,7 +437,7 @@ def register_export_manager_callbacks(app):
         prevent_initial_call=True
     )
     def toggle_analysis_modal(n_clicks_list, is_open, selected_id):
-        ctx_triggered = dash.callback_context.triggered
+        ctx_triggered = ctx.triggered
         
         if not ctx_triggered or not any(n_clicks_list):
             return is_open, dash.no_update, selected_id
@@ -476,7 +476,7 @@ def register_export_manager_callbacks(app):
         prevent_initial_call=True
     )
     def delete_analysis_callback(n_clicks_list, collection, analysis_type):
-        ctx_triggered = dash.callback_context.triggered
+        ctx_triggered = ctx.triggered
         
         if not ctx_triggered or not any(n_clicks_list):
             return dash.no_update, ""

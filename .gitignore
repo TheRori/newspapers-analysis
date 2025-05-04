@@ -31,6 +31,7 @@ Thumbs.db
 
 # Ignore test outputs
 /test_outputs/
+app_log*
 
 # Ignore temporary files
 *.tmp

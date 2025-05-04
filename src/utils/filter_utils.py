@@ -142,6 +142,41 @@ def filter_articles_by_word_count(
     
     return filtered_articles
 
+def filter_articles_by_cluster(
+    articles: List[Dict[str, Any]], 
+    cluster: Optional[str] = None,
+    cluster_data: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Filter articles by cluster.
+    
+    Args:
+        articles: List of article dictionaries
+        cluster: Cluster ID to filter by
+        cluster_data: Dictionary mapping document IDs to cluster labels
+        
+    Returns:
+        Filtered list of articles
+    """
+    if not cluster or not cluster_data:
+        return articles
+    
+    # Convert cluster to string for comparison
+    cluster_str = str(cluster)
+    
+    # Get document IDs that belong to the specified cluster
+    cluster_doc_ids = set()
+    if 'doc_ids' in cluster_data and 'labels' in cluster_data:
+        for doc_id, label in zip(cluster_data['doc_ids'], cluster_data['labels']):
+            if str(label) == cluster_str:
+                cluster_doc_ids.add(str(doc_id))
+    
+    # Filter articles based on their ID
+    return [
+        article for article in articles 
+        if str(article.get('id', '')) in cluster_doc_ids or str(article.get('base_id', '')) in cluster_doc_ids
+    ]
+
 def apply_all_filters(
     articles: List[Dict[str, Any]],
     start_date: Optional[str] = None,
@@ -150,7 +185,9 @@ def apply_all_filters(
     canton: Optional[str] = None,
     topic: Optional[str] = None,
     min_words: Optional[int] = None,
-    max_words: Optional[int] = None
+    max_words: Optional[int] = None,
+    cluster: Optional[str] = None,
+    cluster_data: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
     Apply all filters to a list of articles.
@@ -164,6 +201,8 @@ def apply_all_filters(
         topic: Topic tag to filter by
         min_words: Minimum word count (inclusive)
         max_words: Maximum word count (inclusive)
+        cluster: Cluster ID to filter by
+        cluster_data: Dictionary mapping document IDs to cluster labels
         
     Returns:
         Filtered list of articles
@@ -173,6 +212,7 @@ def apply_all_filters(
     filtered = filter_articles_by_canton(filtered, canton)
     filtered = filter_articles_by_topic(filtered, topic)
     filtered = filter_articles_by_word_count(filtered, min_words, max_words)
+    filtered = filter_articles_by_cluster(filtered, cluster, cluster_data)
     
     return filtered
 
@@ -185,7 +225,8 @@ def get_filter_summary(
     canton: Optional[str] = None,
     topic: Optional[str] = None,
     min_words: Optional[int] = None,
-    max_words: Optional[int] = None
+    max_words: Optional[int] = None,
+    cluster: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Generate a summary of applied filters and their effect.
@@ -200,6 +241,7 @@ def get_filter_summary(
         topic: Topic filter
         min_words: Minimum word count filter
         max_words: Maximum word count filter
+        cluster: Cluster filter
         
     Returns:
         Dictionary with filter summary information
@@ -219,6 +261,8 @@ def get_filter_summary(
         filters_applied['min_words'] = min_words
     if max_words is not None:
         filters_applied['max_words'] = max_words
+    if cluster:
+        filters_applied['cluster'] = cluster
     
     return {
         'original_count': original_count,

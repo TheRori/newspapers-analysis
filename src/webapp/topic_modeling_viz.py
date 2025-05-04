@@ -2,19 +2,36 @@
 Topic Modeling Visualization Page for Dash app
 """
 
+print("[topic_modeling_viz] Début de l'import du module")
+
 import dash
+print("[topic_modeling_viz] dash importé")
 from dash import html, dcc, Input, Output, State, ctx
+print("[topic_modeling_viz] dash.html, dcc, Input, Output, State, ctx importés")
 import dash_bootstrap_components as dbc
+print("[topic_modeling_viz] dash_bootstrap_components importé")
 import plotly.express as px
+print("[topic_modeling_viz] plotly.express importé")
 import plotly.graph_objects as go
+print("[topic_modeling_viz] plotly.graph_objects importé")
 import subprocess
+print("[topic_modeling_viz] subprocess importé")
 import pathlib
+print("[topic_modeling_viz] pathlib importé")
 import yaml
+print("[topic_modeling_viz] yaml importé")
 import pandas as pd
+print("[topic_modeling_viz] pandas importé")
 import json
+print("[topic_modeling_viz] json importé")
 import os
+print("[topic_modeling_viz] os importé")
 import sys
+print("[topic_modeling_viz] sys importé")
 import threading
+print("[topic_modeling_viz] threading importé")
+
+print("[topic_modeling_viz] Début des définitions de fonctions")
 
 # Helper to get config and paths
 def get_config_and_paths():
@@ -277,6 +294,10 @@ def register_topic_modeling_callbacks(app):
     for filter_name in filter_arg_names:
         input_list.append(Input(f"arg-{filter_name}", "value"))
     
+    # Add cluster filter inputs
+    input_list.append(Input("topic-filter-cluster-results-dropdown", "value"))
+    input_list.append(Input("topic-filter-cluster-dropdown", "value"))
+    
     # Add other inputs
     input_list += [Input("btn-run-topic-modeling", "n_clicks"), Input("page-content", "children")]
     
@@ -287,18 +308,30 @@ def register_topic_modeling_callbacks(app):
         prevent_initial_call=True
     )
     def run_or_load_topic_modeling(*args):
-        ctx = dash.callback_context
+        ctx_trigger = ctx.triggered
         status = ""
         stats_content = None
         
-        # Split args: filtered parser values, filter values, n_clicks, page_content
+        # Split args: filtered parser values, filter values, cluster values, n_clicks, page_content
         filtered_parser_values = args[:len(filtered_parser_args)]
         filter_values = args[len(filtered_parser_args):len(filtered_parser_args)+len(filter_arg_names)]
-        n_clicks = args[len(filtered_parser_args)+len(filter_arg_names)]
-        page_content = args[len(filtered_parser_args)+len(filter_arg_names)+1]
+        cluster_file = args[len(filtered_parser_args)+len(filter_arg_names)]
+        cluster_id = args[len(filtered_parser_args)+len(filter_arg_names)+1]
+        n_clicks = args[len(filtered_parser_args)+len(filter_arg_names)+2]
+        page_content = args[len(filtered_parser_args)+len(filter_arg_names)+3]
         
-        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
+        trigger_id = ctx_trigger[0]["prop_id"].split(".")[0] if ctx_trigger else None
         project_root, config, advanced_topic_json = get_config_and_paths()
+        
+        # Charger les données de clustering si disponibles
+        cluster_data = None
+        if cluster_file and cluster_id:
+            try:
+                from src.webapp.topic_filter_component import load_cluster_data
+                cluster_data = load_cluster_data(cluster_file)
+                print(f"Données de clustering chargées depuis {cluster_file}")
+            except Exception as e:
+                print(f"Erreur lors du chargement des données de clustering: {e}")
         
         if trigger_id == "btn-run-topic-modeling" and n_clicks:
             # Build argument list for filtered parser args
@@ -316,6 +349,31 @@ def register_topic_modeling_callbacks(app):
                 if filter_value is not None and filter_value != "":
                     arg_list.append(f"--{filter_name.replace('_','-')}")
                     arg_list.append(str(filter_value))
+            
+            # Si nous avons des données de clustering, nous devons filtrer les articles avant de lancer le topic modeling
+            if cluster_data and cluster_id:
+                # Charger les articles
+                import json
+                from src.utils.filter_utils import filter_articles_by_cluster
+                
+                articles_path = project_root / 'data' / 'processed' / 'articles.json'
+                with open(articles_path, 'r', encoding='utf-8') as f:
+                    articles = json.load(f)
+                
+                # Filtrer les articles par cluster
+                filtered_articles = filter_articles_by_cluster(articles, cluster_id, cluster_data)
+                
+                # Sauvegarder les articles filtrés dans un fichier temporaire
+                temp_articles_path = project_root / 'data' / 'temp' / 'filtered_articles.json'
+                os.makedirs(os.path.dirname(temp_articles_path), exist_ok=True)
+                with open(temp_articles_path, 'w', encoding='utf-8') as f:
+                    json.dump(filtered_articles, f, ensure_ascii=False, indent=2)
+                
+                # Ajouter l'argument pour utiliser le fichier temporaire
+                arg_list.append("--input-file")
+                arg_list.append(str(temp_articles_path))
+                
+                print(f"Articles filtrés par cluster {cluster_id}: {len(filtered_articles)} articles")
 
             script_path = project_root / 'src' / 'scripts' / 'run_topic_modeling.py'
             try:

@@ -309,6 +309,9 @@ class TopicModeler:
         """
         self.logger.info(f"Fitting topic model with algorithm: {self.algorithm}")
         
+        # Store document IDs for later reference
+        self.doc_ids = [doc.get('doc_id', doc.get('id', f"doc_{i}")) for i, doc in enumerate(documents)]
+        
         # Preprocess documents with SpaCy if needed and not already done
         if self.spacy_preprocessor and not any('tokens' in doc for doc in documents[:10]):
             self.logger.info("Preprocessing documents with SpaCy...")
@@ -327,7 +330,7 @@ class TopicModeler:
             doc_topics = {}
             for i, doc_id in enumerate(doc_ids):
                 doc_topics[doc_id] = {
-                    'topic_distribution': doc_topic_matrix[i],
+                    'topic_distribution': doc_topic_matrix[i].tolist() if isinstance(doc_topic_matrix[i], np.ndarray) else doc_topic_matrix[i],
                     'dominant_topic': int(np.argmax(doc_topic_matrix[i]))
                 }
             
@@ -339,7 +342,7 @@ class TopicModeler:
             doc_topics = {}
             for i, doc_id in enumerate(doc_ids):
                 doc_topics[doc_id] = {
-                    'topic_distribution': doc_topic_matrix[i],
+                    'topic_distribution': doc_topic_matrix[i].tolist() if isinstance(doc_topic_matrix[i], np.ndarray) else doc_topic_matrix[i],
                     'dominant_topic': int(np.argmax(doc_topic_matrix[i]))
                 }
             top_terms = self.get_top_terms_gensim(n_terms=10)
@@ -359,16 +362,49 @@ class TopicModeler:
             doc_topics = {}
             for i, doc_id in enumerate(doc_ids):
                 doc_topics[doc_id] = {
-                    'topic_distribution': doc_topic_matrix[i],
+                    'topic_distribution': doc_topic_matrix[i].tolist() if isinstance(doc_topic_matrix[i], np.ndarray) else doc_topic_matrix[i],
                     'dominant_topic': int(np.argmax(doc_topic_matrix[i]))
                 }
             top_terms = self.get_top_terms_gensim(n_terms=10)
+        
+        # Store doc_topics for later use
+        self.doc_topics = doc_topics
+        
+        # Perform clustering on document-topic matrix
+        n_clusters = self.config.get('n_clusters', 5)
+        clustering_method = self.config.get('clustering_method', 'kmeans')
+        
+        # Convert doc_topic_matrix to numpy array if it's not already
+        if isinstance(doc_topic_matrix, list):
+            doc_topic_matrix_np = np.array(doc_topic_matrix)
+        else:
+            doc_topic_matrix_np = doc_topic_matrix
+        
+        # Cluster documents
+        doc_clusters = self.cluster_documents(doc_topic_matrix_np, n_clusters=n_clusters, method=clustering_method)
+        
+        # Prepare top words per topic for cluster naming
+        top_words_per_topic = {}
+        for topic_id, words in top_terms.items():
+            if isinstance(topic_id, str) and topic_id.startswith('topic_'):
+                topic_id = int(topic_id.split('_')[1])
+            top_words_per_topic[topic_id] = words
+        
+        # Generate cluster names if LLM config is available
+        cluster_names = {}
+        llm_config = self.config.get('llm_config', None)
+        if llm_config:
+            cluster_names = self.get_cluster_names_with_llm(doc_clusters, top_words_per_topic, llm_config)
         
         return {
             'doc_topics': doc_topics,
             'top_terms': top_terms,
             'num_topics': self.num_topics,
-            'algorithm': self.algorithm
+            'algorithm': self.algorithm,
+            'clusters': doc_clusters,
+            'cluster_names': cluster_names,
+            'n_clusters': n_clusters,
+            'clustering_method': clustering_method
         }
     
     def get_top_terms_sklearn(self, n_terms: int = 10) -> Dict[int, List[str]]:
@@ -504,7 +540,7 @@ class TopicModeler:
             total = sum(topic_sums)
             return [s / total for s in topic_sums] if total > 0 else topic_sums
 
-    def get_topic_article_counts(self, threshold: float = 0.2, max_topics: int = 20) -> Dict[int, int]:
+    def get_topic_article_counts(self, threshold: float = 0.2, max_topics: int = 20) -> Dict[str, int]:
         """
         Count the number of articles (documents) for which each topic is dominant above a threshold.
         Args:
@@ -512,114 +548,183 @@ class TopicModeler:
         Returns:
             Dict mapping topic index to count of articles
         """
-        if self.model is None or self.gensim_corpus is None:
-            raise ValueError("Model and corpus must be fit before getting article counts.")
-        if hasattr(self.model, 'get_document_topics'):
-            doc_topic_matrix = []
-            for doc_bow in self.gensim_corpus:
-                topic_dist = [0.0] * self.num_topics
-                for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
-                    if topic_id < self.num_topics:
-                        topic_dist[topic_id] = prob
-                doc_topic_matrix.append(topic_dist)
-            doc_topic_matrix = np.array(doc_topic_matrix)
-            topic_counts = {}
-            for topic_idx in range(self.num_topics):
-                topic_counts[topic_idx] = int((doc_topic_matrix[:, topic_idx] >= threshold).sum())
-            return topic_counts
+        if not hasattr(self, 'doc_topics') or not self.doc_topics:
+            return {}
+        
+        counts = {}
+        for doc_id, doc_info in self.doc_topics.items():
+            if 'dominant_topic' in doc_info:
+                topic_id = str(doc_info['dominant_topic'])
+                counts[topic_id] = counts.get(topic_id, 0) + 1
+        
+        # Sort by topic ID and limit to max_topics
+        return {k: counts[k] for k in sorted(counts.keys())[:max_topics] if k in counts}
+    
+    def cluster_documents(self, doc_topic_matrix: np.ndarray, n_clusters: int = 5, 
+                          method: str = 'kmeans') -> Dict[str, int]:
+        """
+        Cluster documents based on their topic distributions.
+        
+        Args:
+            doc_topic_matrix: Document-topic matrix (each row is a document, each column is a topic)
+            n_clusters: Number of clusters to create
+            method: Clustering method ('kmeans', 'agglomerative', 'dbscan')
+            
+        Returns:
+            Dictionary mapping document IDs to cluster assignments
+        """
+        from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN
+        
+        if not hasattr(self, 'doc_ids'):
+            raise ValueError("Document IDs not available. Run fit_transform first.")
+        
+        # Choose clustering algorithm
+        if method == 'kmeans':
+            clustering = KMeans(n_clusters=n_clusters, random_state=42)
+        elif method == 'agglomerative':
+            clustering = AgglomerativeClustering(n_clusters=n_clusters)
+        elif method == 'dbscan':
+            clustering = DBSCAN(eps=0.5, min_samples=5)
         else:
-            # HDP
-            doc_topic_matrix = []
-            for doc_bow in self.gensim_corpus:
-                topic_dist = [0.0] * max_topics
-                for topic_id, prob in self.model[doc_bow]:
-                    if topic_id < max_topics:
-                        topic_dist[topic_id] = prob
-                doc_topic_matrix.append(topic_dist)
-            doc_topic_matrix = np.array(doc_topic_matrix)
-            topic_counts = {}
-            for topic_idx in range(max_topics):
-                topic_counts[topic_idx] = int((doc_topic_matrix[:, topic_idx] >= threshold).sum())
-            return topic_counts
+            raise ValueError(f"Unsupported clustering method: {method}")
+        
+        # Fit clustering model
+        cluster_labels = clustering.fit_predict(doc_topic_matrix)
+        
+        # Map document IDs to cluster assignments
+        doc_clusters = {}
+        for i, doc_id in enumerate(self.doc_ids):
+            doc_clusters[doc_id] = int(cluster_labels[i])
+        
+        return doc_clusters
+    
+    def get_cluster_names_with_llm(self, doc_clusters: Dict[str, int], 
+                                   top_words_per_topic: Dict[int, List[str]],
+                                   llm_config: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        """
+        Generate cluster names based on the dominant topics in each cluster.
+        
+        Args:
+            doc_clusters: Dictionary mapping document IDs to cluster assignments
+            top_words_per_topic: Dictionary mapping topic IDs to lists of top words
+            llm_config: LLM configuration for naming
+            
+        Returns:
+            Dictionary mapping cluster IDs to cluster names
+        """
+        # Count topics in each cluster
+        cluster_topics = {}
+        for doc_id, cluster in doc_clusters.items():
+            cluster_str = str(cluster)
+            if cluster_str not in cluster_topics:
+                cluster_topics[cluster_str] = {}
+            
+            # Get dominant topic for this document
+            if doc_id in self.doc_topics and 'dominant_topic' in self.doc_topics[doc_id]:
+                topic = self.doc_topics[doc_id]['dominant_topic']
+                cluster_topics[cluster_str][topic] = cluster_topics[cluster_str].get(topic, 0) + 1
+        
+        # For each cluster, find the most common topics and their top words
+        cluster_keywords = {}
+        for cluster, topics in cluster_topics.items():
+            # Sort topics by frequency (descending)
+            sorted_topics = sorted(topics.items(), key=lambda x: x[1], reverse=True)
+            # Take top 3 topics or fewer if there aren't 3
+            top_topics = sorted_topics[:3]
+            
+            # Collect top words from these topics
+            keywords = []
+            for topic, _ in top_topics:
+                if topic in top_words_per_topic:
+                    keywords.extend(top_words_per_topic[topic][:5])  # Top 5 words from each topic
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_keywords = [x for x in keywords if not (x in seen or seen.add(x))]
+            cluster_keywords[cluster] = unique_keywords[:10]  # Limit to 10 keywords
+        
+        # Use LLM to generate names based on keywords
+        if llm_config:
+            try:
+                # Convert to format expected by LLM naming function
+                keyword_lists = [words for cluster, words in sorted(cluster_keywords.items(), key=lambda x: int(x[0]))]
+                cluster_names_list = self.get_topic_names_llm_direct(keyword_lists, llm_config)
+                
+                # Map back to cluster IDs
+                cluster_names = {}
+                for i, (cluster, _) in enumerate(sorted(cluster_keywords.items(), key=lambda x: int(x[0]))):
+                    if i < len(cluster_names_list):
+                        cluster_names[cluster] = cluster_names_list[i]
+                
+                return cluster_names
+            except Exception as e:
+                self.logger.error(f"Error generating cluster names with LLM: {e}")
+                # Fall back to generic names
+                return {str(i): f"Cluster {i}" for i in range(len(cluster_keywords))}
+        else:
+            # Generate generic names
+            return {str(i): f"Cluster {i}" for i in range(len(cluster_keywords))}
+    
+    def get_topic_names_with_llm(self, top_words_per_topic, llm_config=None):
+        """
+        Génère des noms de topics automatiquement via un LLM externe (configurable).
+        Args:
+            top_words_per_topic: liste de listes de mots (top words par topic)
+            llm_config: dictionnaire de configuration (clé API, modèle, etc.)
+        Returns:
+            Liste des noms de topics (str)
+        """
+        if llm_config is None:
+            # Essaye de charger depuis self.config si disponible
+            llm_config = getattr(self, 'llm_config', {})
+        client = LLMClient(llm_config)
+        return client.get_topic_names(top_words_per_topic)
 
-    def get_representative_docs(self, n_docs: int = 3, max_topics: int = 20) -> Dict[int, List[int]]:
+    def get_topic_names_llm_direct(self, top_words_per_topic, llm_config=None):
         """
-        For each topic, return indices of the most representative documents (highest topic probability).
+        Génère des noms de topics automatiquement via l'API Mistral (ou autre LLM compatible), sans dépendance externe.
         Args:
-            n_docs: Number of top documents per topic
+            top_words_per_topic: liste de listes de mots (top words par topic)
+            llm_config: dict avec au moins api_key, endpoint, model, language
         Returns:
-            Dict mapping topic index to list of document indices
+            Liste des noms de topics (str)
         """
-        if self.model is None or self.gensim_corpus is None:
-            raise ValueError("Model and corpus must be fit before getting representative documents.")
-        if hasattr(self.model, 'get_document_topics'):
-            doc_topic_matrix = []
-            for doc_bow in self.gensim_corpus:
-                topic_dist = [0.0] * self.num_topics
-                for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
-                    if topic_id < self.num_topics:
-                        topic_dist[topic_id] = prob
-                doc_topic_matrix.append(topic_dist)
-            doc_topic_matrix = np.array(doc_topic_matrix)
-            rep_docs = {}
-            for topic_idx in range(self.num_topics):
-                top_doc_indices = doc_topic_matrix[:, topic_idx].argsort()[::-1][:n_docs]
-                rep_docs[topic_idx] = top_doc_indices.tolist()
-            return rep_docs
-        else:
-            # HDP
-            doc_topic_matrix = []
-            for doc_bow in self.gensim_corpus:
-                topic_dist = [0.0] * max_topics
-                for topic_id, prob in self.model[doc_bow]:
-                    if topic_id < max_topics:
-                        topic_dist[topic_id] = prob
-                doc_topic_matrix.append(topic_dist)
-            doc_topic_matrix = np.array(doc_topic_matrix)
-            rep_docs = {}
-            for topic_idx in range(max_topics):
-                top_doc_indices = doc_topic_matrix[:, topic_idx].argsort()[::-1][:n_docs]
-                rep_docs[topic_idx] = top_doc_indices.tolist()
-            return rep_docs
-    
-    def get_topic_article_counts(self, threshold: float = 0.2, max_topics: int = 20) -> Dict[int, int]:
-        """
-        Count the number of articles (documents) for which each topic is dominant above a threshold.
-        Args:
-            threshold: Minimum probability for a topic to be considered as present in a document
-        Returns:
-            Dict mapping topic index to count of articles
-        """
-        if self.model is None or self.gensim_corpus is None:
-            raise ValueError("Model and corpus must be fit before getting article counts.")
-        if hasattr(self.model, 'get_document_topics'):
-            doc_topic_matrix = []
-            for doc_bow in self.gensim_corpus:
-                topic_dist = [0.0] * self.num_topics
-                for topic_id, prob in self.model.get_document_topics(doc_bow, minimum_probability=0.0):
-                    if topic_id < self.num_topics:
-                        topic_dist[topic_id] = prob
-                doc_topic_matrix.append(topic_dist)
-            doc_topic_matrix = np.array(doc_topic_matrix)
-            topic_counts = {}
-            for topic_idx in range(self.num_topics):
-                topic_counts[topic_idx] = int((doc_topic_matrix[:, topic_idx] >= threshold).sum())
-            return topic_counts
-        else:
-            # HDP
-            doc_topic_matrix = []
-            for doc_bow in self.gensim_corpus:
-                topic_dist = [0.0] * max_topics
-                for topic_id, prob in self.model[doc_bow]:
-                    if topic_id < max_topics:
-                        topic_dist[topic_id] = prob
-                doc_topic_matrix.append(topic_dist)
-            doc_topic_matrix = np.array(doc_topic_matrix)
-            topic_counts = {}
-            for topic_idx in range(max_topics):
-                topic_counts[topic_idx] = int((doc_topic_matrix[:, topic_idx] >= threshold).sum())
-            return topic_counts
-    
+        if llm_config is None:
+            raise ValueError("llm_config requis (clé api_key, endpoint, model, language)")
+        api_key = llm_config.get("api_key")
+        endpoint = llm_config.get("endpoint", "https://api.mistral.ai/v1/chat/completions")
+        model = llm_config.get("model", "mistral-small")
+        language = llm_config.get("language", "fr")
+        if not api_key:
+            raise ValueError("Clé API LLM manquante dans la config!")
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        topic_names = []
+        for words in top_words_per_topic:
+            prompt = (
+                f"Donne uniquement un titre court, explicite, nominal (sans verbe), en français, "
+                f"de moins de 6 mots (maximum 6 mots), qui résume le thème principal représenté par ces mots-clés extraits d'un topic modeling. "
+                f"Les mots-clés du topic sont : {', '.join(words)}. "
+                f"Réponds uniquement par le titre proposé, sans phrase introductive, sans ponctuation finale."
+            )
+            data = {
+                "model": model,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": 20,
+                "temperature": 0.3
+            }
+            response = requests.post(endpoint, headers=headers, json=data)
+            if response.status_code == 200:
+                content = response.json()["choices"][0]["message"]["content"]
+                topic_names.append(content.strip())
+            else:
+                topic_names.append(f"(Erreur API: {response.status_code})")
+        return topic_names
+
     def get_bertopic_coherence(self, texts: Optional[List[List[str]]] = None, coherence_type: str = "c_v") -> float:
         """
         Calculate the coherence score of the fitted BERTopic model.
@@ -843,66 +948,6 @@ class TopicModeler:
             topic_modeler.num_topics = topic_modeler.model.num_topics
         
         return topic_modeler
-
-    def get_topic_names_with_llm(self, top_words_per_topic, llm_config=None):
-        """
-        Génère des noms de topics automatiquement via un LLM externe (configurable).
-        Args:
-            top_words_per_topic: liste de listes de mots (top words par topic)
-            llm_config: dictionnaire de configuration (clé API, modèle, etc.)
-        Returns:
-            Liste des noms de topics (str)
-        """
-        if llm_config is None:
-            # Essaye de charger depuis self.config si disponible
-            llm_config = getattr(self, 'llm_config', {})
-        client = LLMClient(llm_config)
-        return client.get_topic_names(top_words_per_topic)
-
-    def get_topic_names_llm_direct(self, top_words_per_topic, llm_config=None):
-        """
-        Génère des noms de topics automatiquement via l'API Mistral (ou autre LLM compatible), sans dépendance externe.
-        Args:
-            top_words_per_topic: liste de listes de mots (top words par topic)
-            llm_config: dict avec au moins api_key, endpoint, model, language
-        Returns:
-            Liste des noms de topics (str)
-        """
-        if llm_config is None:
-            raise ValueError("llm_config requis (clé api_key, endpoint, model, language)")
-        api_key = llm_config.get("api_key")
-        endpoint = llm_config.get("endpoint", "https://api.mistral.ai/v1/chat/completions")
-        model = llm_config.get("model", "mistral-small")
-        language = llm_config.get("language", "fr")
-        if not api_key:
-            raise ValueError("Clé API LLM manquante dans la config!")
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        topic_names = []
-        for words in top_words_per_topic:
-            prompt = (
-                f"Donne uniquement un titre court, explicite, nominal (sans verbe), en français, "
-                f"de moins de 6 mots (maximum 6 mots), qui résume le thème principal représenté par ces mots-clés extraits d'un topic modeling. "
-                f"Les mots-clés du topic sont : {', '.join(words)}. "
-                f"Réponds uniquement par le titre proposé, sans phrase introductive, sans ponctuation finale."
-            )
-            data = {
-                "model": model,
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ],
-                "max_tokens": 20,
-                "temperature": 0.3
-            }
-            response = requests.post(endpoint, headers=headers, json=data)
-            if response.status_code == 200:
-                content = response.json()["choices"][0]["message"]["content"]
-                topic_names.append(content.strip())
-            else:
-                topic_names.append(f"(Erreur API: {response.status_code})")
-        return topic_names
 
     def transform_with_bertopic(self, texts: List[str]) -> Dict[str, Any]:
         """

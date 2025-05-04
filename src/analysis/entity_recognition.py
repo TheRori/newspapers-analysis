@@ -78,13 +78,15 @@ class EntityRecognizer:
         Returns:
             Document with added entities
         """
-        # Use cleaned_text if available, otherwise use text
+        # Use cleaned_text if available, otherwise use text or content
         if 'cleaned_text' in document:
             text = document['cleaned_text']
         elif 'text' in document:
             text = document['text']
+        elif 'content' in document:
+            text = document['content']
         else:
-            raise KeyError("Document must contain either 'cleaned_text' or 'text' key")
+            raise KeyError("Document must contain either 'cleaned_text', 'text', or 'content' key")
         
         entities = self.extract_entities(text)
         document['entities'] = entities
@@ -227,11 +229,17 @@ class EntityRecognizer:
             for entity_type, count in entity_type_doc_counts.items()
         }
         
+        # Calcul de la moyenne d'entités par document
+        total_entities = sum(entity_type_counts.values())
+        avg_entities_per_doc = total_entities / total_docs if total_docs > 0 else 0.0
+
         return {
             'entity_type_counts': dict(entity_type_counts),
             'top_entities_by_type': top_entities_by_type,
             'entity_type_doc_counts': entity_type_doc_counts,
-            'entity_type_doc_percentages': entity_type_doc_percentages
+            'entity_type_doc_percentages': entity_type_doc_percentages,
+            'total_by_type': dict(entity_type_counts),  
+            'avg_entities_per_doc': avg_entities_per_doc
         }
     
     def save_results(self, entity_summary: Dict[str, Any], 
