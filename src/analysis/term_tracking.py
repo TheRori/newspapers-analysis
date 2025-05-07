@@ -48,7 +48,18 @@ def count_term_occurrences(articles: List[Dict[str, Any]], term_list: List[str])
     
     # Compiler les expressions régulières pour une recherche plus rapide
     # Utiliser \b pour s'assurer que les termes sont des mots complets
-    term_patterns = {term: re.compile(r'\b' + re.escape(term) + r'\b', re.IGNORECASE) for term in term_list}
+    # S'assurer que seuls les termes de type string sont traités
+    term_patterns = {}
+    for term in term_list:
+        if isinstance(term, str):
+            term_patterns[term] = re.compile(r'\b' + re.escape(term) + r'\b', re.IGNORECASE)
+        elif isinstance(term, dict) and 'term' in term:
+            # Si le terme est un dictionnaire avec une clé 'term', utiliser cette valeur
+            term_text = term['term']
+            if isinstance(term_text, str):
+                term_patterns[term_text] = re.compile(r'\b' + re.escape(term_text) + r'\b', re.IGNORECASE)
+        else:
+            logger.warning(f"Type de terme non pris en charge ignoré: {type(term)} - {term}")
     
     results = {}
     for article in articles:
@@ -141,7 +152,9 @@ def count_terms_by_year(articles: List[Dict[str, Any]], term_dict: Dict[str, Lis
 
 def export_term_frequencies_to_csv(term_counts: Dict[Any, Dict[str, int]], 
                                   output_file: str, 
-                                  results_dir: Optional[str] = None) -> str:
+                                  results_dir: Optional[str] = None,
+                                  source_file: Optional[str] = None,
+                                  metadata: Optional[Dict[str, Any]] = None) -> str:
     """
     Exporte les fréquences de termes vers un fichier CSV.
     
@@ -176,9 +189,34 @@ def export_term_frequencies_to_csv(term_counts: Dict[Any, Dict[str, int]],
     
     df = pd.DataFrame(rows)
     
-    # Exporter vers CSV
+    # Exporter directement vers CSV sans commentaire pour éviter de perturber la lecture
     df.to_csv(output_path, index=False)
+    
     logger.info(f"Données exportées vers {output_path}")
+    
+    # Sauvegarder les métadonnées dans un fichier séparé
+    meta_data = metadata or {}
+    if source_file:
+        meta_data["source_file"] = source_file
+    
+    # Ajouter des statistiques globales aux métadonnées
+    if not meta_data.get("statistics"):
+        meta_data["statistics"] = {}
+    
+    # Calculer le nombre total d'occurrences
+    total_occurrences = 0
+    for _, term_dict in term_counts.items():
+        total_occurrences += sum(term_dict.values())
+    
+    meta_data["statistics"]["total_occurrences"] = total_occurrences
+    meta_data["statistics"]["articles_with_terms"] = len(term_counts)
+    
+    # Sauvegarder les métadonnées dans un fichier JSON
+    meta_path = output_path.with_suffix('.meta.json')
+    with open(meta_path, 'w', encoding='utf-8') as f:
+        json.dump(meta_data, f, ensure_ascii=False, indent=2)
+    
+    logger.info(f"Métadonnées exportées vers {meta_path}")
     
     return str(output_path)
 

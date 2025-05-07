@@ -8,6 +8,7 @@ import dash
 print("[topic_modeling_viz] dash importé")
 from dash import html, dcc, Input, Output, State, ctx
 print("[topic_modeling_viz] dash.html, dcc, Input, Output, State, ctx importés")
+from src.webapp.topic_filter_component import get_topic_filter_component, register_topic_filter_callbacks
 import dash_bootstrap_components as dbc
 print("[topic_modeling_viz] dash_bootstrap_components importé")
 import plotly.express as px
@@ -93,7 +94,7 @@ def get_topic_modeling_controls():
             row.append(dcc.Dropdown(
                 id=input_id,
                 options=options,
-                value=str(arg['default']) if arg['default'] is not None else (''),
+                value=str(arg['default']) if arg['default'] is not None else '',
                 clearable=not arg['required'],
                 className="mb-2"
             ))
@@ -141,124 +142,46 @@ def get_topic_modeling_layout():
                     dbc.CardBody([
                         _html.P("Configurez les paramètres de l'analyse thématique ci-dessous, puis cliquez sur 'Lancer'.", className="text-muted mb-3"),
                         
-                        # Add collapsible filter section
-                        dbc.Button(
-                            "Filtres d'articles",
-                            id="collapse-filter-button",
-                            className="mb-3",
-                            color="secondary",
-                            outline=True,
-                        ),
-                        dbc.Collapse(
-                            dbc.Card(
-                                dbc.CardBody([
-                                    dbc.Row([
-                                        dbc.Col([
-                                            _html.H5("Filtres par date", className="mb-2"),
-                                            dbc.Row([
-                                                dbc.Col([
-                                                    dbc.Label("Date de début", html_for="arg-start-date"),
-                                                    dcc.Input(
-                                                        id="arg-start-date",
-                                                        type="text",
-                                                        placeholder="YYYY-MM-DD",
-                                                        className="form-control mb-2",
-                                                    ),
-                                                ], width=6),
-                                                dbc.Col([
-                                                    dbc.Label("Date de fin", html_for="arg-end-date"),
-                                                    dcc.Input(
-                                                        id="arg-end-date",
-                                                        type="text",
-                                                        placeholder="YYYY-MM-DD",
-                                                        className="form-control mb-2",
-                                                    ),
-                                                ], width=6),
-                                            ]),
-                                        ], width=12),
-                                    ]),
-                                    dbc.Row([
-                                        dbc.Col([
-                                            _html.H5("Filtres par source", className="mb-2 mt-3"),
-                                            dbc.Row([
-                                                dbc.Col([
-                                                    dbc.Label("Journal", html_for="arg-newspaper"),
-                                                    dcc.Input(
-                                                        id="arg-newspaper",
-                                                        type="text",
-                                                        placeholder="Nom du journal",
-                                                        className="form-control mb-2",
-                                                    ),
-                                                ], width=6),
-                                                dbc.Col([
-                                                    dbc.Label("Canton", html_for="arg-canton"),
-                                                    dcc.Input(
-                                                        id="arg-canton",
-                                                        type="text",
-                                                        placeholder="Code canton (ex: FR)",
-                                                        className="form-control mb-2",
-                                                    ),
-                                                ], width=6),
-                                            ]),
-                                        ], width=12),
-                                    ]),
-                                    dbc.Row([
-                                        dbc.Col([
-                                            _html.H5("Filtres par contenu", className="mb-2 mt-3"),
-                                            dbc.Row([
-                                                dbc.Col([
-                                                    dbc.Label("Tag thématique", html_for="arg-topic"),
-                                                    dcc.Input(
-                                                        id="arg-topic",
-                                                        type="text",
-                                                        placeholder="Tag thématique",
-                                                        className="form-control mb-2",
-                                                    ),
-                                                ], width=12),
-                                            ]),
-                                            dbc.Row([
-                                                dbc.Col([
-                                                    dbc.Label("Nombre min. de mots", html_for="arg-min-words"),
-                                                    dcc.Input(
-                                                        id="arg-min-words",
-                                                        type="number",
-                                                        placeholder="Min",
-                                                        className="form-control mb-2",
-                                                        min=0,
-                                                    ),
-                                                ], width=6),
-                                                dbc.Col([
-                                                    dbc.Label("Nombre max. de mots", html_for="arg-max-words"),
-                                                    dcc.Input(
-                                                        id="arg-max-words",
-                                                        type="number",
-                                                        placeholder="Max",
-                                                        className="form-control mb-2",
-                                                        min=0,
-                                                    ),
-                                                ], width=6),
-                                            ]),
-                                        ], width=12),
-                                    ]),
-                                    dbc.Row([
-                                        dbc.Col([
-                                            dbc.Button(
-                                                "Réinitialiser les filtres",
-                                                id="reset-filters-button",
-                                                color="secondary",
-                                                outline=True,
-                                                className="mt-3",
-                                                size="sm",
-                                            ),
-                                        ], width=12, className="text-end"),
-                                    ]),
+                        # Fichier source personnalisé
+                        _html.H5("Fichier source", className="mb-2"),
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.InputGroup([
+                                    dbc.Input(
+                                        id="arg-input-file",
+                                        type="text",
+                                        placeholder="Chemin vers le fichier JSON d'articles"
+                                    ),
+                                    dbc.Button("Parcourir", id="source-file-browse", color="secondary")
                                 ]),
-                            ),
-                            id="collapse-filter",
-                            is_open=False,
-                        ),
+                                _html.Small("Laissez vide pour utiliser le fichier par défaut de la configuration.", className="text-muted")
+                            ], width=12),
+                        ], className="mb-3"),
+                        
+                        # Sélection de fichier de cache
+                        _html.H5("Fichier de cache Spacy", className="mb-2"),
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Select(
+                                    id="cache-file-select",
+                                    options=[{"label": "Aucun (utiliser le plus récent)", "value": ""}],
+                                    value="",
+                                    className="mb-2"
+                                ),
+
+                                _html.Small("Sélectionnez un fichier de cache Spacy existant pour accélérer le traitement.", className="text-muted d-block"),
+                                _html.Div(id="cache-info-display", className="mt-2")
+                            ], width=12),
+                        ], className="mb-3"),
+                        
+
                         
                         dbc.Form(get_topic_modeling_controls()),
+                        
+                        # Add topic filter component
+                        _html.H5("Filtrage par cluster", className="mt-4 mb-3"),
+                        get_topic_filter_component(id_prefix="topic-filter"),
+                        
                         dbc.Button("Lancer le Topic Modeling", id="btn-run-topic-modeling", color="primary", n_clicks=0, className="mt-3 mb-2"),
                         _html.Div(id="topic-modeling-run-status", className="mb-3"),
                     ]),
@@ -275,28 +198,155 @@ def get_topic_modeling_layout():
                 )
             ], width=12)
         ]),
-        # Store for filter state
-        dcc.Store(id="filter-state"),
+        # Le Store pour l'état des filtres a été supprimé
     ], fluid=True)
 
 # Callback registration
+# Fonction pour obtenir les informations sur les fichiers de cache
+def get_cache_info():
+    """
+    Récupère les informations sur les fichiers de cache Spacy existants.
+    
+    Returns:
+        dict: Informations sur les fichiers de cache
+    """
+    project_root = pathlib.Path(__file__).resolve().parents[2]
+    cache_dir = project_root / 'data' / 'cache'
+    cache_files = list(cache_dir.glob("preprocessed_docs_*.pkl"))
+    
+    cache_info = {
+        "count": len(cache_files),
+        "files": []
+    }
+    
+    for cache_file in cache_files:
+        try:
+            import pickle
+            with open(cache_file, 'rb') as f:
+                cache_data = pickle.load(f)
+                
+            # Extraire les informations du cache
+            cache_key_data = cache_data.get('cache_key_data', {})
+            articles_path = cache_key_data.get('articles_path', 'Inconnu')
+            spacy_model = cache_key_data.get('spacy_model', 'Inconnu')
+            allowed_pos = cache_key_data.get('allowed_pos', [])
+            min_token_length = cache_key_data.get('min_token_length', 0)
+            articles_count = cache_key_data.get('articles_count', 0)
+            
+            # Taille du fichier
+            file_size_bytes = cache_file.stat().st_size
+            file_size_mb = file_size_bytes / (1024 * 1024)
+            
+            # Date de création
+            from datetime import datetime
+            creation_time = datetime.fromtimestamp(cache_file.stat().st_mtime)
+            
+            cache_info["files"].append({
+                "filename": cache_file.name,
+                "articles_path": articles_path,
+                "spacy_model": spacy_model,
+                "allowed_pos": allowed_pos,
+                "min_token_length": min_token_length,
+                "articles_count": articles_count,
+                "file_size_mb": file_size_mb,
+                "creation_time": creation_time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+        except Exception as e:
+            print(f"Erreur lors de la lecture du fichier de cache {cache_file}: {e}")
+            cache_info["files"].append({
+                "filename": cache_file.name,
+                "error": str(e),
+                "file_size_mb": file_size_bytes / (1024 * 1024) if 'file_size_bytes' in locals() else 0
+            })
+    
+    return cache_info
+
 def register_topic_modeling_callbacks(app):
+    # Register the topic filter component callbacks
+    register_topic_filter_callbacks(app, id_prefix="topic-filter")
     parser_args = get_topic_modeling_args()
     
-    # Filter out the filter arguments that we're handling separately
-    filter_arg_names = ['start_date', 'end_date', 'newspaper', 'canton', 'topic', 'min_words', 'max_words']
-    filtered_parser_args = [arg for arg in parser_args if arg['name'] not in filter_arg_names]
+    # Callback pour initialiser la liste des fichiers de cache
+    @app.callback(
+        Output("cache-file-select", "options", allow_duplicate=True),
+        Output("cache-info-display", "children"),
+        Input("page-content", "children"),
+        prevent_initial_call=True
+    )
+    def refresh_cache_list(page_content):
+        cache_info = get_cache_info()
+        
+        # Préparer les options pour le sélecteur de cache
+        cache_options = [{"label": "Aucun (utiliser le plus récent)", "value": ""}]
+        
+        if cache_info["count"] == 0:
+            return cache_options, html.Div("Aucun fichier de cache trouvé.", className="text-muted")
+        
+        # Ajouter les options de cache
+        for cache_file in cache_info["files"]:
+            if "error" not in cache_file:
+                description = f"{cache_file['filename']} ({cache_file['articles_count']} articles, {cache_file['spacy_model']})"
+                cache_options.append({"label": description, "value": cache_file["filename"]})
+        
+        # Créer un résumé des informations de cache
+        cache_summary = html.Div([
+            html.P(f"{cache_info['count']} fichiers de cache trouvés", className="text-info"),
+        ])
+        
+        return cache_options, cache_summary
     
-    # Create input list for all arguments (filtered + filter arguments)
+    # Callback pour le bouton de parcourir du fichier source
+    @app.callback(
+        Output("arg-input-file", "value"),
+        Input("source-file-browse", "n_clicks"),
+        State("arg-input-file", "value"),
+        prevent_initial_call=True
+    )
+    def browse_source_file(n_clicks, current_value):
+        if not n_clicks:
+            return current_value
+        
+        # Obtenir le répertoire de départ pour la boîte de dialogue
+        project_root, _, _ = get_config_and_paths()
+        data_dir = project_root / "data" / "processed"
+        
+        # Utiliser une commande PowerShell pour afficher une boîte de dialogue de sélection de fichier
+        try:
+            cmd = [
+                "powershell",
+                "-Command",
+                "Add-Type -AssemblyName System.Windows.Forms; " +
+                "$openFileDialog = New-Object System.Windows.Forms.OpenFileDialog; " +
+                "$openFileDialog.InitialDirectory = '" + str(data_dir).replace('\\', '\\\\') + "'; " +
+                "$openFileDialog.Filter = 'Fichiers JSON (*.json)|*.json|Tous les fichiers (*.*)|*.*'; " +
+                "$openFileDialog.ShowDialog() | Out-Null; " +
+                "$openFileDialog.FileName"
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            file_path = result.stdout.strip()
+            
+            if file_path and os.path.exists(file_path):
+                return file_path
+            return current_value
+        except Exception as e:
+            print(f"Erreur lors de l'ouverture de la boîte de dialogue: {e}")
+            return current_value
+    
+    # Filtres supprimés
+    filtered_parser_args = parser_args
+    
+    # Create input list for all arguments
     input_list = [Input(f"arg-{arg['name']}", "value") for arg in filtered_parser_args]
     
-    # Add filter inputs
-    for filter_name in filter_arg_names:
-        input_list.append(Input(f"arg-{filter_name}", "value"))
-    
     # Add cluster filter inputs
-    input_list.append(Input("topic-filter-cluster-results-dropdown", "value"))
-    input_list.append(Input("topic-filter-cluster-dropdown", "value"))
+    input_list.append(Input("topic-filter-cluster-file-dropdown", "value"))
+    input_list.append(Input("topic-filter-cluster-id-dropdown", "value"))
+    
+    # Add input for source file
+    input_list.append(Input("arg-input-file", "value"))
+    
+    # Add input for cache file
+    input_list.append(Input("cache-file-select", "value"))
     
     # Add other inputs
     input_list += [Input("btn-run-topic-modeling", "n_clicks"), Input("page-content", "children")]
@@ -308,17 +358,19 @@ def register_topic_modeling_callbacks(app):
         prevent_initial_call=True
     )
     def run_or_load_topic_modeling(*args):
+        import json  # Import json at the function level to avoid variable shadowing
         ctx_trigger = ctx.triggered
         status = ""
         stats_content = None
         
-        # Split args: filtered parser values, filter values, cluster values, n_clicks, page_content
+        # Split args: filtered parser values, cluster values, source file, cache file, n_clicks, page_content
         filtered_parser_values = args[:len(filtered_parser_args)]
-        filter_values = args[len(filtered_parser_args):len(filtered_parser_args)+len(filter_arg_names)]
-        cluster_file = args[len(filtered_parser_args)+len(filter_arg_names)]
-        cluster_id = args[len(filtered_parser_args)+len(filter_arg_names)+1]
-        n_clicks = args[len(filtered_parser_args)+len(filter_arg_names)+2]
-        page_content = args[len(filtered_parser_args)+len(filter_arg_names)+3]
+        cluster_file = args[len(filtered_parser_args)]
+        cluster_id = args[len(filtered_parser_args)+1]
+        source_file = args[len(filtered_parser_args)+2]
+        selected_cache = args[len(filtered_parser_args)+3]
+        n_clicks = args[len(filtered_parser_args)+4]
+        page_content = args[len(filtered_parser_args)+5]
         
         trigger_id = ctx_trigger[0]["prop_id"].split(".")[0] if ctx_trigger else None
         project_root, config, advanced_topic_json = get_config_and_paths()
@@ -344,16 +396,44 @@ def register_topic_modeling_callbacks(app):
                     arg_list.append(f"--{arg['name'].replace('_','-')}")
                     arg_list.append(str(val))
             
-            # Add filter arguments
-            for filter_name, filter_value in zip(filter_arg_names, filter_values):
-                if filter_value is not None and filter_value != "":
-                    arg_list.append(f"--{filter_name.replace('_','-')}")
-                    arg_list.append(str(filter_value))
+            # Vérifier si un fichier source personnalisé est spécifié
+            if source_file:
+                # Comme l'argument --input-file a été supprimé du script, nous devons créer un fichier temporaire
+                # qui sera utilisé comme source d'articles par défaut
+                try:
+                    # Copier le fichier source personnalisé vers le chemin par défaut attendu par le script
+                    import shutil
+                    temp_articles_path = project_root / 'data' / 'temp' / 'custom_source.json'
+                    os.makedirs(os.path.dirname(temp_articles_path), exist_ok=True)
+                    shutil.copy2(source_file, temp_articles_path)
+                    print(f"Fichier source personnalisé copié vers {temp_articles_path}")
+                    
+                    # Modifier le chemin du fichier d'articles dans la configuration
+                    os.environ['TOPIC_MODELING_SOURCE_FILE'] = str(temp_articles_path)
+                    print(f"Variable d'environnement TOPIC_MODELING_SOURCE_FILE définie sur {temp_articles_path}")
+                except Exception as e:
+                    print(f"Erreur lors de la copie du fichier source personnalisé: {e}")
             
-            # Si nous avons des données de clustering, nous devons filtrer les articles avant de lancer le topic modeling
-            if cluster_data and cluster_id:
+            # Ajouter le fichier de cache sélectionné si spécifié
+            if selected_cache:
+                # Créer un fichier de configuration pour indiquer quel cache utiliser
+                cache_config_path = project_root / "config" / "cache_config.json"
+                
+                with open(cache_config_path, 'w', encoding='utf-8') as f:
+                    json.dump({"selected_cache": selected_cache}, f, ensure_ascii=False, indent=2)
+                    
+                print(f"Cache sélectionné configuré: {selected_cache}")
+            else:
+                # Si aucun cache n'est sélectionné, supprimer le fichier de configuration s'il existe
+                cache_config_path = project_root / "config" / "cache_config.json"
+                if cache_config_path.exists():
+                    os.remove(cache_config_path)
+                    print("Configuration de cache supprimée, le cache par défaut sera utilisé s'il existe.")
+
+            
+            # Si nous avons des données de clustering et qu'aucun fichier source personnalisé n'est spécifié
+            if cluster_data and cluster_id and not source_file:
                 # Charger les articles
-                import json
                 from src.utils.filter_utils import filter_articles_by_cluster
                 
                 articles_path = project_root / 'data' / 'processed' / 'articles.json'
@@ -369,9 +449,8 @@ def register_topic_modeling_callbacks(app):
                 with open(temp_articles_path, 'w', encoding='utf-8') as f:
                     json.dump(filtered_articles, f, ensure_ascii=False, indent=2)
                 
-                # Ajouter l'argument pour utiliser le fichier temporaire
-                arg_list.append("--input-file")
-                arg_list.append(str(temp_articles_path))
+                # Comme l'argument --input-file a été supprimé du script, nous utilisons une variable d'environnement
+                os.environ['TOPIC_MODELING_SOURCE_FILE'] = str(temp_articles_path)
                 
                 print(f"Articles filtrés par cluster {cluster_id}: {len(filtered_articles)} articles")
 
@@ -380,48 +459,34 @@ def register_topic_modeling_callbacks(app):
                 # Afficher la commande qui va être exécutée
                 print(f"Exécution de la commande: {sys.executable} {script_path} {' '.join(arg_list)}")
                 
-                # Exécuter avec stdout et stderr redirigés vers le terminal et capturés en temps réel
+                # Utiliser subprocess.run pour afficher les logs directement dans le terminal
+                print("\n===== DÉBUT DE L'ANALYSE TOPIC MODELING =====\n")
+                
+                # Exécuter le processus avec stdout et stderr non redirigés
+                # Cela permettra d'afficher les logs directement dans le terminal
                 process = subprocess.Popen(
                     [sys.executable, str(script_path), *arg_list],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,  # Line buffered
+                    # Ne pas rediriger stdout et stderr pour qu'ils s'affichent directement
                 )
                 
-                # Capturer la sortie tout en l'affichant dans le terminal
+                # Stocker les lignes pour l'interface web (vide pour l'instant)
                 stdout_lines = []
                 stderr_lines = []
                 
-                # Fonction pour lire et afficher les lignes
-                def read_and_print(pipe, lines_list):
-                    for line in iter(pipe.readline, ''):
-                        print(line, end='')  # Afficher dans le terminal
-                        lines_list.append(line)  # Stocker pour l'interface web
-                
-                # Lire stdout et stderr
-                stdout_thread = threading.Thread(target=read_and_print, args=(process.stdout, stdout_lines))
-                stderr_thread = threading.Thread(target=read_and_print, args=(process.stderr, stderr_lines))
-                stdout_thread.daemon = True
-                stderr_thread.daemon = True
-                stdout_thread.start()
-                stderr_thread.start()
-                
                 # Attendre la fin du processus
                 return_code = process.wait()
-                stdout_thread.join()
-                stderr_thread.join()
+                
+                print("\n===== FIN DE L'ANALYSE TOPIC MODELING =====\n")
                 
                 # Vérifier si le processus s'est terminé avec succès
                 if return_code != 0:
-                    stderr_output = ''.join(stderr_lines)
-                    raise subprocess.CalledProcessError(return_code, [sys.executable, str(script_path), *arg_list], output=None, stderr=stderr_output)
+                    raise subprocess.CalledProcessError(return_code, [sys.executable, str(script_path), *arg_list])
                 
                 status = dbc.Alert("Topic modeling terminé avec succès !", color="success")
             except subprocess.CalledProcessError as e:
                 print("===== [run_topic_modeling.py ERROR] =====")
-                print(e.stderr)
-                status = dbc.Alert(f"Erreur lors de l'exécution : {e.stderr}", color="danger")
+                print(f"Erreur lors de l'exécution (code {e.returncode})")
+                status = dbc.Alert(f"Erreur lors de l'exécution (code {e.returncode})", color="danger")
         
         # Charger les stats avancées si dispo
         if advanced_topic_json.exists():
@@ -433,27 +498,7 @@ def register_topic_modeling_callbacks(app):
         
         return status, stats_content
     
-    # Add callback for filter collapse
-    @app.callback(
-        Output("collapse-filter", "is_open"),
-        [Input("collapse-filter-button", "n_clicks")],
-        [State("collapse-filter", "is_open")],
-    )
-    def toggle_collapse(n, is_open):
-        if n:
-            return not is_open
-        return is_open
-    
-    # Add callback for reset filters button
-    @app.callback(
-        [Output(f"arg-{filter_name}", "value") for filter_name in filter_arg_names],
-        [Input("reset-filters-button", "n_clicks")],
-        prevent_initial_call=True,
-    )
-    def reset_filters(n):
-        if n:
-            return ["", "", "", "", "", None, None]  # Empty values for all filters
-        return dash.no_update
+    # Les callbacks pour les filtres ont été supprimés
 
 # Helper to render advanced stats (adapt to your JSON structure)
 def render_advanced_topic_stats(stats):
@@ -461,10 +506,15 @@ def render_advanced_topic_stats(stats):
     import plotly.graph_objects as go
     import pandas as pd
     from dash import html
+    import traceback  # Pour le débogage
     children = []
     # 1. Coherence Score
     if 'coherence_score' in stats:
-        children.append(dbc.Alert(f"Score de cohérence : {stats['coherence_score']:.3f}", color="info", className="mb-3"))
+        score = stats['coherence_score']
+        if score is not None:
+            children.append(dbc.Alert(f"Score de cohérence : {score:.3f}", color="info", className="mb-3"))
+        else:
+            children.append(dbc.Alert("Score de cohérence : N/A", color="info", className="mb-3"))
     # 2. Récupérer les noms LLM s'ils existent
     topic_names_llm = None
     if stats.get('topic_names_llm'):
@@ -490,6 +540,7 @@ def render_advanced_topic_stats(stats):
         children.append(dcc.Graph(
             figure=px.bar(df_dist, x='Topic', y='Proportion', title='Distribution des topics (proportion)', text_auto='.2f')
         ))
+    # Vérifier si topic_article_counts existe
     if 'topic_article_counts' in stats:
         counts = stats['topic_article_counts']
         topics = list(counts.keys())
@@ -502,6 +553,67 @@ def render_advanced_topic_stats(stats):
         children.append(dcc.Graph(
             figure=px.bar(df_counts, x='Topic', y='Articles', title="Nombre d'articles par topic", text_auto=True)
         ))
+    # Alternative: utiliser doc_topic_distribution pour calculer le nombre d'articles par topic
+    elif 'doc_topic_distribution' in stats:
+        try:
+            # Récupérer la distribution doc-topic
+            doc_topic_dist = stats['doc_topic_distribution']
+            # Compter le nombre d'articles par topic dominant
+            topic_counts = {}
+            for doc_id, topic_dist in doc_topic_dist.items():
+                # Trouver le topic dominant pour ce document
+                dominant_topic = max(range(len(topic_dist)), key=lambda i: topic_dist[i])
+                # Incrémenter le compteur pour ce topic
+                topic_counts[str(dominant_topic)] = topic_counts.get(str(dominant_topic), 0) + 1
+            
+            # Créer un DataFrame pour la visualisation
+            topic_ids = sorted([int(t) for t in topic_counts.keys()])
+            topics = []
+            counts = []
+            for topic_id in topic_ids:
+                topic_key = str(topic_id)
+                if topic_names_llm:
+                    topic_label = topic_names_llm.get(f'topic_{topic_id}', f"Topic {topic_id}")
+                else:
+                    topic_label = f"Topic {topic_id}"
+                topics.append(topic_label)
+                counts.append(topic_counts.get(topic_key, 0))
+            
+            df_counts = pd.DataFrame({
+                'Topic': topics,
+                'Articles': counts
+            })
+            children.append(dcc.Graph(
+                figure=px.bar(df_counts, x='Topic', y='Articles', title="Nombre d'articles par topic", text_auto=True)
+            ))
+        except Exception as e:
+            # En cas d'erreur, ajouter un message d'erreur au lieu de faire planter l'application
+            children.append(html.Div(f"Erreur lors de la génération du graphique 'Nombre d'articles par topic': {str(e)}", 
+                                    className="alert alert-danger"))
+    # Autre alternative: utiliser la distribution des topics si disponible
+    elif 'topic_distribution' in stats and len(dist) > 0:
+        try:
+            # Estimer le nombre d'articles par topic à partir de la distribution
+            # Supposons que nous connaissons le nombre total d'articles
+            total_docs = stats.get('total_docs', 1000)  # Valeur par défaut si non disponible
+            
+            topics = [str(i) for i in range(len(dist))]
+            if topic_names_llm:
+                topics = [topic_names_llm.get(f'topic_{i}', f"Topic {i}") for i in range(len(dist))]
+            
+            # Calculer le nombre d'articles par topic en fonction de la distribution
+            article_counts = [int(p * total_docs) for p in dist]
+            
+            df_counts = pd.DataFrame({
+                'Topic': topics,
+                'Articles': article_counts
+            })
+            children.append(dcc.Graph(
+                figure=px.bar(df_counts, x='Topic', y='Articles', title="Nombre d'articles par topic (estimé)", text_auto=True)
+            ))
+        except Exception as e:
+            children.append(html.Div(f"Erreur lors de l'estimation du nombre d'articles par topic: {str(e)}", 
+                                    className="alert alert-danger"))
     # 3. Top mots par topic
     if 'weighted_words' in stats:
         children.append(html.H5("Top mots par topic", className="mt-4"))

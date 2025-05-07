@@ -13,11 +13,19 @@ except ImportError:
 
 # Add the project root to the path to allow imports from src
 project_root = Path(__file__).parent.parent.parent
-sys.path.append(str(project_root))
+sys.path.insert(0, str(project_root))
 
-from src.analysis.entity_recognition import EntityRecognizer
-from src.utils.config_loader import load_config
-from src.utils.filter_utils import apply_all_filters, get_filter_summary
+# Import using relative imports
+try:
+    from src.analysis.entity_recognition import EntityRecognizer
+    from src.utils.config_loader import load_config
+    from src.utils.filter_utils import apply_all_filters, get_filter_summary
+except ModuleNotFoundError:
+    # Alternative import path if the above fails
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from analysis.entity_recognition import EntityRecognizer
+    from utils.config_loader import load_config
+    from utils.filter_utils import apply_all_filters, get_filter_summary
 
 def get_parser():
     parser = argparse.ArgumentParser(description="Run entity recognition on articles.")
@@ -27,6 +35,7 @@ def get_parser():
     parser.add_argument('--model', type=str, help='SpaCy model to use (overrides config)')
     parser.add_argument('--entities', type=str, help='Comma-separated list of entity types to extract (e.g., PERSON,ORG,GPE)')
     parser.add_argument('--use-cache', action='store_true', help='Use cached preprocessed documents if available')
+    parser.add_argument('--source-file', type=str, help='Chemin vers un fichier JSON d\'articles alternatif (remplace celui de la config)')
     
     # Add filtering options
     parser.add_argument('--start-date', type=str, help='Filter articles starting from this date (format: YYYY-MM-DD)')
@@ -36,6 +45,10 @@ def get_parser():
     parser.add_argument('--topic', type=str, help='Filter articles by existing topic tag')
     parser.add_argument('--min-words', type=int, help='Filter articles with at least this many words')
     parser.add_argument('--max-words', type=int, help='Filter articles with at most this many words')
+    
+    # Add cluster filtering options
+    parser.add_argument('--cluster-file', type=str, help='Path to the cluster file for filtering articles by cluster')
+    parser.add_argument('--cluster-id', type=str, help='Cluster ID to filter articles by')
     
     return parser
 
@@ -56,11 +69,28 @@ def main():
     # Generate run ID for versioning
     run_id = str(uuid.uuid4())[:8]
     
-    # Paths
+    # Paths - use absolute paths to avoid issues when called from different directories
+    script_dir = Path(__file__).parent.absolute()
+    project_root = script_dir.parent.parent
     config_path = project_root / 'config' / 'config.yaml'
-    articles_path = project_root / 'data' / 'processed' / 'articles.json'
+    
+    # Déterminer le chemin du fichier d'articles (par défaut ou personnalisé)
+    if args.source_file:
+        articles_path = Path(args.source_file)
+        logger.info(f"Using custom articles file: {articles_path}")
+    else:
+        articles_path = project_root / 'data' / 'processed' / 'articles.json'
+        logger.info(f"Using default articles file from config")
+    
     results_dir = project_root / 'data' / 'results'
     os.makedirs(results_dir, exist_ok=True)
+    
+    # Log paths for debugging
+    logger.info(f"Script directory: {script_dir}")
+    logger.info(f"Project root: {project_root}")
+    logger.info(f"Config path: {config_path}")
+    logger.info(f"Articles path: {articles_path}")
+    logger.info(f"Results directory: {results_dir}")
     
     # Ensure result subdirectories exist
     ner_dir = results_dir / "entity_recognition"
@@ -87,6 +117,18 @@ def main():
         articles = json.load(f)
     logger.info(f"Loaded {len(articles)} articles from {articles_path}")
     
+    # Load cluster data if specified
+    cluster_data = None
+    if args.cluster_file and args.cluster_id:
+        try:
+            logger.info(f"Loading cluster data from {args.cluster_file}")
+            with open(args.cluster_file, 'r', encoding='utf-8') as f:
+                cluster_data = json.load(f)
+            logger.info(f"Loaded cluster data with keys: {list(cluster_data.keys())}")
+        except Exception as e:
+            logger.error(f"Error loading cluster file: {e}")
+            cluster_data = None
+    
     # Apply filters if specified
     original_count = len(articles)
     filtered_articles = apply_all_filters(
@@ -97,7 +139,9 @@ def main():
         canton=args.canton,
         topic=args.topic,
         min_words=args.min_words,
-        max_words=args.max_words
+        max_words=args.max_words,
+        cluster=args.cluster_id,
+        cluster_data=cluster_data
     )
     
     # Log filter results
@@ -111,7 +155,8 @@ def main():
             canton=args.canton,
             topic=args.topic,
             min_words=args.min_words,
-            max_words=args.max_words
+            max_words=args.max_words,
+            cluster=args.cluster_id
         )
         logger.info(f"Applied filters: {filter_summary}")
     

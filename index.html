@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyses des journaux suisses</title>
+    <link rel="stylesheet" href="index.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Analyses des journaux suisses</h1>
+            <p>Explorez les données des archives de presse suisse à travers différentes visualisations</p>
+        </header>
+
+        <main>
+            <div class="mediations-grid">
+                <div class="mediation-card">
+                    <div class="card-image" style="background-image: url('https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80');">
+                        <div class="overlay"></div>
+                    </div>
+                    <div class="card-content">
+                        <h2>Évolution des termes informatiques</h2>
+                        <p>Visualisez l'évolution des mentions de termes liés à l'informatique dans la presse suisse entre 1950 et 1999.</p>
+                        <div class="tags">
+                            <span class="tag">Chronologique</span>
+                            <span class="tag">Termes</span>
+                            <span class="tag">Filtres</span>
+                        </div>
+                        <a href="mediation_app.html" class="btn-explore">Explorer <i class="fas fa-arrow-right"></i></a>
+                    </div>
+                </div>
+
+                <div class="mediation-card">
+                    <div class="card-image" style="background-image: url('https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80');">
+                        <div class="overlay"></div>
+                    </div>
+                    <div class="card-content">
+                        <h2>Heatmap des termes similaires</h2>
+                        <p>Explorez l'évolution sémantique des termes liés à l'informatique et découvrez comment leur signification a changé au fil des décennies.</p>
+                        <div class="tags">
+                            <span class="tag">Sémantique</span>
+                            <span class="tag">Heatmap</span>
+                            <span class="tag">Similitude</span>
+                        </div>
+                        <a href="heatmap_app.html" class="btn-explore">Explorer <i class="fas fa-arrow-right"></i></a>
+                    </div>
+                </div>
+
+                <div class="mediation-card">
+                    <div class="card-image" style="background-image: url('https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80');">
+                        <div class="overlay"></div>
+                    </div>
+                    <div class="card-content">
+                        <h2>Cartographie des mentions</h2>
+                        <p>Explorez la distribution géographique des mentions technologiques à travers les cantons suisses.</p>
+                        <div class="tags">
+                            <span class="tag">Géographique</span>
+                            <span class="tag">Cantons</span>
+                            <span class="tag">Distribution</span>
+                        </div>
+                        <a href="#" class="btn-explore btn-coming-soon">Bientôt disponible</a>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>&copy; 2025 Analyses des journaux suisses | <a href="#" class="about-link">À propos</a></p>
+        </footer>
+    </div>
+
+    <script>
+        // Animation simple pour les cartes
+        document.addEventListener('DOMContentLoaded', () => {
+            const cards = document.querySelectorAll('.mediation-card');
+            setTimeout(() => {
+                cards.forEach((card, index) => {
+                    setTimeout(() => {
+                        card.classList.add('visible');
+                    }, index * 150);
+                });
+            }, 300);
+        });
+    </script>
+</body>
+</html>

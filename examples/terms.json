@@ -1,47 +1,37 @@
 {
   "technologie": [
-    "informatique",
-    "ordinateur",
-    "microprocesseur",
-    "logiciel",
-    "programme",
-    "numérique",
-    "cybersécurité"
+      "informatique",
+      "ordinateur",
+      "microprocesseur",
+      "logiciel",
+      "programme"
   ],
   "internet_et_réseaux": [
-    "internet",
-    "web",
-    "site web",
-    "email",
-    "navigateur",
-    "réseau",
-    "serveur"
+      "internet",         
+      "modem",           
+      "email",           
+      "serveur"
   ],
   "entreprises_et_marques": [
-    "apple",
-    "ibm",
-    "microsoft",
-    "google",
-    "epfl",
-    "cern",
-    "intel"
+      "ibm",              
+      "apple",           
+      "microsoft",        
+      "intel",           
+      "epfl",            
+      "cern"              
   ],
   "produits_et_usages": [
-    "macintosh",
-    "windows",
-    "linux",
-    "modem",
-    "imprimante",
-    "smartphone",
-    "cloud"
+      "macintosh",       
+      "windows",         
+      "linux",           
+      "imprimante",      
+      "terminal"         
   ],
   "société_et_impact": [
-    "vie privée",
-    "surveillance",
-    "intelligence artificielle",
-    "automatisation",
-    "robot",
-    "emploi",
-    "éducation"
+      "intelligence artificielle",  
+      "automatisation",
+      "robot",
+      "emploi",             
+      "éducation"
   ]
 }

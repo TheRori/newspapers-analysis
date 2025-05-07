@@ -19,6 +19,14 @@ from sklearn.decomposition import PCA
 import random
 import pickle
 
+# Essayer d'importer UMAP (optionnel)
+try:
+    from umap import UMAP
+    UMAP_AVAILABLE = True
+except ImportError:
+    UMAP_AVAILABLE = False
+    print("UMAP non disponible. Pour l'installer: pip install umap-learn")
+
 # Cache pour stocker les coordonnées générées
 _map_coordinates_cache = {}
 
@@ -208,9 +216,24 @@ def generate_map_coordinates(clustering_data, method='tsne'):
         except Exception as e:
             print(f"Error loading advanced topic data: {e}")
     
-    # If we don't have topic distributions, use cluster centers
+    # Si nous n'avons pas de distributions de topics, vérifier si nous avons des embeddings originaux
+    if not topic_distributions and 'embeddings' in clustering_data:
+        print("Using original embeddings for visualization")
+        # Utiliser les embeddings originaux sauvegardés lors du clustering
+        embeddings = clustering_data['embeddings']
+        
+        # Vérifier que nous avons le même nombre d'embeddings que de documents
+        if len(embeddings) == len(doc_ids):
+            for i, doc_id in enumerate(doc_ids):
+                if i < len(labels):
+                    topic_distributions.append(embeddings[i])
+                    valid_doc_ids.append(doc_id)
+                    valid_labels.append(labels[i])
+            print(f"Utilisé {len(topic_distributions)} embeddings originaux pour la visualisation")
+    
+    # Si nous n'avons toujours pas de distributions, utiliser les centres de clusters avec du bruit
     if not topic_distributions:
-        print("Using cluster centers for visualization")
+        print("Using cluster centers for visualization (fallback)")
         # Create a simple representation based on cluster centers
         for i, doc_id in enumerate(doc_ids):
             if i < len(labels):
@@ -239,10 +262,21 @@ def generate_map_coordinates(clustering_data, method='tsne'):
         if perplexity < 5:
             perplexity = 5
         
+        print(f"Applying t-SNE with perplexity={perplexity}...")
         tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
         coords = tsne.fit_transform(X)
+    elif method == 'umap' and UMAP_AVAILABLE:
+        # UMAP souvent meilleur que t-SNE pour préserver la structure globale
+        n_neighbors = min(30, len(X) - 1)
+        if n_neighbors < 5:
+            n_neighbors = 5
+            
+        print(f"Applying UMAP with n_neighbors={n_neighbors}...")
+        umap = UMAP(n_components=2, random_state=42, n_neighbors=n_neighbors)
+        coords = umap.fit_transform(X)
     else:
-        # PCA for visualization
+        # PCA for visualization (fallback)
+        print("Applying PCA...")
         pca = PCA(n_components=2, random_state=42)
         coords = pca.fit_transform(X)
     
@@ -568,108 +602,108 @@ def create_cluster_map(df):
     )
     
     return fig
-
 # Function to get the cluster map layout
 def get_cluster_map_layout():
     # Load clustering results
     clustering_data = load_clustering_results()
-    if not clustering_data:
-        return html.Div("Aucune donnée de clustering disponible. Veuillez d'abord exécuter le clustering.")
     
-    # Generate map coordinates
-    df = generate_map_coordinates(clustering_data)
+    if not clustering_data:
+        return html.Div([
+            html.H3("Carte des clusters", className="mb-4"),
+            # Ajouter les contrôles de visualisation
+            visualization_controls,
+            dcc.Graph(
+                id="cluster-map-graph",
+                figure=fig,
+                style={"height": "600px"},
+                className="mb-4 shadow"
+            ),])
+    
+    # Générer les coordonnées avec t-SNE par défaut
+    df = generate_map_coordinates(clustering_data, method='tsne')
     if df.empty:
         return html.Div("Impossible de générer les coordonnées pour la carte. Vérifiez les données de clustering.")
+        
+    # Créer les contrôles pour la visualisation
+    visualization_controls = dbc.Card([
+        dbc.CardHeader("Options de visualisation", className="bg-secondary text-white"),
+        dbc.CardBody([
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("Méthode de projection"),
+                    dcc.Dropdown(
+                        id="cluster-map-projection-method",
+                        options=[
+                            {"label": "t-SNE (préserve les structures locales)", "value": "tsne"},
+                            {"label": "UMAP (préserve la structure globale)", "value": "umap"},
+                            {"label": "PCA (plus rapide, moins précis)", "value": "pca"}
+                        ],
+                        value="tsne",
+                        clearable=False
+                    )
+                ], width=6),
+                dbc.Col([
+                    dbc.Button(
+                        "Appliquer", 
+                        id="cluster-map-apply-projection", 
+                        color="primary", 
+                        className="mt-4"
+                    )
+                ], width=6, className="d-flex align-items-end")
+            ])
+        ])
+    ], className="mb-4 shadow-sm")
     
-    # Create the scatter plot
+    # Créer les contrôles pour la visualisation
+    visualization_controls = dbc.Card([
+        dbc.CardHeader("Options de visualisation", className="bg-secondary text-white"),
+        dbc.CardBody([
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("Méthode de projection"),
+                    dcc.Dropdown(
+                        id="cluster-map-projection-method",
+                        options=[
+                            {"label": "t-SNE (préserve les structures locales)", "value": "tsne"},
+                            {"label": "UMAP (préserve la structure globale)", "value": "umap"},
+                            {"label": "PCA (plus rapide, moins précis)", "value": "pca"}
+                        ],
+                        value="tsne",
+                        clearable=False
+                    )
+                ], width=6),
+                dbc.Col([
+                    dbc.Button(
+                        "Appliquer", 
+                        id="cluster-map-apply-projection", 
+                        color="primary", 
+                        className="mt-4"
+                    )
+                ], width=6, className="d-flex align-items-end")
+            ])
+        ])
+    ], className="mb-4 shadow-sm")
+    
+    # Create the cluster map
     fig = create_cluster_map(df)
     
-    # Get cluster statistics
+    # Create cards for cluster statistics
     cluster_stats = get_cluster_statistics(clustering_data)
-    
-    # Create a card for each cluster
     cluster_stat_cards = []
     
-    # Define cluster colors (same as in the scatter plot)
+    # Définir les couleurs des clusters (mêmes couleurs que dans le graphique)
     clusters = df['cluster'].unique()
     color_scale = px.colors.qualitative.Plotly
     cluster_colors = {}
     for i, cluster in enumerate(clusters):
         cluster_colors[cluster] = color_scale[i % len(color_scale)]
     
-    # Create cards for each cluster
     for cluster, stats in cluster_stats.items():
-        # Create topic distribution bar chart if available
-        topic_chart = None
-        if "avg_topic_distribution" in stats and "top_topics" in stats:
-            # Get top 5 topics
-            avg_dist = stats["avg_topic_distribution"]
-            
-            # Create indices for all topics
-            topic_indices = list(range(len(avg_dist)))
-            
-            # Sort by distribution value
-            sorted_indices = sorted(topic_indices, key=lambda i: avg_dist[i], reverse=True)[:5]
-            
-            # Get values for these indices
-            top_values = [avg_dist[i] for i in sorted_indices]
-            
-            # Get labels (use topic names if available)
-            if "top_topic_names" in stats:
-                # Use the mapping from index to name
-                topic_names = {}
-                for i, idx in enumerate(stats["top_topics"]):
-                    if i < len(stats["top_topic_names"]):
-                        topic_names[idx] = stats["top_topic_names"][i]
-                
-                # Get names for sorted indices
-                labels = [topic_names.get(i, f"Topic {i}") for i in sorted_indices]
-            else:
-                labels = [f"Topic {i}" for i in sorted_indices]
-            
-            # Create bar chart
-            topic_fig = go.Figure(go.Bar(
-                x=labels,
-                y=top_values,
-                marker_color=px.colors.sequential.Viridis
-            ))
-            
-            topic_fig.update_layout(
-                title="Distribution des sujets",
-                margin=dict(l=20, r=20, t=40, b=20),
-                height=200
-            )
-            
-            topic_chart = dcc.Graph(figure=topic_fig)
-        
-        # Create topic words section if available
-        topic_words_section = None
-        if "top_topic_words" in stats and "top_topic_names" in stats:
-            topic_words_content = []
-            
-            for i, topic_name in enumerate(stats["top_topic_names"]):
-                if i < len(stats["top_topic_words"]):
-                    words = stats["top_topic_words"][i]
-                    topic_words_content.append(html.Div([
-                        html.Strong(f"{topic_name}: "),
-                        html.Span(", ".join(words))
-                    ], className="mb-1"))
-            
-            topic_words_section = html.Div([
-                html.H5("Mots-clés par sujet", className="mb-3"),
-                html.Div(topic_words_content)
-            ])
-        
-        # Create the card for this cluster
+        # Create a card for each cluster
         card = dbc.Card([
-            dbc.CardHeader([
-                html.H4(f"Cluster {cluster}", className="d-inline"),
-                html.Span(f" ({stats['num_docs']} articles)", className="text-muted")
-            ]),
+            dbc.CardHeader(f"Cluster {cluster} ({stats['num_docs']} articles)", className="bg-primary text-white"),
             dbc.CardBody([
-                # Topic distribution and words
-                topic_chart if topic_chart else html.Div(),
-                topic_words_section if topic_words_section else html.Div(),
+                # Statistiques de base
                 
                 # Add a button to load detailed statistics on demand
                 dbc.Button(
@@ -700,6 +734,8 @@ def get_cluster_map_layout():
                 dbc.Button("← Retour au clustering", id="back-to-clustering-btn", color="link", className="mb-3")
             ], width=12)
         ]),
+        # Ajouter le store pour les données de clustering
+        dcc.Store(id="browser-cluster-data-store", data=clustering_data),
         # Add loading spinner for the map
         dbc.Spinner(
             dbc.Row([
@@ -749,7 +785,8 @@ def register_cluster_map_callbacks(app):
         Output("article-modal", "is_open"),
         [Input("cluster-map-graph", "clickData"),
          Input("close-article-modal", "n_clicks")],
-        [State("article-modal", "is_open")]
+        [State("article-modal", "is_open")],
+        prevent_initial_call=True
     )
     def toggle_article_modal(clickData, close_clicks, is_open):
         ctx = callback_context
@@ -767,7 +804,8 @@ def register_cluster_map_callbacks(app):
     
     @app.callback(
         Output("selected-article-id-store", "data"),
-        Input("cluster-map-graph", "clickData")
+        Input("cluster-map-graph", "clickData"),
+        prevent_initial_call=True
     )
     def store_selected_article_id(clickData):
         if not clickData:
@@ -869,7 +907,9 @@ def register_cluster_map_callbacks(app):
         
         # Load articles data
         project_root, config, results_dir, _ = get_config_and_paths()
-        articles_path = results_dir / config['data'].get('articles_file', 'articles.json')
+        # Utiliser le répertoire processed_dir au lieu de results_dir pour articles.json
+        processed_dir = project_root / config['data']['processed_dir']
+        articles_path = processed_dir / 'articles.json'
         
         try:
             with open(articles_path, encoding='utf-8') as f:

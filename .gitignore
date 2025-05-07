@@ -1,6 +1,7 @@
 # Ignore all data and results
-/data/
-/results/
+
+data/
+results/
 
 # Ignore virtual environments
 venv/
@@ -31,7 +32,35 @@ Thumbs.db
 
 # Ignore test outputs
 /test_outputs/
-app_log*
+app_log*Construction des modèles Word2Vec
+
+Entraîne un modèle Word2Vec distinct pour chaque tranche temporelle.
+
+Utilise gensim pour l’entraînement avec sg=1 (Skip-gram) pour mieux capter les relations rares.
+
+python
+Copier
+Modifier
+from gensim.models import Word2Vec
+
+model = Word2Vec(sentences, vector_size=100, window=5, min_count=5, workers=4, sg=1)
+Alignement des espaces vectoriels
+
+Les modèles formés séparément ne sont pas alignés → utilise un algorithme d’alignement des espaces (ex: Orthogonal Procrustes).
+
+Outils : gensim, ou librairies spécifiques comme temporal_word_embeddings.
+
+Analyse de drift sémantique
+
+Pour un mot donné, calcule la distance cosinus entre ses vecteurs dans différents modèles temporels.
+
+Visualise avec des courbes ou des embeddings projetés en 2D (t-SNE, UMAP).
+
+Couplage avec ton module de term tracking
+
+Croise les évolutions d’usage (fréquences) avec les changements de contexte sémantique.
+
+Exemple : mot "ordinateur" → fréquence croissante + changement sémantique dans les années 1980.
 
 # Ignore temporary files
 *.tmp
@@ -40,5 +69,4 @@ app_log*
 *~
 .venv
 *.pkl
-
-examples/
+app_log*

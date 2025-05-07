@@ -42,6 +42,7 @@ class TopicModeler:
         self.num_topics = config.get('num_topics', 10)
         self.max_df = config.get('max_df', 0.7)
         self.min_df = config.get('min_df', 5)
+        self.workers = config.get('workers', 2)
         
         # Initialize model and vectorizer
         self.model = None
@@ -213,14 +214,30 @@ class TopicModeler:
             # Estimate number of topics from HDP
             self.num_topics = len(self.model.show_topics(formatted=False))
         else:
-            self.model = LdaModel(
-                self.gensim_corpus,
-                num_topics=self.num_topics,
-                id2word=self.gensim_dictionary,
-                passes=10,
-                alpha='auto',
-                random_state=42
-            )
+            # Vérifier si on veut utiliser le multi-threading
+            if self.workers > 1:
+                # Utiliser LdaMulticore avec une valeur fixe pour alpha
+                from gensim.models import LdaMulticore
+                
+                self.model = LdaMulticore(
+                    self.gensim_corpus,
+                    num_topics=self.num_topics,
+                    id2word=self.gensim_dictionary,
+                    passes=10,
+                    alpha='symmetric',  # Valeur fixe pour alpha, car 'auto' n'est pas supporté
+                    workers=self.workers,  # Utiliser le nombre de workers spécifié
+                    random_state=42
+                )
+            else:
+                # Utiliser LdaModel avec alpha='auto'
+                self.model = LdaModel(
+                    self.gensim_corpus,
+                    num_topics=self.num_topics,
+                    id2word=self.gensim_dictionary,
+                    passes=10,
+                    alpha='auto',
+                    random_state=42
+                )
         
         # Store feature names (gensim: id2word mapping)
         self.feature_names = [self.gensim_dictionary[i] for i in range(len(self.gensim_dictionary))]
@@ -242,12 +259,13 @@ class TopicModeler:
                 doc_topic_matrix.append(topic_dist)
         return doc_topic_matrix
     
-    def fit_transform_bertopic(self, texts: List[str]) -> np.ndarray:
+    def fit_transform_bertopic(self, texts: List[str], preprocessed_docs=None) -> np.ndarray:
         """
         Fit and transform texts using BERTopic.
         
         Args:
             texts: List of document texts
+            preprocessed_docs: Optional, prétraités par SpaCy (avec tokens)
         
         Returns:
             Document-topic matrix (list of topic distributions per doc)
@@ -259,8 +277,20 @@ class TopicModeler:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.logger.info(f"Using device for BERTopic: {device}")
         
-        # No need for stopwords as preprocessing is done by SpaCy
-        vectorizer_model = CountVectorizer()
+        # Si nous avons des documents prétraités, utilisons-les
+        if preprocessed_docs is not None:
+            self.logger.info("Using preprocessed documents with SpaCy tokens for BERTopic")
+            # Convertir les tokens en textes pour BERTopic
+            preprocessed_texts = [' '.join(doc.get('tokens', [])) for doc in preprocessed_docs]
+            self.logger.info(f"Example preprocessed text: {preprocessed_texts[0][:100]}...")
+            
+            # Utiliser un vectorizer qui ne fait pas de prétraitement supplémentaire
+            vectorizer_model = CountVectorizer(lowercase=False, token_pattern=r'\b\w+\b')
+        else:
+            self.logger.info("No preprocessed documents provided, using raw texts for BERTopic")
+            preprocessed_texts = texts
+            # Vectorizer standard avec prétraitement minimal
+            vectorizer_model = CountVectorizer()
         
         # Initialiser le modèle d'embedding avec le device spécifié
         embedding_model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", device=device)
@@ -276,11 +306,13 @@ class TopicModeler:
         )
         
         # Fit the model and get topics and probabilities
-        self.bertopic_topics, self.bertopic_probs = self.model.fit_transform(texts)
+        self.logger.info("Fitting BERTopic model...")
+        self.bertopic_topics, self.bertopic_probs = self.model.fit_transform(preprocessed_texts)
         
         # Get the actual number of topics found (may differ from requested)
         topic_info = self.model.get_topic_info()
         self.num_topics = len(topic_info) - 1  # Exclude the -1 outlier topic
+        self.logger.info(f"BERTopic found {self.num_topics} topics")
         
         # Convert sparse probabilities to a full document-topic matrix
         # Each row is a document, each column is a topic
@@ -348,7 +380,14 @@ class TopicModeler:
             top_terms = self.get_top_terms_gensim(n_terms=10)
         elif self.algorithm == 'bertopic':
             doc_ids, texts = self.preprocess_for_sklearn(documents)
-            doc_topic_matrix = self.fit_transform_bertopic(texts)
+            # Utiliser les documents prétraités par SpaCy si disponibles
+            if self.spacy_preprocessor and any('tokens' in doc for doc in documents[:10]):
+                self.logger.info("Using SpaCy preprocessed documents for BERTopic")
+                doc_topic_matrix = self.fit_transform_bertopic(texts, preprocessed_docs=documents)
+            else:
+                self.logger.info("No SpaCy preprocessed tokens found, using raw texts for BERTopic")
+                doc_topic_matrix = self.fit_transform_bertopic(texts)
+            
             doc_topics = {}
             for i, doc_id in enumerate(doc_ids):
                 doc_topics[doc_id] = {

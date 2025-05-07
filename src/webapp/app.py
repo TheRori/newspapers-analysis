@@ -31,6 +31,7 @@ from src.webapp.entity_recognition_viz import get_entity_recognition_layout, reg
 from src.webapp.integrated_analysis_viz import get_integrated_analysis_layout, register_integrated_analysis_callbacks
 from src.webapp.term_tracking_viz import get_term_tracking_layout, register_term_tracking_callbacks
 from src.webapp.export_manager_viz import get_export_manager_layout, register_export_manager_callbacks
+from src.webapp.source_manager_viz import get_source_manager_layout, register_source_manager_callbacks
 
 # Configuration de la journalisation
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -82,6 +83,9 @@ logger.info("Callbacks term_tracking enregistrés.")
 # Register callbacks for export manager page
 register_export_manager_callbacks(app)
 logger.info("Callbacks export_manager enregistrés.")
+# Register callbacks for source manager page
+register_source_manager_callbacks(app)
+logger.info("Callbacks source_manager enregistrés.")
 
 # Define the app layout
 logger.info("Définition du layout Dash...")
@@ -90,6 +94,7 @@ app.layout = dbc.Container([
         dbc.Col([
             html.H1("Newspaper Articles Analysis Dashboard", className="text-center mb-4"),
             html.Div([
+                dbc.Button("Gestion Source", id="btn-source-manager", color="primary", className="me-2", n_clicks=0),
                 dbc.Button("Lexical Analysis", id="btn-lexical", color="primary", className="me-2", n_clicks=0),
                 dbc.Button("Topic Modeling", id="btn-topic", color="secondary", className="me-2", n_clicks=0),
                 dbc.Button("Clustering", id="btn-clustering", color="info", className="me-2", n_clicks=0),
@@ -113,7 +118,8 @@ logger.info("Layout Dash défini.")
 
 @app.callback(
     dash.dependencies.Output("page-content", "children"),
-    [dash.dependencies.Input("btn-lexical", "n_clicks"),
+    [dash.dependencies.Input("btn-source-manager", "n_clicks"),
+     dash.dependencies.Input("btn-lexical", "n_clicks"),
      dash.dependencies.Input("btn-topic", "n_clicks"),
      dash.dependencies.Input("btn-clustering", "n_clicks"),
      dash.dependencies.Input("btn-cluster-map", "n_clicks"),
@@ -123,15 +129,15 @@ logger.info("Layout Dash défini.")
      dash.dependencies.Input("btn-term-tracking", "n_clicks"),
      dash.dependencies.Input("btn-export-manager", "n_clicks")],
 )
-def display_page(btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_sentiment, btn_entity, btn_integrated, btn_term_tracking, btn_export_manager):
-    ctx_trigger = ctx.triggered
-    logger.info(f"display_page appelé, ctx.triggered = {ctx_trigger}")
-    if not ctx_trigger:
-        logger.info("Aucun bouton cliqué, affichage du layout lexical_analysis.")
-        return get_lexical_analysis_layout()
-    button_id = ctx_trigger[0]["prop_id"].split(".")[0]
-    logger.info(f"Bouton cliqué : {button_id}")
-    if button_id == "btn-lexical":
+def display_page(btn_source_manager, btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_sentiment, btn_entity, btn_integrated, btn_term_tracking, btn_export_manager):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        button_id = "btn-source-manager"
+    else:
+        button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    if button_id == "btn-source-manager":
+        return get_source_manager_layout()
+    elif button_id == "btn-lexical":
         return get_lexical_analysis_layout()
     elif button_id == "btn-topic":
         return get_topic_modeling_layout()
@@ -149,8 +155,8 @@ def display_page(btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_se
         return get_term_tracking_layout()
     elif button_id == "btn-export-manager":
         return get_export_manager_layout()
-    logger.warning("ID de bouton inconnu, affichage du layout lexical_analysis par défaut.")
-    return get_lexical_analysis_layout()
+    else:
+        return get_source_manager_layout()
 
 # Callback to update data selection controls based on analysis type
 @app.callback(

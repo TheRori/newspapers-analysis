@@ -98,17 +98,9 @@ def get_parser():
     parser.add_argument('--search-mode', choices=['linear', 'bisect'], default='linear', help='Mode de recherche du meilleur num_topics (linear ou bisect, défaut: linear)')
     parser.add_argument('--bisect-tol', type=int, default=1, help='Tolérance (écart min) pour arrêt dichotomique (défaut: 1)')
     parser.add_argument('--llm-topic-names', action='store_true', help='Générer automatiquement les noms de topics via LLM (cf. config llm)')
-    parser.add_argument('--use-cache', action='store_true', help='Use cached preprocessed documents if available')
-    parser.add_argument('--input-file', type=str, help='Chemin vers un fichier JSON d\'articles alternatif (remplace articles.json)')
+    parser.add_argument('--workers', type=int, default=2, help='Nombre de workers CPU à utiliser pour la modélisation (défaut: 2)')
     
-    # Add filtering options
-    parser.add_argument('--start-date', type=str, help='Filter articles starting from this date (format: YYYY-MM-DD)')
-    parser.add_argument('--end-date', type=str, help='Filter articles until this date (format: YYYY-MM-DD)')
-    parser.add_argument('--newspaper', type=str, help='Filter articles by newspaper name')
-    parser.add_argument('--canton', type=str, help='Filter articles by canton (e.g., FR, VD)')
-    parser.add_argument('--topic', type=str, help='Filter articles by existing topic tag')
-    parser.add_argument('--min-words', type=int, help='Filter articles with at least this many words')
-    parser.add_argument('--max-words', type=int, help='Filter articles with at most this many words')
+    # Les options de filtrage et l'option input-file ont été supprimées
     
     return parser
 
@@ -132,10 +124,13 @@ def main():
     results_dir = project_root / 'data' / 'results'
     os.makedirs(results_dir, exist_ok=True)
     
-    # Utiliser le fichier d'articles alternatif si spécifié
-    if args.input_file:
-        articles_path = Path(args.input_file)
-        logger.info(f"Utilisation du fichier d'articles alternatif: {articles_path}")
+    # Vérifier si une variable d'environnement spécifie un fichier source personnalisé
+    custom_source = os.environ.get('TOPIC_MODELING_SOURCE_FILE')
+    if custom_source and os.path.exists(custom_source):
+        articles_path = Path(custom_source)
+        logger.info(f"Utilisation du fichier d'articles personnalisé (via variable d'environnement): {articles_path}")
+    else:
+        logger.info(f"Utilisation du fichier d'articles par défaut: {articles_path}")
     
     # Dossier pour sauvegarder les modèles et le cache
     models_dir = project_root / 'data' / 'models'
@@ -179,37 +174,10 @@ def main():
         articles = json.load(f)
     logger.info(f"Loaded {len(articles)} articles from {articles_path}")
     
-    # Apply filters if specified
-    original_count = len(articles)
-    filtered_articles = apply_all_filters(
-        articles,
-        start_date=args.start_date,
-        end_date=args.end_date,
-        newspaper=args.newspaper,
-        canton=args.canton,
-        topic=args.topic,
-        min_words=args.min_words,
-        max_words=args.max_words
-    )
-    
-    # Log filter results
-    if original_count != len(filtered_articles):
-        filter_summary = get_filter_summary(
-            original_count,
-            len(filtered_articles),
-            start_date=args.start_date,
-            end_date=args.end_date,
-            newspaper=args.newspaper,
-            canton=args.canton,
-            topic=args.topic,
-            min_words=args.min_words,
-            max_words=args.max_words
-        )
-        
-        # Log each filter that was applied
-        for filter_name, filter_value in filter_summary['filters_applied'].items():
-            logger.info(f"Filtered by {filter_name} {filter_value}: {len(filtered_articles)}/{original_count} articles remaining")
-    
+    # Les filtres ont été supprimés
+    filtered_articles = articles
+    logger.info(f"Utilisation de tous les articles ({len(articles)})")
+
     # Check if we have enough articles after filtering
     if len(filtered_articles) < 10:
         logger.warning(f"Only {len(filtered_articles)} articles remain after filtering. This may be too few for meaningful topic modeling.")
@@ -221,6 +189,10 @@ def main():
     articles = filtered_articles
     logger.info(f"Using {len(articles)} articles after applying filters")
 
+    # Ajouter le paramètre workers à la configuration
+    topic_config['workers'] = args.workers
+    logger.info(f"Utilisation de {args.workers} workers CPU pour la modélisation")
+    
     # Initialize topic modeler
     modeler = TopicModeler(topic_config)
 
@@ -266,19 +238,36 @@ def main():
     texts = []
     tokenized_texts = []
     
-    # Try to load from cache if requested
-    cache_loaded = False
-    if args.use_cache and cache_file.exists():
+    # Vérifier si un fichier de cache spécifique a été sélectionné via l'interface
+    cache_config_path = project_root / "config" / "cache_config.json"
+    selected_cache_file = None
+    
+    if cache_config_path.exists():
         try:
-            logger.info(f"Loading preprocessed documents from cache: {cache_file}")
-            with open(cache_file, 'rb') as f:
+            with open(cache_config_path, 'r', encoding='utf-8') as f:
+                cache_config = json.load(f)
+                selected_cache = cache_config.get("selected_cache")
+                if selected_cache:
+                    selected_cache_file = cache_dir / selected_cache
+                    logger.info(f"Fichier de cache spécifique sélectionné via l'interface: {selected_cache_file}")
+        except Exception as e:
+            logger.warning(f"Erreur lors de la lecture du fichier de configuration du cache: {e}")
+    
+    # Essayer de charger depuis le cache (toujours tenter d'utiliser le cache s'il existe)
+    cache_loaded = False
+    cache_to_use = selected_cache_file if selected_cache_file and selected_cache_file.exists() else cache_file
+    
+    if cache_to_use.exists():
+        try:
+            logger.info(f"Chargement des documents prétraités depuis le cache: {cache_to_use}")
+            with open(cache_to_use, 'rb') as f:
                 cache_data = pickle.load(f)
                 texts = cache_data['texts']
                 tokenized_texts = cache_data['tokenized_texts']
-                logger.info(f"Successfully loaded {len(texts)} documents from cache")
+                logger.info(f"{len(texts)} documents chargés avec succès depuis le cache")
                 cache_loaded = True
         except Exception as e:
-            logger.warning(f"Failed to load cache: {e}")
+            logger.warning(f"Impossible de charger le cache: {e}")
             cache_loaded = False
     
     # Preprocess if cache not loaded
@@ -331,7 +320,7 @@ def main():
         else:
             coherence_dict = {}
             for k in range(args.k_min, args.k_max + 1):
-                model_k = LdaMulticore(corpus=corpus, id2word=id2word, num_topics=k, workers=2, random_state=42)
+                model_k = LdaMulticore(corpus=corpus, id2word=id2word, num_topics=k, workers=args.workers, random_state=42)
                 cm = CoherenceModel(model=model_k, texts=tokenized_texts, dictionary=id2word, coherence='c_v')
                 score = cm.get_coherence()
                 coherence_dict[k] = score
@@ -520,10 +509,24 @@ def main():
             logger.info(f"Topic #{topic_idx}: {frac:.2%}")
 
         # 4. Documents les plus représentatifs par sujet
-        rep_docs = modeler.get_representative_docs(n_docs=3)
-        logger.info("\n--- Documents représentatifs par sujet (indices) ---")
-        for topic_idx, doc_indices in rep_docs.items():
-            logger.info(f"Topic #{topic_idx}: {doc_indices}")
+        try:
+            # Vérifier quelle méthode est disponible selon l'algorithme utilisé
+            if hasattr(modeler, 'get_bertopic_representative_docs'):
+                rep_docs = modeler.get_bertopic_representative_docs(n_docs=3)
+            elif hasattr(modeler, 'get_representative_documents'):
+                rep_docs = modeler.get_representative_documents(n_docs=3)
+            else:
+                # Utiliser une approche générique si aucune méthode spécifique n'est disponible
+                logger.warning("Méthode pour obtenir les documents représentatifs non disponible pour cet algorithme")
+                rep_docs = {}
+                
+            if rep_docs:
+                logger.info("\n--- Documents représentatifs par sujet (indices) ---")
+                for topic_idx, doc_indices in rep_docs.items():
+                    logger.info(f"Topic #{topic_idx}: {doc_indices}")
+        except Exception as e:
+            logger.warning(f"Erreur lors de la récupération des documents représentatifs: {e}")
+            rep_docs = {}
 
         # 5. Sauvegarde des scores et analyses avancées dans results
         # Utilise le nom du LLM effectivement utilisé pour nommer les topics

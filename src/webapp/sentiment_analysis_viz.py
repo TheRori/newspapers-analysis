@@ -2,7 +2,7 @@
 Sentiment Analysis Visualization Page for Dash app
 """
 
-from dash import html, dcc, Input, Output, State, ctx
+from dash import html, dcc, Input, Output, State, ctx, ALL, no_update
 import dash_bootstrap_components as dbc
 import plotly.express as px
 import plotly.graph_objects as go
@@ -26,6 +26,14 @@ from src.webapp.topic_filter_component import (
     get_filter_parameters,
     get_filter_states,
     are_filters_active
+)
+
+# Import du module d'affichage des articles
+from src.webapp.article_display_utils import (
+    create_articles_modal,
+    create_full_article_modal,
+    register_articles_modal_callback,
+    register_full_article_modal_callback
 )
 
 # Extract parser arguments from run_sentiment_analysis.py
@@ -80,12 +88,18 @@ def get_sentiment_results():
     print(f"Nombre de fichiers trouvés: {len(summary_files)}")
     
     # Sort by modification time (newest first)
-    summary_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+    # Utiliser os.stat au lieu de os.path.getmtime pour forcer la mise à jour des horodatages
+    summary_files.sort(key=lambda x: os.stat(x).st_mtime, reverse=True)
+    
+    # Ajout du paramètre de cache-busting pour forcer le rechargement des fichiers
+    import time as time_module
+    current_time = int(time_module.time())  # Timestamp actuel pour éviter les problèmes de cache
     
     # Format for dropdown
     options = [
-        {'label': f"{f.stem} ({pd.to_datetime(os.path.getmtime(f), unit='s').strftime('%Y-%m-%d %H:%M')})", 
-         'value': str(f)}
+        {'label': f"{f.stem} ({pd.to_datetime(os.stat(f).st_mtime, unit='s').strftime('%Y-%m-%d %H:%M')})", 
+         'value': f"{str(f)}?t={current_time}"  # Ajouter un paramètre pour éviter le cache
+        }
         for f in summary_files
     ]
     
@@ -149,92 +163,77 @@ def get_sentiment_analysis_layout():
     
     # Create the layout
     layout = html.Div([
-        dbc.Row([
-            dbc.Col([
-                html.H2("Analyse de Sentiment"),
-                html.P("Analyser le sentiment des articles de presse et visualiser les résultats."),
-                html.Hr()
-            ], width=12)
-        ]),
-        
-        # Tabs for Run and Results
-        dbc.Tabs([
-            # Tab for running sentiment analysis
-            dbc.Tab(label="Lancer une analyse", children=[
-                html.Div([
-                    html.H4("Paramètres d'analyse"),
-                    html.P("Configurez les paramètres pour l'analyse de sentiment."),
-                    dbc.Form(dbc.Row(form_fields)),
-                    html.Br(),
-                    dbc.Button("Lancer l'analyse", id="run-sentiment-button", color="primary"),
-                    html.Br(),
-                    html.Div(id="sentiment-run-output")
-                ], className="mt-3")
+        dbc.Container([
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader(html.H3("Analyse de sentiment", className="mb-0")),
+                        dbc.CardBody([
+                            html.P("Configurez les paramètres de l'analyse de sentiment ci-dessous, puis cliquez sur 'Lancer'.", className="text-muted mb-3"),
+                            
+                            # Add topic filter component
+                            get_topic_filter_component(id_prefix="sentiment-run-filter"),
+                            
+                            # Champ de sélection du fichier source
+                            html.Div([
+                                dbc.Label("Fichier source (JSON)"),
+                                dbc.InputGroup([
+                                    dbc.Input(id="sentiment-source-file-input", type="text", placeholder="Chemin vers le fichier JSON d'articles"),
+                                    dbc.Button("Parcourir", id="sentiment-source-file-browse", color="secondary")
+                                ]),
+                                html.Small("Laissez vide pour utiliser le fichier par défaut de la configuration.", className="text-muted"),
+                                html.Br()
+                            ], className="mb-3"),
+                            
+                            # Form fields
+                            html.Div(form_fields, className="mb-3"),
+                            
+                            # Run button
+                            dbc.Button("Lancer l'analyse", id="run-sentiment-button", color="primary", className="mb-3"),
+                            
+                            # Output
+                            html.Div(id="sentiment-run-output", className="mt-3")
+                        ])
+                    ], className="mb-4")
+                ], width=12)
             ]),
             
-            # Tab for viewing results
-            dbc.Tab(label="Résultats", children=[
-                html.Div([
-                    html.H4("Visualisation des résultats"),
-                    html.P("Sélectionnez un fichier de résultats pour visualiser l'analyse de sentiment."),
-                    dbc.Row([
-                        dbc.Col([
-                            dbc.Label("Fichier de résultats:"),
-                            dcc.Dropdown(
-                                id="sentiment-results-dropdown",
-                                options=sentiment_results,
-                                value=sentiment_results[0]['value'] if sentiment_results else None,
-                                placeholder="Sélectionnez un fichier de résultats"
-                            )
-                        ], width=6)
-                    ]),
-                    html.Br(),
-                    
-                    # Ajout du composant de filtrage par topic/cluster
-                    dbc.Row([
-                        dbc.Col([
-                            dbc.Accordion([
-                                dbc.AccordionItem(
-                                    get_topic_filter_component(id_prefix="sentiment-topic-filter"),
-                                    title="Filtrage par Topic/Cluster"
-                                )
-                            ], start_collapsed=True, id="sentiment-filter-accordion")
-                        ], width=12)
-                    ]),
-                    html.Br(),
-                    
-                    # Results container
-                    html.Div(id="sentiment-results-container", children=[
-                        # This will be populated by the callback
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader(html.H3("Résultats de l'analyse de sentiment", className="mb-0")),
+                        dbc.CardBody([
+                            # Results dropdown
+                            dbc.Row([
+                                dbc.Col([
+                                    dbc.Label("Sélectionnez un fichier de résultats", html_for="sentiment-results-dropdown"),
+                                    dcc.Dropdown(
+                                        id="sentiment-results-dropdown",
+                                        options=sentiment_results,
+                                        value=sentiment_results[0]['value'] if sentiment_results else None,
+                                        clearable=False
+                                    )
+                                ])
+                            ]),
+                            html.Br(),
+                            
+                            # Le composant de filtrage par cluster a été supprimé ici car il est utilisé uniquement en amont
+                            
+                            # Results container
+                            html.Div(id="sentiment-results-container", children=[
+                                # This will be populated by the callback
+                            ])
+                        ], className="mt-3")
                     ])
-                ], className="mt-3")
-            ]),
-            
-            # Nouvelle tab pour les analyses filtrées
-            dbc.Tab(label="Analyses Filtrées", children=[
-                html.Div([
-                    html.H4("Analyses de sentiment filtrées par topic/cluster"),
-                    html.P("Lancez une analyse de sentiment filtrée par topic ou cluster."),
-                    
-                    # Composant de filtrage
-                    get_topic_filter_component(id_prefix="sentiment-filtered-analysis"),
-                    html.Br(),
-                    
-                    # Bouton pour lancer l'analyse filtrée
-                    dbc.Button(
-                        "Lancer l'analyse filtrée",
-                        id="run-filtered-sentiment-button",
-                        color="primary",
-                        className="mb-3"
-                    ),
-                    html.Br(),
-                    
-                    # Conteneur pour les résultats filtrés
-                    html.Div(id="filtered-sentiment-results-container")
-                ], className="mt-3")
+                ], width=12)
             ])
         ])
     ])
+    
+    # Add article modal (ancien modal)
+    # Ajouter les nouveaux modals pour l'affichage des articles lors d'un clic sur les graphiques
+    layout.children.append(create_articles_modal(id_prefix="sentiment"))
+    layout.children.append(create_full_article_modal(id_prefix="sentiment"))
     
     return layout
 
@@ -266,7 +265,8 @@ def create_sentiment_visualizations(summary_file_path, is_filtered=False):
         ])
         sentiment_distribution.update_layout(
             title="Distribution du sentiment" if not is_filtered else "Distribution du sentiment (articles filtrés)",
-            height=400
+            height=400,
+            clickmode='event+select'  # Activer les événements de clic
         )
         
         # 2. Sentiment histogram (compound scores)
@@ -278,7 +278,10 @@ def create_sentiment_visualizations(summary_file_path, is_filtered=False):
             title="Distribution des scores de sentiment" if not is_filtered else "Distribution des scores de sentiment (articles filtrés)",
             color_discrete_sequence=['#1f77b4']
         )
-        sentiment_histogram.update_layout(height=400)
+        sentiment_histogram.update_layout(
+            height=400,
+            clickmode='event+select'  # Activer les événements de clic
+        )
         
         # 3. Summary statistics card
         summary_card = dbc.Card(
@@ -319,8 +322,14 @@ def create_sentiment_visualizations(summary_file_path, is_filtered=False):
         
         visualizations.append(
             dbc.Row([
-                dbc.Col(dcc.Graph(figure=sentiment_distribution), width=6),
-                dbc.Col(dcc.Graph(figure=sentiment_histogram), width=6)
+                dbc.Col(dcc.Graph(
+                    id={'type': 'sentiment-graph', 'subtype': 'sentiment-pie'},
+                    figure=sentiment_distribution
+                ), width=6),
+                dbc.Col(dcc.Graph(
+                    id={'type': 'sentiment-graph', 'subtype': 'sentiment-histogram'},
+                    figure=sentiment_histogram
+                ), width=6)
             ])
         )
         
@@ -342,12 +351,12 @@ def create_sentiment_visualizations(summary_file_path, is_filtered=False):
             negative_rows.append(
                 html.Tr([
                     html.Td(i+1),
-                    html.Td(html.A(title, id=f"negative-article-{i}", className="article-link")),
+                    html.Td(html.A(title, id={'type': 'sentiment-graph', 'subtype': 'sentiment-top-negative', 'index': i}, className="article-link")),
                     html.Td(f"{score:.4f}"),
                     html.Td(newspaper),
                     html.Td(date),
                     html.Td(article_id, style={"display": "none"})
-                ])
+                ], id={'type': 'sentiment-article-row', 'sentiment': 'negative', 'index': i}, **{'data-article-id': article_id})
             )
         
         positive_rows = []
@@ -361,12 +370,12 @@ def create_sentiment_visualizations(summary_file_path, is_filtered=False):
             positive_rows.append(
                 html.Tr([
                     html.Td(i+1),
-                    html.Td(html.A(title, id=f"positive-article-{i}", className="article-link")),
+                    html.Td(html.A(title, id={'type': 'sentiment-graph', 'subtype': 'sentiment-top-positive', 'index': i}, className="article-link")),
                     html.Td(f"{score:.4f}"),
                     html.Td(newspaper),
                     html.Td(date),
                     html.Td(article_id, style={"display": "none"})
-                ])
+                ], id={'type': 'sentiment-article-row', 'sentiment': 'positive', 'index': i}, **{'data-article-id': article_id})
             )
         
         negative_table = dbc.Table(
@@ -453,17 +462,14 @@ def create_sentiment_visualizations(summary_file_path, is_filtered=False):
         ])]
 
 # Function to create filtered sentiment visualizations
-def create_filtered_sentiment_visualizations(summary_file_path, topic_results_path, topic_id, cluster_id, exclude_topic_id, exclude_cluster_id):
+def create_filtered_sentiment_visualizations(summary_file_path, cluster_file, cluster_id):
     """
-    Crée des visualisations de sentiment filtrées par topic/cluster.
+    Crée des visualisations de sentiment filtrées par cluster.
     
     Args:
         summary_file_path: Chemin vers le fichier de résultats de sentiment
-        topic_results_path: Chemin vers le fichier de résultats de topic modeling
-        topic_id: ID du topic à inclure
+        cluster_file: Chemin vers le fichier de clusters
         cluster_id: ID du cluster à inclure
-        exclude_topic_id: ID du topic à exclure
-        exclude_cluster_id: ID du cluster à exclure
         
     Returns:
         Composants Dash pour les visualisations
@@ -473,49 +479,60 @@ def create_filtered_sentiment_visualizations(summary_file_path, topic_results_pa
         with open(summary_file_path, 'r', encoding='utf-8') as f:
             summary_data = json.load(f)
         
-        # Charger les données de topic
-        with open(topic_results_path, 'r', encoding='utf-8') as f:
-            topic_data = json.load(f)
+        # Charger les données de cluster
+        with open(cluster_file, 'r', encoding='utf-8') as f:
+            cluster_data = json.load(f)
         
         # Charger les articles avec sentiment
         articles_file_path = summary_file_path.replace('sentiment_summary', 'articles_with_sentiment')
         with open(articles_file_path, 'r', encoding='utf-8') as f:
             articles_data = json.load(f)
         
-        # Filtrer les articles par topic/cluster
+        # Filtrer les articles par cluster
         filtered_articles = []
         
-        # Récupérer les informations de topic/cluster
-        doc_topics = topic_data.get('doc_topics', {})
-        doc_clusters = topic_data.get('clusters', {})
+        # Récupérer les IDs d'articles du cluster sélectionné
+        cluster_article_ids = set()
         
+        # Vérifier le format du fichier de cluster
+        if "doc_ids" in cluster_data and "labels" in cluster_data:
+            # Format avec doc_ids et labels
+            doc_ids = cluster_data.get("doc_ids", [])
+            labels = cluster_data.get("labels", [])
+            
+            # Convertir cluster_id en entier
+            try:
+                cluster_id_int = int(cluster_id)
+                
+                # Filtrer les articles par label
+                if len(doc_ids) == len(labels):
+                    for i, label in enumerate(labels):
+                        if label == cluster_id_int:
+                            cluster_article_ids.add(doc_ids[i])
+            except ValueError:
+                print(f"Erreur: L'ID de cluster {cluster_id} n'est pas un entier valide")
+        elif "clusters" in cluster_data:
+            # Format avec une liste de clusters
+            clusters = cluster_data.get("clusters", [])
+            for cluster in clusters:
+                if str(cluster.get("id", "")) == str(cluster_id):
+                    cluster_article_ids.update(cluster.get("articles", []))
+        else:
+            # Format inconnu, essayer de détecter les clusters
+            print(f"Format de fichier de cluster inconnu: {list(cluster_data.keys())}")
+            
+            # Si le fichier contient des clés numériques, supposer que ce sont des clusters
+            if str(cluster_id) in cluster_data:
+                articles = cluster_data.get(str(cluster_id), [])
+                if isinstance(articles, list):
+                    cluster_article_ids.update(articles)
+        
+        # Filtrer les articles
         for article in articles_data:
             article_id = article.get('id', article.get('doc_id', ''))
             
-            # Vérifier si l'article doit être inclus
-            include_article = True
-            
-            # Filtre par topic
-            if topic_id is not None and article_id in doc_topics:
-                if doc_topics[article_id].get('dominant_topic') != int(topic_id):
-                    include_article = False
-            
-            # Filtre par cluster
-            if cluster_id is not None and article_id in doc_clusters:
-                if str(doc_clusters[article_id]) != str(cluster_id):
-                    include_article = False
-            
-            # Exclusion par topic
-            if exclude_topic_id is not None and article_id in doc_topics:
-                if doc_topics[article_id].get('dominant_topic') == int(exclude_topic_id):
-                    include_article = False
-            
-            # Exclusion par cluster
-            if exclude_cluster_id is not None and article_id in doc_clusters:
-                if str(doc_clusters[article_id]) == str(exclude_cluster_id):
-                    include_article = False
-            
-            if include_article:
+            # Vérifier si l'article est dans le cluster sélectionné
+            if article_id in cluster_article_ids:
                 filtered_articles.append(article)
         
         # Calculer les statistiques de sentiment pour les articles filtrés
@@ -629,28 +646,149 @@ def create_filtered_sentiment_visualizations(summary_file_path, topic_results_pa
             html.P(f"Erreur lors de la création des visualisations filtrées: {str(e)}", className="text-danger")
         ])
 
+# Fonction pour extraire les données du clic sur un graphique de sentiment
+def extract_sentiment_click_data(point, prop_id):
+    try:
+        # Extraire l'ID du graphique (sous forme de dictionnaire)
+        graph_id = json.loads(prop_id.split('.')[0])
+        subtype = graph_id.get('subtype', '')
+        
+        print(f"Clic sur graphique: {subtype}")
+        print(f"Point data: {point}")
+        
+        filter_type = None
+        filter_value = None
+        term = None
+        
+        # Extraire les données en fonction du type de graphique
+        if subtype == 'sentiment-by-newspaper':
+            # Pour le graphique de sentiment par journal
+            filter_type = 'newspaper'
+            filter_value = point.get('label') or point.get('x')
+            term = filter_value  # Simplified term for better filtering
+        elif subtype == 'sentiment-by-date':
+            # Pour le graphique de sentiment par date
+            filter_type = 'date'
+            filter_value = point.get('x')
+            term = filter_value  # Simplified term for better filtering
+        elif subtype == 'sentiment-by-topic':
+            # Pour le graphique de sentiment par sujet
+            filter_type = 'topic'
+            filter_value = point.get('label') or point.get('x')
+            term = filter_value  # Simplified term for better filtering
+        elif subtype == 'sentiment-distribution':
+            # Pour le graphique de distribution des sentiments (histogramme)
+            filter_type = 'sentiment_score'
+            score = point.get('x')
+            
+            # Déterminer la catégorie de sentiment en fonction du score
+            if score <= -0.05:
+                sentiment_category = "négatif"
+            elif score >= 0.05:
+                sentiment_category = "positif"
+            else:
+                sentiment_category = "neutre"
+                
+            filter_value = score
+            # No term needed for sentiment filtering as it's handled by the filter_type
+        elif subtype == 'sentiment-pie' or subtype == 'sentiment-histogram':
+            # Pour le graphique en camembert des sentiments
+            if 'label' in point:
+                # Cas du camembert
+                filter_type = 'sentiment_category'
+                filter_value = point['label'].lower()  # positif, neutre, négatif
+                # No term needed for sentiment filtering as it's handled by the filter_type
+            else:
+                # Cas de l'histogramme
+                filter_type = 'sentiment_score'
+                score = point.get('x')
+                
+                # Déterminer la catégorie de sentiment en fonction du score
+                if score <= -0.05:
+                    sentiment_category = "négatif"
+                elif score >= 0.05:
+                    sentiment_category = "positif"
+                else:
+                    sentiment_category = "neutre"
+                    
+                filter_value = score
+                # No term needed for sentiment filtering as it's handled by the filter_type
+        elif subtype == 'sentiment-top-positive' or subtype == 'sentiment-top-negative':
+            # Pour les graphiques des articles les plus positifs/négatifs
+            # Récupérer l'ID de l'article depuis les attributs de la ligne du tableau
+            try:
+                row_id = graph_id.get('index')
+                # Trouver l'article correspondant dans la liste des articles
+                filter_type = 'sentiment_category'
+                if subtype == 'sentiment-top-positive':
+                    filter_value = 'positif'
+                else:
+                    filter_value = 'négatif'
+                # No term needed for sentiment filtering as it's handled by the filter_type
+            except Exception as e:
+                print(f"Erreur lors de l'extraction de l'ID d'article: {str(e)}")
+                filter_type = None
+                filter_value = None
+                term = None
+        
+        print(f"Filtres extraits: type={filter_type}, value={filter_value}, term={term}")
+        return filter_type, filter_value, term
+    except Exception as e:
+        print(f"Erreur lors de l'extraction des données de clic: {str(e)}")
+        return None, None, None
+
 # Callback registration (to be called from app.py)
 def register_sentiment_analysis_callbacks(app):
-    # Register callbacks for topic filter component
-    register_topic_filter_callbacks(app, id_prefix="sentiment-topic-filter")
-    register_topic_filter_callbacks(app, id_prefix="sentiment-filtered-analysis")
+    # Register callbacks for topic filter component (uniquement pour l'analyse)
+    register_topic_filter_callbacks(app, id_prefix="sentiment-run-filter")
+    
+    # Enregistrer les callbacks pour l'affichage des articles lors d'un clic sur les graphiques
+    register_articles_modal_callback(
+        app,
+        graph_id_pattern={'type': 'sentiment-graph', 'subtype': ALL},
+        id_prefix="sentiment",
+        data_extraction_func=extract_sentiment_click_data
+    )
+    
+    # Enregistrer le callback pour l'affichage de l'article complet
+    register_full_article_modal_callback(app, id_prefix="sentiment")
     
     # Callback to run sentiment analysis
     @app.callback(
         Output("sentiment-run-output", "children"),
+        Output("sentiment-results-dropdown", "options"),
+        Output("sentiment-results-dropdown", "value"),
         Input("run-sentiment-button", "n_clicks"),
-        [State(f"sentiment-{arg['name']}-input", "value") for arg in get_sentiment_analysis_args()],
+        [State(f"sentiment-{arg['name']}-input", "value") for arg in get_sentiment_analysis_args()] +
+        [State("sentiment-run-filter-cluster-file-dropdown", "value"),
+         State("sentiment-run-filter-cluster-id-dropdown", "value"),
+         State("sentiment-source-file-input", "value"),
+         State("sentiment-results-dropdown", "options")],
         prevent_initial_call=True
     )
     def run_sentiment_analysis(n_clicks, *args):
         if not n_clicks:
-            return ""
+            current_options = args[-1]
+            return "", current_options, None
         
         # Get argument names
         arg_names = [arg['name'] for arg in get_sentiment_analysis_args()]
         
+        # Extract cluster filter parameters, source file and current options
+        cluster_file = args[-4]
+        cluster_id = args[-3]
+        source_file = args[-2]
+        current_options = args[-1]
+        args = args[:-4]  # Remove cluster filter parameters, source file and current options from args
+        
+        # Get absolute path to the script
+        script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts", "run_sentiment_analysis.py"))
+        
+        # Get project root directory
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        
         # Create command
-        cmd = [sys.executable, os.path.join(os.path.dirname(__file__), "..", "scripts", "run_sentiment_analysis.py")]
+        cmd = [sys.executable, script_path]
         
         # Add arguments
         for arg_name, arg_value in zip(arg_names, args):
@@ -662,192 +800,90 @@ def register_sentiment_analysis_callbacks(app):
                     cmd.append(f"--{arg_name}")
                     cmd.append(str(arg_value))
         
+        # Add cluster filter parameters if provided
+        if cluster_file and cluster_id:
+            cmd.extend(["--cluster-file", str(cluster_file)])
+            cmd.extend(["--cluster-id", str(cluster_id)])
+            
+        # Add source file parameter if provided
+        if source_file:
+            cmd.extend(["--source-file", str(source_file)])
+        
         # Run command
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            # Exécuter la commande avec le répertoire racine du projet comme répertoire de travail
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=project_root)
+            # Récupérer la liste mise à jour des résultats disponibles
+            updated_results = get_sentiment_results()
+            
+            # Trouver le fichier de résultat le plus récent
+            selected_value = updated_results[0]['value'] if updated_results else None
+            
             return html.Div([
                 html.P("Analyse de sentiment terminée avec succès !"),
                 html.Pre(result.stdout, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
-            ])
+            ]), updated_results, selected_value
         except subprocess.CalledProcessError as e:
             return html.Div([
                 html.P("Erreur lors de l'analyse de sentiment:", className="text-danger"),
                 html.Pre(e.stderr, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
-            ])
+            ]), current_options, None
     
     # Callback to display sentiment analysis results
     @app.callback(
         Output("sentiment-results-container", "children"),
-        [Input("sentiment-results-dropdown", "value"),
-         Input("sentiment-topic-filter-apply-button", "n_clicks")],
-        [State("sentiment-topic-filter-topic-dropdown", "value"),
-         State("sentiment-topic-filter-cluster-dropdown", "value"),
-         State("sentiment-topic-filter-exclude-topic-dropdown", "value"),
-         State("sentiment-topic-filter-exclude-cluster-dropdown", "value"),
-         State("sentiment-topic-filter-results-dropdown", "value")]
+        Input("sentiment-results-dropdown", "value")
     )
-    def display_sentiment_results(results_file, apply_filters, topic_id, cluster_id, exclude_topic_id, exclude_cluster_id, topic_results_file):
-        ctx = dash.callback_context
+    def display_sentiment_results(results_file):
+        # Extraire le chemin du fichier du paramètre de cache-busting
+        if results_file and '?' in results_file:
+            results_file = results_file.split('?')[0]
+
         if not results_file:
             return html.P("Sélectionnez un fichier de résultats pour afficher les visualisations.")
-        
-        # Vérifier si les filtres sont actifs
-        filters_active = are_filters_active("sentiment-topic-filter", ctx)
-        
-        if filters_active and topic_results_file:
-            # Appliquer les filtres
-            return create_filtered_sentiment_visualizations(
-                results_file, 
-                topic_results_file, 
-                topic_id, 
-                cluster_id, 
-                exclude_topic_id, 
-                exclude_cluster_id
-            )
-        else:
-            # Afficher les résultats sans filtre
-            return create_sentiment_visualizations(results_file)
+
+        # Afficher les résultats sans filtre
+        return create_sentiment_visualizations(results_file)
+
+    # Le callback pour lancer une analyse de sentiment filtrée a été supprimé car nous utilisons maintenant le filtrage par cluster directement
+
+    # Le callback toggle_article_modal a été supprimé car nous utilisons maintenant les fonctions de article_display_utils.py
     
-    # Callback pour lancer une analyse de sentiment filtrée
+    # Callback pour le bouton de parcourir du fichier source
     @app.callback(
-        Output("filtered-sentiment-results-container", "children"),
-        Input("run-filtered-sentiment-button", "n_clicks"),
-        [State("sentiment-filtered-analysis-topic-dropdown", "value"),
-         State("sentiment-filtered-analysis-cluster-dropdown", "value"),
-         State("sentiment-filtered-analysis-exclude-topic-dropdown", "value"),
-         State("sentiment-filtered-analysis-exclude-cluster-dropdown", "value"),
-         State("sentiment-filtered-analysis-results-dropdown", "value")],
+        Output("sentiment-source-file-input", "value"),
+        Input("sentiment-source-file-browse", "n_clicks"),
+        State("sentiment-source-file-input", "value"),
         prevent_initial_call=True
     )
-    def run_filtered_sentiment_analysis(n_clicks, topic_id, cluster_id, exclude_topic_id, exclude_cluster_id, topic_results_file):
-        if not n_clicks or not topic_results_file:
-            return html.P("Veuillez sélectionner un fichier de résultats de topic modeling et configurer les filtres.")
+    def browse_source_file(n_clicks, current_value):
+        if not n_clicks:
+            return current_value
         
-        # Créer la commande
-        cmd = [
-            sys.executable, 
-            os.path.join(os.path.dirname(__file__), "..", "scripts", "run_filtered_analysis.py"),
-            "--analysis-type", "sentiment"
-        ]
+        # Obtenir le répertoire de départ pour la boîte de dialogue
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        data_dir = os.path.join(project_root, "data", "processed")
         
-        # Ajouter les filtres
-        if topic_id is not None:
-            cmd.extend(["--topic-id", str(topic_id)])
-        
-        if cluster_id is not None:
-            cmd.extend(["--cluster-id", str(cluster_id)])
-        
-        if exclude_topic_id is not None:
-            cmd.extend(["--exclude-topic-id", str(exclude_topic_id)])
-        
-        if exclude_cluster_id is not None:
-            cmd.extend(["--exclude-cluster-id", str(exclude_cluster_id)])
-        
-        # Ajouter le fichier de résultats de topic modeling
-        cmd.extend(["--topic-results", str(topic_results_file)])
-        
-        # Exécuter la commande
+        # Utiliser une commande PowerShell pour afficher une boîte de dialogue de sélection de fichier
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            cmd = [
+                "powershell",
+                "-Command",
+                "Add-Type -AssemblyName System.Windows.Forms; " +
+                "$openFileDialog = New-Object System.Windows.Forms.OpenFileDialog; " +
+                "$openFileDialog.InitialDirectory = '" + str(data_dir).replace('\\', '\\\\') + "'; " +
+                "$openFileDialog.Filter = 'Fichiers JSON (*.json)|*.json|Tous les fichiers (*.*)|*.*'; " +
+                "$openFileDialog.ShowDialog() | Out-Null; " +
+                "$openFileDialog.FileName"
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            file_path = result.stdout.strip()
             
-            # Extraire le chemin du fichier de résultats généré
-            output_path = None
-            for line in result.stdout.splitlines():
-                if "Results saved to:" in line:
-                    output_path = line.split("Results saved to:")[1].strip()
-                    break
-            
-            if output_path and os.path.exists(output_path):
-                return html.Div([
-                    html.P("Analyse de sentiment filtrée terminée avec succès !"),
-                    html.Pre(result.stdout, style={"maxHeight": "200px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"}),
-                    html.Hr(),
-                    html.H5("Résultats de l'analyse filtrée :"),
-                    *create_sentiment_visualizations(output_path, is_filtered=True)
-                ])
-            else:
-                return html.Div([
-                    html.P("Analyse terminée, mais impossible de trouver le fichier de résultats."),
-                    html.Pre(result.stdout, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
-                ])
-        except subprocess.CalledProcessError as e:
-            return html.Div([
-                html.P("Erreur lors de l'analyse de sentiment filtrée:", className="text-danger"),
-                html.Pre(e.stderr, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
-            ])
-
-    # Callback to open article modal
-    @app.callback(
-        [Output("sentiment-article-modal", "is_open"),
-         Output("sentiment-article-modal-body", "children")],
-        [Input("positive-article-0", "n_clicks"),
-         Input("positive-article-1", "n_clicks"),
-         Input("positive-article-2", "n_clicks"),
-         Input("positive-article-3", "n_clicks"),
-         Input("positive-article-4", "n_clicks"),
-         Input("negative-article-0", "n_clicks"),
-         Input("negative-article-1", "n_clicks"),
-         Input("negative-article-2", "n_clicks"),
-         Input("negative-article-3", "n_clicks"),
-         Input("negative-article-4", "n_clicks"),
-         Input("sentiment-close-article-modal", "n_clicks")],
-        [State("sentiment-article-modal", "is_open"),
-         State("sentiment-articles-data", "data")]
-    )
-    def toggle_article_modal(p0, p1, p2, p3, p4, n0, n1, n2, n3, n4, close, is_open, articles_data):
-        if not ctx.triggered_id:
-            return is_open, ""
-        
-        if ctx.triggered_id == "sentiment-close-article-modal":
-            return False, ""
-        
-        if not articles_data:
-            return is_open, "Données d'articles non disponibles."
-        
-        # Determine which article was clicked
-        article_idx = None
-        is_positive = None
-        
-        if ctx.triggered_id.startswith("positive-article-"):
-            is_positive = True
-            article_idx = int(ctx.triggered_id.split("-")[-1])
-        elif ctx.triggered_id.startswith("negative-article-"):
-            is_positive = False
-            article_idx = int(ctx.triggered_id.split("-")[-1])
-        
-        if article_idx is None or is_positive is None:
-            return is_open, ""
-        
-        # Sort articles by compound score
-        sorted_articles = sorted(articles_data, key=lambda x: x['sentiment']['compound'])
-        
-        if is_positive:
-            # Get from the end of the list (most positive)
-            article = sorted_articles[-5:][::-1][article_idx]
-        else:
-            # Get from the beginning of the list (most negative)
-            article = sorted_articles[:5][article_idx]
-        
-        # Create modal content
-        modal_content = [
-            html.H4(article.get('title', 'Sans titre')),
-            html.P(f"Journal: {article.get('newspaper', 'Inconnu')}"),
-            html.P(f"Date: {article.get('date', 'Inconnue')}"),
-            html.P(f"ID: {article.get('id', '') or article.get('base_id', '')}"),
-            html.Hr(),
-            html.H5("Scores de sentiment:"),
-            html.P(f"Positif: {article['sentiment'].get('positive', 0):.4f}"),
-            html.P(f"Négatif: {article['sentiment'].get('negative', 0):.4f}"),
-            html.P(f"Neutre: {article['sentiment'].get('neutral', 0):.4f}"),
-            html.P(f"Compound: {article['sentiment'].get('compound', 0):.4f}"),
-            html.Hr(),
-            html.H5("Contenu de l'article:"),
-            html.Div(
-                article.get('text', 'Contenu non disponible'),
-                style={"max-height": "400px", "overflow": "auto", "white-space": "pre-wrap"}
-            )
-        ]
-        
-        return True, modal_content
+            if file_path and os.path.exists(file_path):
+                return file_path
+            return current_value
+        except Exception as e:
+            print(f"Erreur lors de l'ouverture de la boîte de dialogue: {e}")
+            return current_value
 
 # To be called in app.py: from src.webapp.sentiment_analysis_viz import register_sentiment_analysis_callbacks

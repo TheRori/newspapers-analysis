@@ -2,7 +2,7 @@
 Entity Recognition Visualization Page for Dash app
 """
 
-from dash import html, dcc, Input, Output, State, ctx
+from dash import html, dcc, Input, Output, State, ctx, ALL, no_update
 import dash_bootstrap_components as dbc
 import plotly.express as px
 import plotly.graph_objects as go
@@ -18,6 +18,7 @@ import pathlib
 import pandas as pd
 import numpy as np
 import json
+import time  # Ajout du module time pour mesurer les performances
 
 from src.webapp.topic_filter_component import (
     get_topic_filter_component, 
@@ -25,6 +26,14 @@ from src.webapp.topic_filter_component import (
     get_filter_parameters,
     get_filter_states,
     are_filters_active
+)
+
+# Import du module d'affichage des articles
+from src.webapp.article_display_utils import (
+    create_articles_modal,
+    create_full_article_modal,
+    register_articles_modal_callback,
+    register_full_article_modal_callback
 )
 
 # Extract parser arguments from run_entity_recognition.py
@@ -65,12 +74,15 @@ def get_entity_results():
     summary_files = list(results_dir.glob('entity_summary*.json'))
     
     # Sort by modification time (newest first)
-    summary_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+    # Utiliser os.stat au lieu de os.path.getmtime pour forcer la mise à jour des horodatages
+    import time as time_module
+    current_time = int(time_module.time())  # Timestamp actuel pour éviter les problèmes de cache
+    summary_files.sort(key=lambda x: os.stat(x).st_mtime, reverse=True)
     
     # Format for dropdown
     options = [
-        {'label': f"{f.stem} ({pd.to_datetime(os.path.getmtime(f), unit='s').strftime('%Y-%m-%d %H:%M')})", 
-         'value': str(f)}
+        {'label': f"{f.stem} ({pd.to_datetime(os.stat(f).st_mtime, unit='s').strftime('%Y-%m-%d %H:%M')})", 
+         'value': f"{str(f)}?t={current_time}"}  # Ajouter un paramètre pour éviter le cache
         for f in summary_files
     ]
     
@@ -145,8 +157,27 @@ def get_entity_recognition_layout():
                 html.Div([
                     html.H4("Paramètres d'analyse"),
                     html.P("Configurez les paramètres pour la reconnaissance d'entités nommées."),
+                    
+                    # Champ de sélection du fichier source
+                    html.Div([
+                        dbc.Label("Fichier source (JSON)"),
+                        dbc.InputGroup([
+                            dbc.Input(id="entity-source-file-input", type="text", placeholder="Chemin vers le fichier JSON d'articles"),
+                            dbc.Button("Parcourir", id="entity-source-file-browse", color="secondary")
+                        ]),
+                        html.Small("Laissez vide pour utiliser le fichier par défaut de la configuration.", className="text-muted"),
+                        html.Br()
+                    ], className="mb-3"),
+                    
                     dbc.Form(dbc.Row(form_fields)),
                     html.Br(),
+                    
+                    # Ajout du composant de filtrage par cluster
+                    html.H5("Filtrage par Cluster (optionnel)"),
+                    html.P("Sélectionnez un fichier de cluster et un ID de cluster pour filtrer les articles."),
+                    get_topic_filter_component(id_prefix="entity-run-filter"),
+                    html.Br(),
+                    
                     dbc.Button("Lancer l'analyse", id="run-entity-button", color="primary"),
                     html.Br(),
                     html.Div(id="entity-run-output")
@@ -171,47 +202,12 @@ def get_entity_recognition_layout():
                     ]),
                     html.Br(),
                     
-                    # Ajout du composant de filtrage par topic/cluster
-                    dbc.Row([
-                        dbc.Col([
-                            dbc.Accordion([
-                                dbc.AccordionItem(
-                                    get_topic_filter_component(id_prefix="entity-topic-filter"),
-                                    title="Filtrage par Topic/Cluster"
-                                )
-                            ], start_collapsed=True, id="entity-filter-accordion")
-                        ], width=12)
-                    ]),
-                    html.Br(),
+                    # Le composant de filtrage par cluster a été supprimé ici car il est utilisé uniquement en amont
                     
                     # Results container
                     html.Div(id="entity-results-container", children=[
                         # This will be populated by the callback
                     ])
-                ], className="mt-3")
-            ]),
-            
-            # Nouvelle tab pour les analyses filtrées
-            dbc.Tab(label="Analyses Filtrées", children=[
-                html.Div([
-                    html.H4("Analyses d'entités nommées filtrées par topic/cluster"),
-                    html.P("Lancez une analyse d'entités nommées filtrée par topic ou cluster."),
-                    
-                    # Composant de filtrage
-                    get_topic_filter_component(id_prefix="entity-filtered-analysis"),
-                    html.Br(),
-                    
-                    # Bouton pour lancer l'analyse filtrée
-                    dbc.Button(
-                        "Lancer l'analyse filtrée",
-                        id="run-filtered-entity-button",
-                        color="primary",
-                        className="mb-3"
-                    ),
-                    html.Br(),
-                    
-                    # Conteneur pour les résultats filtrés
-                    html.Div(id="filtered-entity-results-container")
                 ], className="mt-3")
             ])
         ])
@@ -250,7 +246,8 @@ def create_entity_visualizations(summary_file_path):
         ])
         entity_distribution.update_layout(
             title="Distribution des entités par type",
-            height=400
+            height=400,
+            clickmode='event+select'
         )
         
         # 2. Summary statistics card
@@ -288,7 +285,10 @@ def create_entity_visualizations(summary_file_path):
         # Add entity distribution chart
         visualizations.append(
             dbc.Row([
-                dbc.Col(dcc.Graph(figure=entity_distribution), width=12)
+                dbc.Col(dcc.Graph(
+                    id={'type': 'entity-graph', 'subtype': 'entity-distribution'},
+                    figure=entity_distribution
+                ), width=12)
             ])
         )
         
@@ -344,7 +344,10 @@ def create_entity_visualizations(summary_file_path):
                         label=entity_type,
                         children=[
                             dbc.Row([
-                                dbc.Col(dcc.Graph(figure=fig), width=12)
+                                dbc.Col(dcc.Graph(
+                                    id={'type': 'entity-graph', 'subtype': f'entity-frequency-{entity_type}'},
+                                    figure=fig
+                                ), width=12)
                             ]),
                             dbc.Row([
                                 dbc.Col([
@@ -418,20 +421,9 @@ def create_entity_visualizations(summary_file_path):
             ])
         )
         
-        # Add modal for article display
-        article_modal = dbc.Modal(
-            [
-                dbc.ModalHeader(dbc.ModalTitle("Contenu de l'article"), close_button=True),
-                dbc.ModalBody(id="entity-article-modal-body"),
-                dbc.ModalFooter(
-                    dbc.Button("Fermer", id="entity-close-article-modal", className="ms-auto")
-                ),
-            ],
-            id="entity-article-modal",
-            size="xl",
-        )
-        
-        visualizations.append(article_modal)
+        # Ajouter les modals pour l'affichage des articles
+        visualizations.append(create_articles_modal(id_prefix="entity"))
+        visualizations.append(create_full_article_modal(id_prefix="entity"))
         
         # Store the article data in a hidden div for modal display
         visualizations.append(
@@ -447,17 +439,14 @@ def create_entity_visualizations(summary_file_path):
         ])]
 
 # Function to create filtered entity visualizations
-def create_filtered_entity_visualizations(summary_file_path, topic_results_path, topic_id, cluster_id, exclude_topic_id, exclude_cluster_id):
+def create_filtered_entity_visualizations(summary_file_path, cluster_file, cluster_id):
     """
-    Crée des visualisations d'entités nommées filtrées par topic/cluster.
+    Crée des visualisations d'entités nommées filtrées par cluster.
     
     Args:
         summary_file_path: Chemin vers le fichier de résultats d'entités nommées
-        topic_results_path: Chemin vers le fichier de résultats de topic modeling
-        topic_id: ID du topic à inclure
+        cluster_file: Chemin vers le fichier de clusters
         cluster_id: ID du cluster à inclure
-        exclude_topic_id: ID du topic à exclure
-        exclude_cluster_id: ID du cluster à exclure
         
     Returns:
         Composants Dash pour les visualisations
@@ -467,49 +456,60 @@ def create_filtered_entity_visualizations(summary_file_path, topic_results_path,
         with open(summary_file_path, 'r', encoding='utf-8') as f:
             summary_data = json.load(f)
         
-        # Charger les données de topic
-        with open(topic_results_path, 'r', encoding='utf-8') as f:
-            topic_data = json.load(f)
+        # Charger les données de cluster
+        with open(cluster_file, 'r', encoding='utf-8') as f:
+            cluster_data = json.load(f)
         
         # Charger les articles avec entités
         articles_file_path = summary_file_path.replace('entity_summary', 'articles_with_entities')
         with open(articles_file_path, 'r', encoding='utf-8') as f:
             articles_data = json.load(f)
         
-        # Filtrer les articles par topic/cluster
+        # Filtrer les articles par cluster
         filtered_articles = []
         
-        # Récupérer les informations de topic/cluster
-        doc_topics = topic_data.get('doc_topics', {})
-        doc_clusters = topic_data.get('clusters', {})
+        # Récupérer les IDs d'articles du cluster sélectionné
+        cluster_article_ids = set()
         
+        # Vérifier le format du fichier de cluster
+        if "doc_ids" in cluster_data and "labels" in cluster_data:
+            # Format avec doc_ids et labels
+            doc_ids = cluster_data.get("doc_ids", [])
+            labels = cluster_data.get("labels", [])
+            
+            # Convertir cluster_id en entier
+            try:
+                cluster_id_int = int(cluster_id)
+                
+                # Filtrer les articles par label
+                if len(doc_ids) == len(labels):
+                    for i, label in enumerate(labels):
+                        if label == cluster_id_int:
+                            cluster_article_ids.add(doc_ids[i])
+            except ValueError:
+                print(f"Erreur: L'ID de cluster {cluster_id} n'est pas un entier valide")
+        elif "clusters" in cluster_data:
+            # Format avec une liste de clusters
+            clusters = cluster_data.get("clusters", [])
+            for cluster in clusters:
+                if str(cluster.get("id", "")) == str(cluster_id):
+                    cluster_article_ids.update(cluster.get("articles", []))
+        else:
+            # Format inconnu, essayer de détecter les clusters
+            print(f"Format de fichier de cluster inconnu: {list(cluster_data.keys())}")
+            
+            # Si le fichier contient des clés numériques, supposer que ce sont des clusters
+            if str(cluster_id) in cluster_data:
+                articles = cluster_data.get(str(cluster_id), [])
+                if isinstance(articles, list):
+                    cluster_article_ids.update(articles)
+        
+        # Filtrer les articles
         for article in articles_data:
             article_id = article.get('id', article.get('doc_id', ''))
             
-            # Vérifier si l'article doit être inclus
-            include_article = True
-            
-            # Filtre par topic
-            if topic_id is not None and article_id in doc_topics:
-                if doc_topics[article_id].get('dominant_topic') != int(topic_id):
-                    include_article = False
-            
-            # Filtre par cluster
-            if cluster_id is not None and article_id in doc_clusters:
-                if str(doc_clusters[article_id]) != str(cluster_id):
-                    include_article = False
-            
-            # Exclusion par topic
-            if exclude_topic_id is not None and article_id in doc_topics:
-                if doc_topics[article_id].get('dominant_topic') == int(exclude_topic_id):
-                    include_article = False
-            
-            # Exclusion par cluster
-            if exclude_cluster_id is not None and article_id in doc_clusters:
-                if str(doc_clusters[article_id]) == str(exclude_cluster_id):
-                    include_article = False
-            
-            if include_article:
+            # Vérifier si l'article est dans le cluster sélectionné
+            if article_id in cluster_article_ids:
                 filtered_articles.append(article)
         
         # Vérifier s'il y a des articles filtrés
@@ -613,26 +613,93 @@ def create_filtered_entity_visualizations(summary_file_path, topic_results_path,
 
 # Callback registration (to be called from app.py)
 def register_entity_recognition_callbacks(app):
-    # Register callbacks for topic filter component
-    register_topic_filter_callbacks(app, id_prefix="entity-topic-filter")
-    register_topic_filter_callbacks(app, id_prefix="entity-filtered-analysis")
+    # Register callbacks for topic filter component (uniquement pour l'analyse)
+    register_topic_filter_callbacks(app, id_prefix="entity-run-filter")
+    
+    # Enregistrer les callbacks pour l'affichage des articles lors d'un clic sur les graphiques
+    register_articles_modal_callback(
+        app,
+        graph_id_pattern={'type': 'entity-graph', 'subtype': ALL},
+        id_prefix="entity",
+        data_extraction_func=extract_entity_click_data
+    )
+    
+    # Enregistrer le callback pour l'affichage de l'article complet
+    register_full_article_modal_callback(app, id_prefix="entity")
+    
+    # Callback pour le bouton de parcourir du fichier source
+    @app.callback(
+        Output("entity-source-file-input", "value"),
+        Input("entity-source-file-browse", "n_clicks"),
+        State("entity-source-file-input", "value"),
+        prevent_initial_call=True
+    )
+    def browse_source_file(n_clicks, current_value):
+        if not n_clicks:
+            return current_value
+        
+        # Obtenir le répertoire de départ pour la boîte de dialogue
+        project_root = pathlib.Path(__file__).resolve().parents[2]
+        data_dir = project_root / "data" / "processed"
+        
+        # Utiliser une commande PowerShell pour afficher une boîte de dialogue de sélection de fichier
+        try:
+            cmd = [
+                "powershell",
+                "-Command",
+                "Add-Type -AssemblyName System.Windows.Forms; " +
+                "$openFileDialog = New-Object System.Windows.Forms.OpenFileDialog; " +
+                "$openFileDialog.InitialDirectory = '" + str(data_dir).replace('\\', '\\\\') + "'; " +
+                "$openFileDialog.Filter = 'Fichiers JSON (*.json)|*.json|Tous les fichiers (*.*)|*.*'; " +
+                "$openFileDialog.ShowDialog() | Out-Null; " +
+                "$openFileDialog.FileName"
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            file_path = result.stdout.strip()
+            
+            if file_path and os.path.exists(file_path):
+                return file_path
+            return current_value
+        except Exception as e:
+            print(f"Erreur lors de l'ouverture de la boîte de dialogue: {e}")
+            return current_value
     
     # Callback to run entity recognition
     @app.callback(
         Output("entity-run-output", "children"),
+        Output("entity-results-dropdown", "options"),
+        Output("entity-results-dropdown", "value"),
         Input("run-entity-button", "n_clicks"),
-        [State(f"entity-{arg['name']}-input", "value") for arg in get_entity_recognition_args()],
+        [State(f"entity-{arg['name']}-input", "value") for arg in get_entity_recognition_args()] +
+        [State("entity-run-filter-cluster-file-dropdown", "value"),
+         State("entity-run-filter-cluster-id-dropdown", "value"),
+         State("entity-source-file-input", "value"),
+         State("entity-results-dropdown", "options")],
         prevent_initial_call=True
     )
     def run_entity_recognition(n_clicks, *args):
         if not n_clicks:
-            return ""
+            current_options = args[-1]
+            return "", current_options, None
         
         # Get argument names
         arg_names = [arg['name'] for arg in get_entity_recognition_args()]
         
+        # Extract cluster filter parameters, source file and current options
+        cluster_file = args[-4]
+        cluster_id = args[-3]
+        source_file = args[-2]
+        current_options = args[-1]
+        args = args[:-4]  # Remove cluster filter parameters, source file and current options from args
+        
+        # Get absolute path to the script
+        script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts", "run_entity_recognition.py"))
+        
+        # Get project root directory
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        
         # Create command
-        cmd = [sys.executable, os.path.join(os.path.dirname(__file__), "..", "scripts", "run_entity_recognition.py")]
+        cmd = [sys.executable, script_path]
         
         # Add arguments
         for arg_name, arg_value in zip(arg_names, args):
@@ -644,118 +711,98 @@ def register_entity_recognition_callbacks(app):
                     cmd.append(f"--{arg_name}")
                     cmd.append(str(arg_value))
         
+        # Add cluster filter parameters if provided
+        if cluster_file and cluster_id:
+            cmd.extend(["--cluster-file", str(cluster_file)])
+            cmd.extend(["--cluster-id", str(cluster_id)])
+        
+        # Add source file parameter if provided
+        if source_file:
+            cmd.extend(["--source-file", str(source_file)])
+        
         # Run command
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            # Exécuter la commande avec le répertoire racine du projet comme répertoire de travail
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=project_root)
+            # Récupérer la liste mise à jour des résultats disponibles
+            updated_results = get_entity_results()
+            
+            # Trouver le fichier de résultat le plus récent
+            selected_value = updated_results[0]['value'] if updated_results else None
+            
             return html.Div([
                 html.P("Analyse d'entités nommées terminée avec succès !"),
                 html.Pre(result.stdout, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
-            ])
+            ]), updated_results, selected_value
         except subprocess.CalledProcessError as e:
             return html.Div([
                 html.P("Erreur lors de l'analyse d'entités nommées:", className="text-danger"),
                 html.Pre(e.stderr, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
-            ])
+            ]), current_options, None
     
     # Callback to display entity recognition results
     @app.callback(
         Output("entity-results-container", "children"),
-        [Input("entity-results-dropdown", "value"),
-         Input("entity-topic-filter-apply-button", "n_clicks")],
-        [State("entity-topic-filter-topic-dropdown", "value"),
-         State("entity-topic-filter-cluster-dropdown", "value"),
-         State("entity-topic-filter-exclude-topic-dropdown", "value"),
-         State("entity-topic-filter-exclude-cluster-dropdown", "value"),
-         State("entity-topic-filter-results-dropdown", "value")]
+        Input("entity-results-dropdown", "value")
     )
-    def display_entity_results(results_file, apply_filters, topic_id, cluster_id, exclude_topic_id, exclude_cluster_id, topic_results_file):
-        ctx_trigger = ctx.triggered_id
+    def display_entity_results(results_file):
+        # Extraire le chemin du fichier du paramètre de cache-busting
+        if results_file and '?' in results_file:
+            results_file = results_file.split('?')[0]
+
         if not results_file:
             return html.P("Sélectionnez un fichier de résultats pour afficher les visualisations.")
         
-        # Vérifier si les filtres sont actifs
-        filters_active = are_filters_active("entity-topic-filter", ctx)
-        
-        if filters_active and topic_results_file:
-            # Appliquer les filtres
-            return create_filtered_entity_visualizations(
-                results_file, 
-                topic_results_file, 
-                topic_id, 
-                cluster_id, 
-                exclude_topic_id, 
-                exclude_cluster_id
-            )
-        else:
-            # Afficher les résultats sans filtre
-            return create_entity_visualizations(results_file)
+        # Afficher les résultats sans filtre
+        return create_entity_visualizations(results_file)
     
-    # Callback pour lancer une analyse d'entités nommées filtrée
-    @app.callback(
-        Output("filtered-entity-results-container", "children"),
-        Input("run-filtered-entity-button", "n_clicks"),
-        [State("entity-filtered-analysis-topic-dropdown", "value"),
-         State("entity-filtered-analysis-cluster-dropdown", "value"),
-         State("entity-filtered-analysis-exclude-topic-dropdown", "value"),
-         State("entity-filtered-analysis-exclude-cluster-dropdown", "value"),
-         State("entity-filtered-analysis-results-dropdown", "value")],
-        prevent_initial_call=True
-    )
-    def run_filtered_entity_analysis(n_clicks, topic_id, cluster_id, exclude_topic_id, exclude_cluster_id, topic_results_file):
-        if not n_clicks or not topic_results_file:
-            return html.P("Veuillez sélectionner un fichier de résultats de topic modeling et configurer les filtres.")
+    # Fonction pour extraire les données du clic sur un graphique d'entités nommées
+def extract_entity_click_data(point, prop_id):
+    try:
+        # Extraire l'ID du graphique (sous forme de dictionnaire)
+        graph_id = json.loads(prop_id.split('.')[0])
+        subtype = graph_id.get('subtype', '')
         
-        # Créer la commande
-        cmd = [
-            sys.executable, 
-            os.path.join(os.path.dirname(__file__), "..", "scripts", "run_filtered_analysis.py"),
-            "--analysis-type", "entity"
-        ]
+        print(f"Clic sur graphique: {subtype}")
+        print(f"Point data: {point}")
         
-        # Ajouter les filtres
-        if topic_id is not None:
-            cmd.extend(["--topic-id", str(topic_id)])
+        filter_type = None
+        filter_value = None
+        term = None
         
-        if cluster_id is not None:
-            cmd.extend(["--cluster-id", str(cluster_id)])
+        # Extraire les données en fonction du type de graphique
+        if subtype == 'entity-distribution':
+            # Pour le graphique de distribution des entités par type
+            filter_type = 'entity_type'
+            filter_value = point.get('label')
+            term = filter_value  # Simplified term for better filtering
+        elif subtype.startswith('entity-frequency-'):
+            # Pour les graphiques de fréquence d'entités par type
+            entity_type = subtype.replace('entity-frequency-', '')
+            filter_type = 'entity'
+            filter_value = point.get('x')
+            term = filter_value  # Simplified term for better filtering
+        elif subtype == 'entity-top-articles':
+            # Pour le tableau des articles avec le plus d'entités
+            try:
+                row_id = graph_id.get('index')
+                # Trouver l'article correspondant dans la liste des articles
+                filter_type = 'article_id'
+                filter_value = row_id
+                # No term needed for article filtering as it's handled by the filter_type
+            except Exception as e:
+                print(f"Erreur lors de l'extraction de l'ID d'article: {str(e)}")
+                filter_type = None
+                filter_value = None
+                term = None
         
-        if exclude_topic_id is not None:
-            cmd.extend(["--exclude-topic-id", str(exclude_topic_id)])
-        
-        if exclude_cluster_id is not None:
-            cmd.extend(["--exclude-cluster-id", str(exclude_cluster_id)])
-        
-        # Ajouter le fichier de résultats de topic modeling
-        cmd.extend(["--topic-results", str(topic_results_file)])
-        
-        # Exécuter la commande
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            
-            # Extraire le chemin du fichier de résultats généré
-            output_path = None
-            for line in result.stdout.splitlines():
-                if "Results saved to:" in line:
-                    output_path = line.split("Results saved to:")[1].strip()
-                    break
-            
-            if output_path and os.path.exists(output_path):
-                return html.Div([
-                    html.P("Analyse d'entités nommées filtrée terminée avec succès !"),
-                    html.Pre(result.stdout, style={"maxHeight": "200px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"}),
-                    html.Hr(),
-                    html.H5("Résultats de l'analyse filtrée :"),
-                    *create_entity_visualizations(output_path, is_filtered=True)
-                ])
-            else:
-                return html.Div([
-                    html.P("Analyse terminée, mais impossible de trouver le fichier de résultats."),
-                    html.Pre(result.stdout, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
-                ])
-        except subprocess.CalledProcessError as e:
-            return html.Div([
-                html.P("Erreur lors de l'analyse d'entités nommées filtrée:", className="text-danger"),
-                html.Pre(e.stderr, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
-            ])
+        print(f"Filtres extraits: type={filter_type}, value={filter_value}, term={term}")
+        return filter_type, filter_value, term
+    except Exception as e:
+        print(f"Erreur lors de l'extraction des données de clic: {str(e)}")
+        return None, None, None
 
-# To be called in app.py: from src.webapp.entity_recognition_viz import register_entity_recognition_callbacks
+# Le callback pour lancer une analyse d'entités nommées filtrée a été supprimé car nous utilisons maintenant le filtrage par cluster directement
+
+
+# To be called in app.py: from src.webapp.entity_recognition_viz import register_entity_recognition_callbacks, get_entity_recognition_layout

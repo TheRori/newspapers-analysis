@@ -53,7 +53,8 @@ def save_analysis(
     figure: Optional[go.Figure] = None,
     additional_metadata: Optional[Dict[str, Any]] = None,
     collection: Optional[str] = None,
-    config: Optional[Dict[str, Any]] = None
+    config: Optional[Dict[str, Any]] = None,
+    save_source_files: bool = True
 ) -> Dict[str, Any]:
     """
     Sauvegarde une analyse avec son contexte et éventuellement sa visualisation.
@@ -124,6 +125,189 @@ def save_analysis(
         # Ajouter les chemins aux métadonnées
         metadata["figure_html"] = str(html_path)
         metadata["figure_json"] = str(json_path)
+    
+    # Sauvegarder les fichiers source si demandé
+    if save_source_files:
+        # Créer un sous-répertoire pour les fichiers source
+        source_dir = analysis_dir / "source_files"
+        source_dir.mkdir(exist_ok=True)
+        
+        # Sauvegarder les fichiers source mentionnés dans source_data
+        saved_files = []
+        
+        # Fichier de résultats (pour term_tracking, topic_modeling, etc.)
+        if "results_file" in source_data and source_data["results_file"]:
+            results_file = Path(source_data["results_file"])
+            if results_file.exists():
+                # Copier le fichier de résultats
+                dest_path = source_dir / results_file.name
+                shutil.copy2(results_file, dest_path)
+                saved_files.append({
+                    "type": "results_file",
+                    "original_path": str(results_file),
+                    "saved_path": str(dest_path)
+                })
+                
+                # Si c'est un fichier CSV ou JSON, le sauvegarder également
+                if results_file.suffix.lower() in [".csv", ".json"]:
+                    try:
+                        if results_file.suffix.lower() == ".csv":
+                            df = pd.read_csv(results_file)
+                            # Sauvegarder en format parquet pour une meilleure compression
+                            parquet_path = source_dir / f"{results_file.stem}.parquet"
+                            df.to_parquet(parquet_path)
+                            saved_files.append({
+                                "type": "results_parquet",
+                                "original_path": str(results_file),
+                                "saved_path": str(parquet_path)
+                            })
+                        elif results_file.suffix.lower() == ".json":
+                            with open(results_file, 'r', encoding='utf-8') as f:
+                                json_data = json.load(f)
+                            # Sauvegarder une copie du JSON
+                            json_copy_path = source_dir / results_file.name
+                            with open(json_copy_path, 'w', encoding='utf-8') as f:
+                                json.dump(json_data, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        print(f"Erreur lors de la sauvegarde du fichier de données: {e}")
+        
+        # Fichier de termes (pour term_tracking ou semantic_drift)
+        if (analysis_type in ["term_tracking", "semantic_drift"]) and "analysis_parameters" in source_data:
+            params = source_data["analysis_parameters"]
+            if "term_file" in params and params["term_file"]:
+                term_file = Path(params["term_file"])
+                if term_file.exists():
+                    dest_path = source_dir / term_file.name
+                    shutil.copy2(term_file, dest_path)
+                    saved_files.append({
+                        "type": "term_file",
+                        "original_path": str(term_file),
+                        "saved_path": str(dest_path)
+                    })
+            
+            # Fichier principal des articles (articles.json)
+            if "articles_file" in params and params["articles_file"]:
+                articles_file = Path(params["articles_file"])
+                if articles_file.exists():
+                    # Créer un sous-répertoire pour le fichier d'articles (qui peut être volumineux)
+                    articles_dir = source_dir / "articles"
+                    articles_dir.mkdir(exist_ok=True)
+                    
+                    # Copier le fichier d'articles
+                    dest_path = articles_dir / articles_file.name
+                    
+                    try:
+                        # Pour les fichiers volumineux, utiliser une approche par morceaux
+                        # ou créer un lien symbolique si possible
+                        if os.name == 'nt':  # Windows
+                            # Sur Windows, copier le fichier (peut être lent pour les gros fichiers)
+                            shutil.copy2(articles_file, dest_path)
+                        else:  # Unix/Linux/Mac
+                            # Sur Unix, essayer de créer un lien symbolique
+                            try:
+                                os.symlink(articles_file, dest_path)
+                            except:
+                                # Si le lien symbolique échoue, copier le fichier
+                                shutil.copy2(articles_file, dest_path)
+                        
+                        saved_files.append({
+                            "type": "articles_file",
+                            "original_path": str(articles_file),
+                            "saved_path": str(dest_path)
+                        })
+                        
+                        # Créer un fichier d'information sur la source des articles
+                        info_path = articles_dir / "articles_info.json"
+                        articles_info = {
+                            "original_path": str(articles_file),
+                            "size_bytes": articles_file.stat().st_size,
+                            "last_modified": datetime.datetime.fromtimestamp(articles_file.stat().st_mtime).isoformat(),
+                            "saved_as": os.path.basename(dest_path)
+                        }
+                        
+                        # Essayer de compter le nombre d'articles
+                        try:
+                            with open(articles_file, 'r', encoding='utf-8') as f:
+                                # Lire juste assez pour compter les articles sans charger tout le fichier
+                                data = json.load(f)
+                                if isinstance(data, list):
+                                    articles_info["article_count"] = len(data)
+                                elif isinstance(data, dict) and "articles" in data:
+                                    articles_info["article_count"] = len(data["articles"])
+                        except Exception as e:
+                            articles_info["count_error"] = str(e)
+                        
+                        with open(info_path, 'w', encoding='utf-8') as f:
+                            json.dump(articles_info, f, ensure_ascii=False, indent=2)
+                    
+                    except Exception as e:
+                        print(f"Erreur lors de la sauvegarde du fichier d'articles: {e}")
+                        # Ajouter l'erreur aux métadonnées
+                        saved_files.append({
+                            "type": "articles_file_error",
+                            "original_path": str(articles_file),
+                            "error": str(e)
+                        })
+        
+        # Fichier de modèle Word2Vec (pour semantic_drift)
+        if analysis_type == "semantic_drift" and "model_path" in source_data:
+            model_path = Path(source_data["model_path"])
+            if model_path.exists():
+                # Pour les modèles Word2Vec, créer un sous-répertoire spécifique
+                model_dir = source_dir / "model"
+                model_dir.mkdir(exist_ok=True)
+                
+                # Si c'est un répertoire, copier tout son contenu
+                if model_path.is_dir():
+                    for item in model_path.glob("*"):
+                        if item.is_file():
+                            dest_path = model_dir / item.name
+                            shutil.copy2(item, dest_path)
+                    saved_files.append({
+                        "type": "word2vec_model_directory",
+                        "original_path": str(model_path),
+                        "saved_path": str(model_dir)
+                    })
+                else:  # Fichier unique
+                    dest_path = model_dir / model_path.name
+                    shutil.copy2(model_path, dest_path)
+                    saved_files.append({
+                        "type": "word2vec_model_file",
+                        "original_path": str(model_path),
+                        "saved_path": str(dest_path)
+                    })
+        
+        # Fichier de modèle (pour topic_modeling)
+        if analysis_type == "topic_modeling" and "model_path" in source_data:
+            model_path = Path(source_data["model_path"])
+            if model_path.exists():
+                # Pour les modèles, créer un sous-répertoire spécifique
+                model_dir = source_dir / "model"
+                model_dir.mkdir(exist_ok=True)
+                
+                # Si c'est un répertoire, copier tout son contenu
+                if model_path.is_dir():
+                    for item in model_path.glob("*"):
+                        if item.is_file():
+                            dest_path = model_dir / item.name
+                            shutil.copy2(item, dest_path)
+                    saved_files.append({
+                        "type": "model_directory",
+                        "original_path": str(model_path),
+                        "saved_path": str(model_dir)
+                    })
+                else:  # Fichier unique
+                    dest_path = model_dir / model_path.name
+                    shutil.copy2(model_path, dest_path)
+                    saved_files.append({
+                        "type": "model_file",
+                        "original_path": str(model_path),
+                        "saved_path": str(dest_path)
+                    })
+        
+        # Ajouter les fichiers sauvegardés aux métadonnées
+        if saved_files:
+            metadata["source_files"] = saved_files
     
     # Sauvegarder les métadonnées
     metadata_path = analysis_dir / "metadata.json"

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Médiation App - Évolution des termes informatiques</title>
+    <link rel="stylesheet" href="mediation_app.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.js"></script>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1>Évolution des termes liés à l'informatique (1950-1999)</h1>
+            <p>Visualisation interactive des mentions de termes informatiques dans la presse suisse</p>
+        </div>
+        <nav class="main-nav">
+            <a href="index.html" class="nav-link"><i class="fas fa-home"></i> Accueil</a>
+            <a href="mediation_app.html" class="nav-link active"><i class="fas fa-chart-line"></i> Évolution chronologique</a>
+            <a href="heatmap_app.html" class="nav-link"><i class="fas fa-th"></i> Heatmap sémantique</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <div class="controls">
+            <div class="filter-row">
+                <div class="term-selector">
+                    <h3>Sélectionner des termes</h3>
+                    <div id="term-checkboxes"></div>
+                </div>
+                <div class="right-filters">
+                    <div class="visualization-type">
+                        <h3>Type de visualisation</h3>
+                        <select id="viz-type">
+                            <option value="line">Ligne temporelle</option>
+                            <option value="stacked">Aires empilées</option>
+                            <option value="stream">Flux</option>
+                        </select>
+                    </div>
+                    <div class="time-period">
+                        <h3>Période</h3>
+                        <div id="year-slider"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="filter-row geo-filters">
+                <div class="canton-selector-container">
+                    <h3>Cantons</h3>
+                    <div id="canton-selector" class="selector-container"></div>
+                </div>
+                <div class="newspaper-selector-container">
+                    <h3>Journaux</h3>
+                    <div id="newspaper-selector" class="selector-container"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="visualization">
+            <div id="chart-container"></div>
+            <div id="tooltip" class="tooltip"></div>
+        </div>
+
+        <div class="insights">
+            <h3>Aperçu des tendances</h3>
+            <div id="insights-content"></div>
+        </div>
+        
+
+        
+        <!-- Modal pour afficher les articles -->
+        <div id="article-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modal-title">Articles</h3>
+                    <span class="close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <!-- Swiper container -->
+                    <div class="swiper swiper-container">
+                        <div class="swiper-wrapper" id="articles-container">
+                            <!-- Les articles seront insérés ici dynamiquement -->
+                        </div>
+                        <!-- Pagination -->
+                        <div class="swiper-pagination"></div>
+                        <!-- Navigation buttons -->
+                        <div class="swiper-button-next"></div>
+                        <div class="swiper-button-prev"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <div class="article-stats">
+                        <div id="article-count">0 articles trouvés</div>
+                        <div id="article-filters">
+                            <select id="canton-filter">
+                                <option value="">Tous les cantons</option>
+                            </select>
+                            <select id="newspaper-filter">
+                                <option value="">Tous les journaux</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>Données issues de l'analyse d'articles de presse suisse (1963-1981)</p>
+        <p><small>Développé avec D3.js et Swiper.js pour une expérience interactive</small></p>
+    </footer>
+
+    <script src="mediation_app.js"></script>
+</body>
+</html>

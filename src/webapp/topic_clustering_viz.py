@@ -253,8 +253,12 @@ def render_clustering_stats(stats):
         centers = stats['cluster_centers']
         # Créer une heatmap pour visualiser le poids de chaque topic dans les clusters
         heatmap_data = []
+        # Déterminer le nombre total de topics
+        num_topics = max([len(center) for center in centers])
+        
         for i, center in enumerate(centers):
-            for j, weight in enumerate(center[:min(10, len(center))]):
+            # Utiliser tous les topics disponibles au lieu de limiter à 10
+            for j, weight in enumerate(center):
                 topic_name = stats['topic_names_llm'].get(f"topic_{j}", f"Topic {j}")
                 heatmap_data.append({
                     'Cluster': f"Cluster {i}",
@@ -427,6 +431,12 @@ def get_parser():
     parser = argparse.ArgumentParser(description="Clustering de documents à partir d'une matrice doc-topic.")
     parser.add_argument('--input', type=str, required=True, help='Chemin du fichier JSON doc_topic_matrix ou advanced_topic_analysis')
     parser.add_argument('--n-clusters', type=int, default=6, help='Nombre de clusters KMeans')
+    parser.add_argument('--auto-clusters', action='store_true', help='Déterminer automatiquement le nombre optimal de clusters')
+    parser.add_argument('--k-min', type=int, default=2, help='Nombre minimum de clusters à tester (défaut: 2)')
+    parser.add_argument('--k-max', type=int, default=15, help='Nombre maximum de clusters à tester (défaut: 15)')
+    parser.add_argument('--metric', type=str, choices=['silhouette', 'calinski_harabasz', 'davies_bouldin', 'all'], 
+                        default='silhouette', help='Métrique à utiliser pour déterminer le nombre optimal de clusters')
+    parser.add_argument('--visualize', action='store_true', help='Visualiser les métriques pour différents nombres de clusters')
     parser.add_argument('--output', type=str, default=None, help='Fichier de sortie pour les labels (JSON)')
     return parser
 
@@ -441,11 +451,22 @@ def get_clustering_args():
         if action.dest == 'input':
             project_root = Path(__file__).resolve().parents[2]
             default = str(project_root / 'data' / 'results' / 'doc_topic_matrix.json')
+            
+        # Déterminer le type de l'argument
+        arg_type = 'str'  # Type par défaut
+        if hasattr(action, 'type') and action.type is not None:
+            arg_type = action.type.__name__ if hasattr(action.type, '__name__') else str(action.type)
+        elif isinstance(action, argparse._StoreAction) and action.nargs == 0:
+            arg_type = 'bool'
+        elif isinstance(action, argparse._StoreTrueAction) or isinstance(action, argparse._StoreFalseAction):
+            arg_type = 'bool'
+            default = False if isinstance(action, argparse._StoreTrueAction) else True
+            
         arg = {
             'name': action.dest,
             'help': action.help,
             'default': default,
-            'type': action.type.__name__ if hasattr(action.type, '__name__') else str(action.type),
+            'type': arg_type,
             'required': action.required,
         }
         parser_args.append(arg)
@@ -483,28 +504,76 @@ def get_clustering_layout():
     # Charger les arguments du script
     args_list = get_clustering_args()
     
+    # Récupérer la liste des fichiers de clustering disponibles
+    project_root = Path(__file__).resolve().parents[2]
+    clusters_dir = os.path.join(project_root, 'data', 'results', 'clusters')
+    cluster_files = []
+    if os.path.exists(clusters_dir):
+        cluster_files = [f for f in os.listdir(clusters_dir) if f.startswith('doc_clusters_k')]
+        # Trier par date de modification (le plus récent d'abord)
+        cluster_files.sort(key=lambda x: os.path.getmtime(os.path.join(clusters_dir, x)), reverse=True)
+    
     return dbc.Container([
         dbc.Row([
             dbc.Col([
                 html.H2("Analyse de Clustering", className="text-center mb-4"),
-                dbc.Card([
-                    dbc.CardHeader(html.H3("Paramètres du Clustering", className="mb-0")),
-                    dbc.CardBody([
-                        html.P("Configurez les paramètres du clustering ci-dessous, puis cliquez sur 'Lancer'.", className="text-muted mb-3"),
-                        html.Div(generate_dash_controls_for_clustering(args_list), id="clustering-controls"),
-                        dbc.Button("Lancer le Clustering", id="btn-run-clustering", color="primary", className="mt-3"),
-                        dbc.Button("Voir la Carte des Clusters", id="btn-view-cluster-map", color="success", className="mt-3 ms-3"),
-                    ])
-                ], className="mb-4"),
                 
-                # Résultats du clustering
+                # Système d'onglets
+                dbc.Tabs([
+                    # Onglet Paramètres
+                    dbc.Tab([
+                        dbc.Card([
+                            dbc.CardHeader(html.H3("Paramètres du Clustering", className="mb-0")),
+                            dbc.CardBody([
+                                html.P("Configurez les paramètres du clustering ci-dessous, puis cliquez sur 'Lancer'.", className="text-muted mb-3"),
+                                html.Div(generate_dash_controls_for_clustering(args_list), id="clustering-controls"),
+                                dbc.Button("Lancer le Clustering", id="btn-run-clustering", color="primary", className="mt-3"),
+                                dbc.Button("Voir la Carte des Clusters", id="btn-view-cluster-map", color="success", className="mt-3 ms-3"),
+                            ])
+                        ], className="mb-4")
+                    ], label="Paramètres", tab_id="tab-params"),
+                    
+                    # Onglet Résultats
+                    dbc.Tab([
+                        dbc.Card([
+                            dbc.CardHeader(html.H3("Résultats du Clustering", className="mb-0")),
+                            dbc.CardBody([
+                                html.P("Sélectionnez un fichier de résultats de clustering pour visualiser les analyses.", className="text-muted mb-3"),
+                                dbc.Row([
+                                    dbc.Col([
+                                        dbc.Label("Fichier de résultats"),
+                                        dcc.Dropdown(
+                                            id="results-file-dropdown",
+                                            options=[{"label": f, "value": f} for f in cluster_files],
+                                            value=cluster_files[0] if cluster_files else None,
+                                            clearable=False
+                                        )
+                                    ], width=6),
+                                    dbc.Col([
+                                        dbc.Button(
+                                            "Charger les résultats", 
+                                            id="btn-load-results", 
+                                            color="primary", 
+                                            className="mt-4"
+                                        )
+                                    ], width=6)
+                                ]),
+                                html.Div(id="results-stats-output", className="mt-4")
+                            ])
+                        ], className="mb-4")
+                    ], label="Résultats", tab_id="tab-results")
+                ], id="clustering-tabs", active_tab="tab-params"),
+                
+                # Résultats du clustering (pour l'onglet Paramètres)
                 html.Div(id="clustering-stats-output"),
                 
                 # Container pour l'explorateur d'articles (initialement caché)
                 html.Div(id="article-browser-container", style={"display": "none"}),
                 
                 # Store pour les données de clustering
-                dcc.Store(id="cluster-data-store")
+                dcc.Store(id="cluster-data-store"),
+                # Store pour les données de résultats chargés
+                dcc.Store(id="results-data-store")
             ], width=12)
         ])
     ])
@@ -518,18 +587,19 @@ def register_clustering_callbacks(app):
     import yaml
     import os
     from dash.dependencies import Input, Output, State, ALL
-    from dash import callback_context
+    from dash import callback_context, no_update
     import subprocess
     
     @app.callback(
         [Output("clustering-stats-output", "children"),
-         Output("cluster-data-store", "data")],
+         Output("cluster-data-store", "data"),
+         Output("clustering-tabs", "active_tab")],
         [Input("btn-run-clustering", "n_clicks")],
         [State(f"input-{arg['name']}", "value") for arg in get_clustering_args()]
     )
     def run_clustering(n_clicks, *args):
         if not n_clicks:
-            return [], None
+            return [], None, no_update
         
         # Récupérer les arguments
         arg_list = get_clustering_args()
@@ -541,10 +611,19 @@ def register_clustering_callbacks(app):
         for arg, val in arg_values.items():
             if val is None or val == '':
                 continue
-            if arg_list[list(map(lambda x: x['name'], arg_list)).index(arg)]['type'] == 'bool':
-                if val:
+                
+            # Vérifier le type de l'argument
+            arg_info = next((a for a in arg_list if a['name'] == arg), None)
+            if not arg_info:
+                continue
+                
+            # Gérer les arguments booléens (flags)
+            if arg_info['type'] == 'bool':
+                # Pour les booléens, on ajoute juste le flag si la valeur est True
+                if val in [True, 'true', 'True', 1, '1']:
                     cmd.append(f"--{arg.replace('_','-')}")
             else:
+                # Pour les autres types, on ajoute le nom de l'argument et sa valeur
                 cmd.append(f"--{arg.replace('_','-')}")
                 cmd.append(str(val))
         # Threaded execution to avoid blocking Dash
@@ -580,9 +659,11 @@ def register_clustering_callbacks(app):
                     if stats:
                         result_holder['output'] = render_clustering_stats(stats)
                         result_holder['data'] = stats
+                        result_holder['tab'] = "tab-params"
                     else:
                         result_holder['output'] = dbc.Alert("Fichier de clustering trouvé mais impossible de charger les données.", color="warning")
                         result_holder['data'] = None
+                        result_holder['tab'] = "tab-params"
                 else:
                     # Si le chemin spécifié n'existe pas, essayons de trouver le fichier dans le dossier clusters
                     clusters_dir = os.path.join(project_root, 'data', 'results', 'clusters')
@@ -599,29 +680,86 @@ def register_clustering_callbacks(app):
                             if stats:
                                 result_holder['output'] = render_clustering_stats(stats)
                                 result_holder['data'] = stats
+                                result_holder['tab'] = "tab-params"
                             else:
                                 result_holder['output'] = dbc.Alert(f"Impossible de charger les données depuis {latest_file}", color="warning")
                                 result_holder['data'] = None
+                                result_holder['tab'] = "tab-params"
                         else:
                             result_holder['output'] = dbc.Alert("Aucun fichier de clustering trouvé dans le dossier clusters.", color="warning")
                             result_holder['data'] = None
+                            result_holder['tab'] = "tab-params"
                     else:
                         result_holder['output'] = dbc.Alert(f"Dossier de clustering non trouvé: {clusters_dir}", color="warning")
                         result_holder['data'] = None
+                        result_holder['tab'] = "tab-params"
             except subprocess.CalledProcessError as e:
                 print(f"Erreur lors de l'exécution du clustering: {e}")
                 result_holder['output'] = dbc.Alert(f"Erreur lors de l'exécution : {e.stderr}", color="danger")
                 result_holder['data'] = None
+                result_holder['tab'] = "tab-params"
             except Exception as e:
                 print(f"Exception lors du clustering: {e}")
                 result_holder['output'] = dbc.Alert(f"Exception: {str(e)}", color="danger")
                 result_holder['data'] = None
+                result_holder['tab'] = "tab-params"
         thread = threading.Thread(target=run_subprocess)
         thread.start()
         # Attendre la fin du thread (ou afficher un loading...)
         while thread.is_alive():
             time.sleep(0.2)
-        return result_holder['output'], result_holder['data']
+        # S'assurer que la clé 'tab' existe dans result_holder
+        if 'tab' not in result_holder:
+            result_holder['tab'] = "tab-params"
+        return result_holder['output'], result_holder['data'], result_holder['tab']
+    
+    # Callback pour charger les résultats depuis un fichier existant
+    @app.callback(
+        [Output("results-stats-output", "children"),
+         Output("results-data-store", "data")],
+        [Input("btn-load-results", "n_clicks")],
+        [State("results-file-dropdown", "value")]
+    )
+    def load_results_file(n_clicks, selected_file):
+        if not n_clicks or not selected_file:
+            return no_update, no_update
+        
+        # Construire le chemin complet vers le fichier de résultats
+        project_root = Path(__file__).resolve().parents[2]
+        file_path = os.path.join(project_root, 'data', 'results', 'clusters', selected_file)
+        
+        if os.path.exists(file_path):
+            try:
+                # Charger les statistiques du fichier
+                stats = load_clustering_stats(file_path)
+                if stats:
+                    return render_clustering_stats(stats), stats
+                else:
+                    return dbc.Alert("Impossible de charger les données du fichier sélectionné.", color="warning"), None
+            except Exception as e:
+                return dbc.Alert(f"Erreur lors du chargement du fichier: {str(e)}", color="danger"), None
+        else:
+            return dbc.Alert(f"Le fichier {selected_file} n'existe pas.", color="warning"), None
+    
+    # Callback pour mettre à jour le dropdown des fichiers de résultats
+    @app.callback(
+        Output("results-file-dropdown", "options"),
+        [Input("clustering-tabs", "active_tab")]
+    )
+    def update_results_dropdown(active_tab):
+        if active_tab != "tab-results":
+            return no_update
+            
+        # Récupérer la liste des fichiers de clustering disponibles
+        project_root = Path(__file__).resolve().parents[2]
+        clusters_dir = os.path.join(project_root, 'data', 'results', 'clusters')
+        cluster_files = []
+        if os.path.exists(clusters_dir):
+            cluster_files = [f for f in os.listdir(clusters_dir) if f.startswith('doc_clusters_k')]
+            # Trier par date de modification (le plus récent d'abord)
+            cluster_files.sort(key=lambda x: os.path.getmtime(os.path.join(clusters_dir, x)), reverse=True)
+        
+        return [{"label": f, "value": f} for f in cluster_files]
     
     # Callback pour détecter les clics sur les boutons "Voir" des articles
     @app.callback(
@@ -655,29 +793,61 @@ def register_clustering_callbacks(app):
     
     # Callback pour ouvrir la modale lorsqu'un article est sélectionné
     @app.callback(
-        [Output('article-modal', 'is_open', allow_duplicate=True),
-         Output('article-details-body', 'children', allow_duplicate=True)],
+        Output('article-modal', 'is_open', allow_duplicate=True),
         [Input('selected-article-id-store', 'data')],
         [State('browser-cluster-data-store', 'data'),
          State('article-modal', 'is_open')],
         prevent_initial_call=True
     )
     def open_article_modal(selected_article_id, stored_data, is_open):
-        # Vérifier si l'ID d'article est valide et si la demande vient d'un clic de bouton
+        # Vérifier si l'ID d'article est valide
         if not selected_article_id:
-            return no_update, no_update
+            return no_update
             
         # Vérifier si l'appel vient du callback_context
         ctx = callback_context
         if not ctx.triggered or ctx.triggered[0]['prop_id'] != 'selected-article-id-store.data':
-            return no_update, no_update
+            return no_update
         
         print(f"Ouverture de l'article: {selected_article_id}")
+        return True
+    
+    # Callback pour mettre à jour le contenu de l'article dans la modale
+    @app.callback(
+        Output('article-details-body', 'children'),
+        [Input('selected-article-id-store', 'data'),
+         Input('page-content', 'children')],
+        [State('browser-cluster-data-store', 'data')],
+        prevent_initial_call=True
+    )
+    def update_article_content(selected_article_id, page_content, stored_data):
+        # Vérifier si l'ID d'article est valide
+        if not selected_article_id:
+            return no_update
+            
+        # Vérifier si l'appel vient du callback_context
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update
+            
+        # Si le déclencheur est page-content, ne rien faire
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        if trigger_id == 'page-content':
+            return no_update
+            
+        # Vérifier si nous sommes sur la page de carte des clusters
+        # Si oui, ne pas exécuter ce callback pour éviter l'erreur
+        try:
+            if 'cluster-map-graph' in str(page_content):
+                return no_update
+        except:
+            pass
+        
+        print(f"Mise à jour du contenu de l'article: {selected_article_id}")
         article_details = get_article_details(selected_article_id, stored_data)
         if article_details:
-            return True, article_details
-        
-        return no_update, no_update
+            return article_details
+        return html.Div("Article non trouvé")
     
     # Callback pour fermer la modale
     @app.callback(
@@ -883,15 +1053,21 @@ def register_clustering_callbacks(app):
          Output("article-browser-container", "style"),
          Output("article-browser-container", "children")],
         [Input("btn-explore-articles", "n_clicks")],
-        [State("cluster-data-store", "data")],
-        prevent_initial_call=True
+        [State("cluster-data-store", "data"),
+         State("results-data-store", "data")]
     )
-    def toggle_article_browser(explore_clicks, cluster_data):
+    def toggle_article_browser(explore_clicks, cluster_data, results_data):
         if not explore_clicks:
             return {"display": "block"}, {"display": "none"}, []
         
+        # Utiliser les données de résultats si disponibles, sinon utiliser les données de clustering
+        data_to_use = results_data if results_data else cluster_data
+        
+        if not data_to_use:
+            return html.Div("Aucune donnée de clustering disponible"), {"display": "block"}, no_update
+        
         # Afficher la page d'exploration des articles
-        return {"display": "none"}, {"display": "block"}, get_article_browser_layout(cluster_data)
+        return {"display": "none"}, {"display": "block"}, get_article_browser_layout(data_to_use)
     
     # Callback pour revenir à la visualisation depuis la page d'exploration
     @app.callback(
@@ -911,13 +1087,21 @@ def register_clustering_callbacks(app):
     @app.callback(
         Output("page-content", "children", allow_duplicate=True),
         [Input("btn-view-cluster-map", "n_clicks")],
-        [State("cluster-data-store", "data")],
+        [State("cluster-data-store", "data"),
+         State("results-data-store", "data")],
         prevent_initial_call=True
     )
-    def navigate_to_cluster_map(view_map_clicks, cluster_data):
-        from src.webapp.cluster_map_viz import get_cluster_map_layout
+    def navigate_to_cluster_map(view_map_clicks, cluster_data, results_data):
+        from src.webapp.cluster_map_viz import get_cluster_map_layout, register_cluster_map_callbacks
         
         if view_map_clicks:
+            # Utiliser les données de résultats si disponibles, sinon utiliser les données de clustering
+            data_to_use = results_data if results_data else cluster_data
+            
+            # Enregistrer les callbacks de la carte des clusters
+            register_cluster_map_callbacks(app)
+            
+            # Retourner le layout de la carte des clusters
             return get_cluster_map_layout()
             
         return no_update
