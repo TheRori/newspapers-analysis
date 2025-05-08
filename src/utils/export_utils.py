@@ -16,6 +16,9 @@ import os
 import json
 import datetime
 import uuid
+import sys
+import traceback
+import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 import plotly.graph_objects as go
@@ -23,6 +26,31 @@ import plotly.io as pio
 import pandas as pd
 import yaml
 import shutil
+
+# Configuration du logging
+logger = logging.getLogger(__name__)
+
+# Configurer le logger si ce n'est pas déjà fait
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+# Alias pour les fonctions de logging
+def log_info(message):
+    logger.info(message)
+
+def log_success(message):
+    logger.info(f"SUCCÈS: {message}")
+
+def log_warning(message):
+    logger.warning(message)
+
+def log_error(message):
+    logger.error(message)
 
 # Configuration du chemin d'exportation
 def get_export_path(config: Dict[str, Any]) -> Path:
@@ -35,13 +63,19 @@ def get_export_path(config: Dict[str, Any]) -> Path:
     Returns:
         Chemin vers le répertoire d'exportation
     """
+    # Utiliser le nouveau chemin d'exportation dans mediation_app/data/source
+    project_root = Path(__file__).parent.parent.parent
+    export_dir = project_root / 'mediation_app' / 'data' / 'source'
+    export_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Garder aussi l'ancien chemin pour compatibilité
     if 'data' in config and 'results_dir' in config['data']:
         base_dir = Path(config['data']['results_dir'])
     else:
         base_dir = Path('data/results')
     
-    export_dir = base_dir / 'exports'
-    export_dir.mkdir(exist_ok=True, parents=True)
+    old_export_dir = base_dir / 'exports'
+    old_export_dir.mkdir(exist_ok=True, parents=True)
     
     return export_dir
 
@@ -185,69 +219,16 @@ def save_analysis(
                         "saved_path": str(dest_path)
                     })
             
-            # Fichier principal des articles (articles.json)
+            # Ne plus sauvegarder les fichiers JSON d'articles
             if "articles_file" in params and params["articles_file"]:
                 articles_file = Path(params["articles_file"])
                 if articles_file.exists():
-                    # Créer un sous-répertoire pour le fichier d'articles (qui peut être volumineux)
-                    articles_dir = source_dir / "articles"
-                    articles_dir.mkdir(exist_ok=True)
-                    
-                    # Copier le fichier d'articles
-                    dest_path = articles_dir / articles_file.name
-                    
-                    try:
-                        # Pour les fichiers volumineux, utiliser une approche par morceaux
-                        # ou créer un lien symbolique si possible
-                        if os.name == 'nt':  # Windows
-                            # Sur Windows, copier le fichier (peut être lent pour les gros fichiers)
-                            shutil.copy2(articles_file, dest_path)
-                        else:  # Unix/Linux/Mac
-                            # Sur Unix, essayer de créer un lien symbolique
-                            try:
-                                os.symlink(articles_file, dest_path)
-                            except:
-                                # Si le lien symbolique échoue, copier le fichier
-                                shutil.copy2(articles_file, dest_path)
-                        
-                        saved_files.append({
-                            "type": "articles_file",
-                            "original_path": str(articles_file),
-                            "saved_path": str(dest_path)
-                        })
-                        
-                        # Créer un fichier d'information sur la source des articles
-                        info_path = articles_dir / "articles_info.json"
-                        articles_info = {
-                            "original_path": str(articles_file),
-                            "size_bytes": articles_file.stat().st_size,
-                            "last_modified": datetime.datetime.fromtimestamp(articles_file.stat().st_mtime).isoformat(),
-                            "saved_as": os.path.basename(dest_path)
-                        }
-                        
-                        # Essayer de compter le nombre d'articles
-                        try:
-                            with open(articles_file, 'r', encoding='utf-8') as f:
-                                # Lire juste assez pour compter les articles sans charger tout le fichier
-                                data = json.load(f)
-                                if isinstance(data, list):
-                                    articles_info["article_count"] = len(data)
-                                elif isinstance(data, dict) and "articles" in data:
-                                    articles_info["article_count"] = len(data["articles"])
-                        except Exception as e:
-                            articles_info["count_error"] = str(e)
-                        
-                        with open(info_path, 'w', encoding='utf-8') as f:
-                            json.dump(articles_info, f, ensure_ascii=False, indent=2)
-                    
-                    except Exception as e:
-                        print(f"Erreur lors de la sauvegarde du fichier d'articles: {e}")
-                        # Ajouter l'erreur aux métadonnées
-                        saved_files.append({
-                            "type": "articles_file_error",
-                            "original_path": str(articles_file),
-                            "error": str(e)
-                        })
+                    # Ajouter une référence au fichier d'articles sans le copier
+                    saved_files.append({
+                        "type": "articles_file_reference",
+                        "original_path": str(articles_file),
+                        "note": "Fichier d'articles non copié pour économiser de l'espace"
+                    })
         
         # Fichier de modèle Word2Vec (pour semantic_drift)
         if analysis_type == "semantic_drift" and "model_path" in source_data:
@@ -660,6 +641,92 @@ def export_collection_for_mediation(
             html_dest = analysis_export_dir / "figure.html"
             shutil.copy2(details["figure_html"], html_dest)
             details["mediation_figure_html"] = str(html_dest.relative_to(mediation_dir))
+        
+        # Convertir les fichiers JSON d'articles en Parquet si disponibles
+        if "source_data" in details and "analysis_parameters" in details["source_data"]:
+            params = details["source_data"]["analysis_parameters"]
+            if "articles_file" in params and params["articles_file"]:
+                articles_file = Path(params["articles_file"])
+                if articles_file.exists():
+                    try:
+                        # Créer un sous-répertoire pour le fichier d'articles
+                        articles_dir = analysis_export_dir / "articles"
+                        articles_dir.mkdir(exist_ok=True)
+                        
+                        # Définir le chemin du fichier Parquet
+                        print(f"Conversion du fichier d'articles {articles_file} en Parquet...")
+                        parquet_path = articles_dir / f"{articles_file.stem}.parquet"
+                        
+                        # Utiliser une approche par morceaux pour éviter de charger tout le fichier en mémoire
+                        print("Utilisation d'une approche par morceaux pour la conversion...")
+                        
+                        # Ouvrir le fichier JSON et lire les premières lignes pour déterminer sa structure
+                        with open(articles_file, 'r', encoding='utf-8') as f:
+                            # Utiliser ijson pour un parsing efficace
+                            try:
+                                import ijson
+                                parser = ijson.parse(f)
+                                # Vérifier si c'est un tableau ou un objet
+                                for prefix, event, value in parser:
+                                    if prefix == '' and event == 'start_array':
+                                        is_array = True
+                                        break
+                                    elif prefix == '' and event == 'start_map':
+                                        is_array = False
+                                        break
+                            except ImportError:
+                                # Si ijson n'est pas disponible, utiliser json standard
+                                f.seek(0)
+                                first_char = f.read(1).strip()
+                                is_array = first_char == '['
+                                f.seek(0)
+                        
+                        # Utiliser pandas pour lire le JSON et écrire en Parquet
+                        if is_array:
+                            # Si c'est un tableau JSON, utiliser read_json avec des chunks
+                            print("Détecté comme tableau JSON, utilisation de chunks...")
+                            # Utiliser pyarrow pour une conversion plus efficace
+                            try:
+                                import pyarrow as pa
+                                import pyarrow.parquet as pq
+                                import pyarrow.json as pj
+                                
+                                # Utiliser pyarrow.json pour lire le fichier JSON
+                                print("Utilisation de PyArrow pour la conversion...")
+                                table = pj.read_json(articles_file)
+                                pq.write_table(table, parquet_path)
+                                success = True
+                            except ImportError:
+                                # Si pyarrow n'est pas disponible, utiliser pandas
+                                print("PyArrow non disponible, utilisation de pandas...")
+                                # Lire par morceaux de 1000 articles
+                                for i, chunk in enumerate(pd.read_json(articles_file, lines=False, chunksize=1000)):
+                                    if i == 0:
+                                        # Premier chunk, écrire avec mode='w'
+                                        chunk.to_parquet(parquet_path, index=False)
+                                    else:
+                                        # Chunks suivants, ajouter au fichier existant
+                                        chunk.to_parquet(parquet_path, index=False, mode='a')
+                                    print(f"Traité {(i+1)*1000} articles...")
+                                success = True
+                        else:
+                            # Si c'est un objet JSON, le convertir en DataFrame
+                            print("Détecté comme objet JSON, conversion directe...")
+                            df = pd.read_json(articles_file)
+                            df.to_parquet(parquet_path, index=False)
+                            success = True
+                        
+                        print(f"Fichier Parquet créé: {parquet_path}")
+                        
+                        # Mettre à jour le chemin dans les métadonnées
+                        details["articles_parquet_file"] = str(parquet_path.relative_to(mediation_dir))
+                        details["articles_json_file"] = str(articles_file)
+                        
+                        # Copier aussi le JSON pour compatibilité
+                        json_dest = articles_dir / articles_file.name
+                        shutil.copy2(articles_file, json_dest)
+                    except Exception as e:
+                        print(f"Erreur lors de la conversion en Parquet: {e}")
         
         # Ajouter à la liste des analyses
         mediation_data["analyses"].append(details)

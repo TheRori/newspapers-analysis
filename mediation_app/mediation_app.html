@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@14.6.3/distribute/nouislider.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/nouislider@14.6.3/distribute/nouislider.min.js"></script>
 </head>
 <body>
     <header>
@@ -24,6 +26,14 @@
     </header>
 
     <div class="container">
+        <!-- Système d'onglets -->
+        <div class="tabs">
+            <button class="tab-button active" data-tab="chrono-tab">Évolution chronologique</button>
+            <button class="tab-button" data-tab="journal-tab">Répartition par journal</button>
+        </div>
+        
+        <!-- Contenu de l'onglet Évolution chronologique -->
+        <div id="chrono-tab" class="tab-content active">
         <div class="controls">
             <div class="filter-row">
                 <div class="term-selector">
@@ -66,8 +76,38 @@
             <h3>Aperçu des tendances</h3>
             <div id="insights-content"></div>
         </div>
+        </div><!-- Fin de l'onglet Évolution chronologique -->
         
-
+        <!-- Contenu de l'onglet Répartition par journal -->
+        <div id="journal-tab" class="tab-content">
+            <div class="controls">
+                <div class="filter-row">
+                    <div class="term-selector">
+                        <h3>Sélectionner des termes</h3>
+                        <div id="journal-term-checkboxes"></div>
+                    </div>
+                    <div class="right-filters">
+                        <div class="visualization-type">
+                            <h3>Type de visualisation</h3>
+                            <select id="journal-viz-type">
+                                <option value="bar">Barres groupées</option>
+                                <option value="stacked">Barres empilées</option>
+                                <option value="pie">Camembert</option>
+                            </select>
+                        </div>
+                        <div class="time-period">
+                            <h3>Période</h3>
+                            <div id="journal-year-slider"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="visualization">
+                <div id="journal-visualization"></div>
+                <div id="journal-tooltip" class="tooltip"></div>
+            </div>
+        </div><!-- Fin de l'onglet Répartition par journal -->
         
         <!-- Modal pour afficher les articles -->
         <div id="article-modal" class="modal">
@@ -112,5 +152,6 @@
     </footer>
 
     <script src="mediation_app.js"></script>
+    <script src="journal_viz.js"></script>
 </body>
 </html>

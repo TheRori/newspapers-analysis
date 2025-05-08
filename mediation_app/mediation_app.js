@@ -1,7 +1,8 @@
 // Configuration
 const config = {
-    dataPath: 'data/results/exports/collections/term_tracking_chrono/9f00067a-0044-4cc2-b6f4-3cdaa9404998/source_files/term_tracking_results.csv',
-    articlesPath: 'data/results/exports/collections/term_tracking_chrono/9f00067a-0044-4cc2-b6f4-3cdaa9404998/source_files/articles/filtered_articles_20250507_205410.json',
+    dataPath: 'data/source/collections/term_tracking_chrono/f49a77fc-3f0d-48de-aa75-82db1cfa409c/source_files/term_tracking_results.csv',
+    articlesPath: 'data/source/articles.json',
+    articlesParquetPath: 'data/source/articles.parquet',
     margin: { top: 40, right: 80, bottom: 60, left: 60 },
     transitionDuration: 800,
     colors: d3.schemeSet2,
@@ -41,13 +42,46 @@ let state = {
     newspapers: [],
     filteredData: [],
     selectedCantons: [],
-    selectedJournals: []
+    selectedJournals: [],
+    // Propriétés pour la visualisation par journal
+    journalVizInitialized: false,
+    journalVizType: 'bar',
+    journalSelectedTerms: [],
+    journalStartYear: null,
+    journalEndYear: null,
+    journalYearlyData: {}
 };
 
 // Initialisation de l'application
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
 });
+
+// Initialisation des onglets
+function initTabs() {
+    console.log('Initialisation des onglets');
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabContents = document.querySelectorAll('.tab-content');
+    console.log('Nombre d\'onglets trouvés:', tabButtons.length);
+    
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            // Désactiver tous les onglets
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // Activer l'onglet cliqué
+            button.classList.add('active');
+            const tabId = button.getAttribute('data-tab');
+            document.getElementById(tabId).classList.add('active');
+            
+            // Initialiser la visualisation par journal si nécessaire
+            if (tabId === 'journal-tab' && !state.journalVizInitialized) {
+                initJournalVisualization();
+            }
+        });
+    });
+}
 
 async function initApp() {
     try {
@@ -69,6 +103,9 @@ async function initApp() {
         // Initialiser le modal d'articles
         initArticleModal();
         
+        // Initialiser les onglets
+        initTabs();
+        
     } catch (error) {
         console.error('Erreur lors de l\'initialisation de l\'application:', error);
         document.getElementById('chart-container').innerHTML = 
@@ -82,32 +119,141 @@ async function loadData() {
         // Charger les données de suivi de termes
         const data = await d3.csv(config.dataPath);
         
+        // Stocker les données brutes pour débogage et accès direct
+        state.rawData = data;
+        console.log('Données brutes chargées:', data.length, 'lignes');
+        console.log('Exemple de données brutes:', data[0]);
+        
         // Essayer de charger les articles (avec gestion d'erreur)
         let articles = [];
         try {
-            const articlesResponse = await fetch(config.articlesPath);
-            if (articlesResponse.ok) {
-                articles = await articlesResponse.json();
-                console.log(`Chargé ${articles.length} articles`);
+            // Vérifier si le fichier Parquet existe
+            const parquetResponse = await fetch(config.articlesParquetPath, { method: 'HEAD' })
+                .catch(() => ({ ok: false })); // Gérer silencieusement l'erreur 404
+            
+            if (parquetResponse.ok) {
+                // Utiliser le fichier Parquet
+                console.log('Chargement des articles depuis Parquet...');
+                articles = await loadArticlesFromParquet(config.articlesParquetPath);
             } else {
-                console.warn('Impossible de charger les articles:', articlesResponse.statusText);
+                // Utiliser le fichier JSON comme avant
+                console.log('Fichier Parquet non trouvé, utilisation du JSON...');
+                const articlesResponse = await fetch(config.articlesPath);
+                if (articlesResponse.ok) {
+                    articles = await articlesResponse.json();
+                } else {
+                    console.warn('Impossible de charger les articles:', articlesResponse.statusText);
+                }
             }
+            console.log(`Chargé ${articles.length} articles`);
         } catch (err) {
             console.warn('Erreur lors du chargement des articles:', err);
         }
         
+        // Fonction pour charger les articles depuis un fichier Parquet
+        async function loadArticlesFromParquet(parquetPath) {
+            try {
+                // Vérifier si Apache Arrow est disponible
+                if (typeof arrow === 'undefined') {
+                    // Charger Apache Arrow si nécessaire
+                    await loadScript('https://cdn.jsdelivr.net/npm/apache-arrow@latest/Arrow.es2015.min.js');
+                }
+                
+                // Charger le fichier Parquet
+                const response = await fetch(parquetPath);
+                const arrayBuffer = await response.arrayBuffer();
+                
+                // Utiliser Apache Arrow pour lire le fichier Parquet
+                const table = await arrow.Table.from(new Uint8Array(arrayBuffer));
+                
+                // Convertir la table Arrow en format compatible avec notre application
+                return table.toArray().map(row => {
+                    const obj = {};
+                    table.schema.fields.forEach((field, i) => {
+                        obj[field.name] = row[i];
+                    });
+                    return obj;
+                });
+            } catch (error) {
+                console.error('Erreur lors du chargement du fichier Parquet:', error);
+                // En cas d'erreur, on revient au JSON
+                const response = await fetch(parquetPath.replace('.parquet', '.json'));
+                return await response.json();
+            }
+        }
+        
+        // Fonction pour charger un script externe
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+        
         // Extraire les termes (colonnes sauf 'key')
         const terms = Object.keys(data[0]).filter(key => key !== 'key');
+        console.log('Termes extraits du CSV:', terms);
+        
+        // Vérifier spécifiquement si 'ordinateur' est présent
+        if (terms.includes('ordinateur')) {
+            console.log("Le terme 'ordinateur' a été trouvé dans les données");
+            
+            // Vérifier les articles qui contiennent le terme 'ordinateur'
+            const articlesWithOrdinateur = data.filter(row => row.ordinateur && parseFloat(row.ordinateur) > 0);
+            console.log(`Nombre d'articles contenant le terme 'ordinateur': ${articlesWithOrdinateur.length}`);
+            if (articlesWithOrdinateur.length > 0) {
+                console.log('Exemple d\'article avec "ordinateur":', articlesWithOrdinateur[0]);
+            }
+        } else {
+            console.warn("Le terme 'ordinateur' n'a pas été trouvé dans les données");
+            
+            // Rechercher des termes similaires qui pourraient être mal encodés
+            const possibleMatches = terms.filter(term => 
+                term.toLowerCase().includes('ordin') || 
+                term.toLowerCase().includes('comput'));
+            console.log('Termes similaires à "ordinateur":', possibleMatches);
+        }
         
         // Extraire les années, journaux et cantons à partir des clés d'articles
         const articleInfo = data.map(row => {
             const parts = row.key.split('_');
             const dateStr = parts[1];
-            const journal = parts[3] || 'inconnu';
             
             // Trouver l'article correspondant dans le fichier JSON si disponible
             const articleDetails = articles.find(a => a.id === row.key) || {};
+            
+            // Fonction pour nettoyer les noms de journaux (supprimer les numéros, points, etc.)
+            function cleanJournalName(name) {
+                if (!name) return 'inconnu';
+                
+                // Supprimer les numéros d'édition (comme "18." à la fin)
+                let cleanedName = name.replace(/\s+\d+\.?\s*$/, '');
+                
+                // Supprimer les points à la fin
+                cleanedName = cleanedName.replace(/\.\s*$/, '');
+                
+                // Supprimer les espaces en trop
+                cleanedName = cleanedName.trim();
+                
+                return cleanedName || 'inconnu';
+            }
+            
+            // Utiliser le nom complet du journal depuis le fichier JSON si disponible
+            // Sinon, utiliser le nom extrait de l'ID (parts[3])
+            const rawJournalName = articleDetails.newspaper || parts[3] || 'inconnu';
+            
+            // Nettoyer le nom du journal pour supprimer les numéros et autres suffixes
+            const journal = cleanJournalName(rawJournalName);
             const canton = articleDetails.canton || 'unknown';
+            
+            console.log(`Article ${row.key}: journal = ${journal}`);
+            // Afficher les 5 premiers articles pour débogage
+            if (data.indexOf(row) < 5) {
+                console.log('Détails de l\'article:', articleDetails);
+            }
             
             return {
                 id: row.key,
@@ -126,9 +272,11 @@ async function loadData() {
         // Obtenir la liste des années uniques et les trier
         const years = [...new Set(articleInfo.map(item => item.year))].sort();
         
-        // Obtenir la liste des cantons et journaux uniques
+        // Obtenir la liste des cantons et journaux uniques (sans normalisation)
         const cantons = [...new Set(articleInfo.map(item => item.canton).filter(c => c !== 'unknown'))];
         const journals = [...new Set(articleInfo.map(item => item.journal).filter(j => j !== 'inconnu'))];
+        
+        console.log('Journaux (sans normalisation):', journals);
         
         // Agréger les données par année
         const yearlyData = years.reduce((acc, year) => {
@@ -142,17 +290,25 @@ async function loadData() {
             return acc;
         }, {});
         
-        // Agréger les données par journal
+        // Agréger les données par journal (en utilisant les noms normalisés)
         const journalData = journals.reduce((acc, journal) => {
+            // Trouver tous les articles pour ce journal normalisé
             const articlesThisJournal = articleInfo.filter(a => a.journal === journal);
             
+            // Agréger les données pour chaque terme
             acc[journal] = terms.reduce((termAcc, term) => {
                 termAcc[term] = articlesThisJournal.reduce((sum, article) => sum + (article.values[term] || 0), 0);
                 return termAcc;
             }, {});
             
+            // Ajouter des métadonnées sur ce journal
+            acc[journal]._count = articlesThisJournal.length;
+            acc[journal]._originalNames = [...new Set(articlesThisJournal.map(a => a.originalJournal))].sort();
+            
             return acc;
         }, {});
+        
+        console.log('Données agrégées par journal:', journalData);
         
         // Agréger les données par canton
         const cantonData = cantons.reduce((acc, canton) => {
@@ -336,62 +492,174 @@ function updateFilteredData() {
     filterDataAndUpdateVisualization();
 }
 
-// Afficher les articles pour un terme et une année spécifiques
-function showArticlesForTermAndYear(term, year) {
-    console.log(`Affichage des articles pour ${term} en ${year}`);
-    
-    // Vérifier si nous avons des articles pré-filtrés pour cette année et ce terme
-    let articlesForTerm = [];
-    
-    if (state.availableArticles && state.availableArticles[year] && state.availableArticles[year][term]) {
-        // Utiliser les articles pré-filtrés
-        articlesForTerm = state.availableArticles[year][term];
-    } else {
-        // Rechercher manuellement les articles
-        articlesForTerm = state.articles.filter(article => {
-            // Extraire l'année de l'ID de l'article
-            const match = article.id.match(/article_([0-9]{4})-([0-9]{2})-([0-9]{2})/);
-            const articleYear = match ? match[1] : null;
+// Fonction unifiée pour filtrer et afficher les articles selon différents critères
+function filterAndShowArticles(filters) {
+    console.log('Filtrage des articles avec les critères:', filters);
             
-            // Vérifier si l'article correspond à l'année et contient le terme
-            const hasYear = articleYear === year;
-            const hasTerm = article.content && article.content.toLowerCase().includes(term.toLowerCase());
+    // Normaliser les noms de journaux pour la comparaison
+    function normalizeJournalName(name) {
+        if (!name) return "";
+        return name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    }
             
-            // Appliquer également les filtres de canton et journal si nécessaire
-            const cantonMatch = state.selectedCantons.length === 0 || 
-                              state.selectedCantons.includes(article.canton);
-            
-            let journalMatch = true;
-            if (state.selectedJournals.length > 0) {
-                const normalizedArticleJournal = article.newspaper ? 
-                    article.newspaper.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
+    // Extraire l'année et le journal de l'ID d'un article
+    function extractInfoFromArticleId(id) {
+        if (!id) return { year: null, journal: null };
                 
-                journalMatch = state.selectedJournals.some(journal => {
-                    const normalizedSelectedJournal = journal.toLowerCase()
-                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                    return normalizedArticleJournal.includes(normalizedSelectedJournal) || 
-                           normalizedSelectedJournal.includes(normalizedArticleJournal);
-                });
-            }
+        // Format: article_1969-01-04_la_sentinelle_01187e92_mistral
+        const match = id.match(/article_([0-9]{4})-([0-9]{2})-([0-9]{2})_([^_]+)/);
+        if (match) {
+            return {
+                year: match[1],
+                journal: match[4].replace(/_/g, ' ')
+            };
+        }
+        return { year: null, journal: null };
+    }
             
-            return hasYear && hasTerm && cantonMatch && journalMatch;
+    // Fonction pour vérifier si un article appartient à un journal spécifique
+    function isArticleFromJournal(article, targetJournal) {
+        if (!targetJournal) return true;
+                
+        // Normaliser le journal cible
+        const normalizedTargetJournal = normalizeJournalName(targetJournal);
+                
+        // Essayer plusieurs sources pour le journal de l'article
+        let articleJournals = [];
+                
+        // 1. Essayer le champ journal ou newspaper
+        if (article.journal) articleJournals.push(article.journal);
+        if (article.newspaper) articleJournals.push(article.newspaper);
+                
+        // 2. Essayer d'extraire depuis l'ID
+        if (article.id) {
+            const info = extractInfoFromArticleId(article.id);
+            if (info.journal) articleJournals.push(info.journal);
+        }
+                
+        // 3. Essayer le champ details.newspaper si disponible
+        if (article.details && article.details.newspaper) {
+            articleJournals.push(article.details.newspaper);
+        }
+                
+        // Si aucun journal n'a été trouvé, retourner false
+        if (articleJournals.length === 0) {
+            console.log(`Aucun journal trouvé pour l'article:`, article.id || 'ID inconnu');
+            return false;
+        }
+                
+        // Vérifier si l'un des journaux de l'article correspond au journal cible
+        return articleJournals.some(journal => {
+            const normalizedJournal = normalizeJournalName(journal);
+                    
+            // Afficher des informations de débogage pour les premiers articles
+            if (state.articles.indexOf(article) < 5) {
+                console.log(`Comparaison de journaux pour l'article ${article.id || 'ID inconnu'}:`);
+                console.log(`  Journal cible: "${targetJournal}" (normalisé: "${normalizedTargetJournal}")`);
+                console.log(`  Journal article: "${journal}" (normalisé: "${normalizedJournal}")`);
+                console.log(`  Correspondance: ${normalizedJournal.includes(normalizedTargetJournal) || normalizedTargetJournal.includes(normalizedJournal)}`);
+            }
+                    
+            // Vérifier si l'un contient l'autre (pour gérer les variations de noms)
+            return normalizedJournal.includes(normalizedTargetJournal) || 
+                   normalizedTargetJournal.includes(normalizedJournal);
         });
     }
-    
+            
+    // Déterminer le titre du modal en fonction des filtres
+    let modalTitle = 'Articles';
+    if (filters.term) {
+        modalTitle += ` contenant "${filters.term}"`;
+    }
+    if (filters.year) {
+        modalTitle += ` en ${filters.year}`;
+    }
+    if (filters.journal) {
+        modalTitle += ` du journal "${filters.journal}"`;
+    }
+            
+    // Rechercher les articles qui correspondent aux critères
+    let filteredArticles = [];
+            
+    // Utiliser les articles pré-filtrés si disponibles (pour l'optimisation)
+    if (filters.year && filters.term && state.availableArticles && 
+        state.availableArticles[filters.year] && 
+        state.availableArticles[filters.year][filters.term]) {
+                
+        filteredArticles = state.availableArticles[filters.year][filters.term];
+                
+        // Si un journal est également spécifié, filtrer davantage
+        if (filters.journal) {
+            filteredArticles = filteredArticles.filter(article => 
+                isArticleFromJournal(article, filters.journal)
+            );
+        }
+    } else {
+        // Rechercher manuellement les articles
+        filteredArticles = state.articles.filter(article => {
+            // Vérifier le terme
+            const hasTerm = !filters.term || 
+                          (article.content && article.content.toLowerCase().includes(filters.term.toLowerCase()));
+            
+            // Vérification supplémentaire pour déboguer
+            if (hasTerm && filters.term) {
+                // Vérifier si le terme est réellement présent dans l'article
+                const termFound = article.content && article.content.toLowerCase().includes(filters.term.toLowerCase());
+                if (!termFound) {
+                    console.warn(`Attention: Article ${article.id} marqué comme contenant "${filters.term}" mais le terme n'a pas été trouvé dans le contenu.`);
+                }
+            }
+                    
+            // Vérifier l'année
+            let hasYear = true;
+            if (filters.year) {
+                const info = extractInfoFromArticleId(article.id);
+                hasYear = info.year === filters.year;
+            }
+                    
+            // Vérifier le journal
+            const hasJournal = !filters.journal || isArticleFromJournal(article, filters.journal);
+                    
+            // Appliquer également les filtres de canton et journal globaux si nécessaire
+            const cantonMatch = state.selectedCantons.length === 0 || 
+                              state.selectedCantons.includes(article.canton);
+                    
+            let journalMatch = true;
+            if (state.selectedJournals.length > 0 && !filters.journal) {
+                journalMatch = state.selectedJournals.some(journal => 
+                    isArticleFromJournal(article, journal)
+                );
+            }
+                    
+            return hasTerm && hasYear && hasJournal && cantonMatch && journalMatch;
+        });
+    }
+                    
+    console.log(`Nombre d'articles trouvés: ${filteredArticles.length}`);
+                    
     // Limiter le nombre d'articles à afficher
-    const limitedArticles = articlesForTerm.slice(0, config.maxArticlesToShow);
+    const limitedArticles = filteredArticles.slice(0, config.maxArticlesToShow);
     
     // Mettre à jour l'état
     state.selectedArticles = limitedArticles;
     
-    // Mettre à jour le titre du modal
-    document.getElementById('modal-title').textContent = `Articles contenant "${term}" en ${year} (${limitedArticles.length}/${articlesForTerm.length})`;
+    // Stocker le terme de recherche pour la mise en évidence
+    state.searchTerm = filters.term;
+    
+    // Mettre à jour le titre du modal avec le nombre d'articles
+    document.getElementById('modal-title').textContent = 
+        `${modalTitle} (${limitedArticles.length}/${filteredArticles.length})`;
     
     // Afficher les articles
     updateArticleDisplay(limitedArticles);
     
     // Afficher le modal
     document.getElementById('article-modal').style.display = 'block';
+}
+
+// Fonction de compatibilité pour l'ancienne API
+function showArticlesForTermAndYear(term, year) {
+    filterAndShowArticles({ term, year });
 }
 
 // Fonction pour filtrer les données et mettre à jour la visualisation
@@ -1151,44 +1419,16 @@ function filterArticles() {
 
 // Afficher les articles pour un terme spécifique
 function showArticlesForTerm(term) {
-    console.log(`Affichage des articles pour ${term}`);
-    
-    // Trouver tous les articles qui contiennent ce terme, en respectant les filtres actuels
-    let articlesWithTerm = [];
-    
-    // Si des filtres sont appliqués (cantons ou journaux)
-    if (state.selectedCantons.length > 0 || state.selectedJournals.length > 0) {
-        // Parcourir toutes les années disponibles pour ce terme
-        for (const year in state.availableArticles) {
-            if (state.availableArticles[year][term] && state.availableArticles[year][term].length > 0) {
-                articlesWithTerm = articlesWithTerm.concat(state.availableArticles[year][term]);
-            }
-        }
-    } else {
-        // Sans filtre, utiliser tous les articles qui contiennent ce terme
-        articlesWithTerm = state.articles.filter(article => {
-            return article.content && article.content.toLowerCase().includes(term.toLowerCase());
-        });
-    }
-    
-    // Limiter le nombre d'articles à afficher
-    const limitedArticles = articlesWithTerm.slice(0, config.maxArticlesToShow);
-    
-    // Mettre à jour l'état
-    state.selectedArticles = limitedArticles;
-    
-    // Mettre à jour le titre du modal
-    document.getElementById('modal-title').textContent = `Articles contenant le terme "${term}" (${limitedArticles.length}/${articlesWithTerm.length})`;
-    
-    // Afficher les articles
-    updateArticleDisplay(limitedArticles);
-    
-    // Afficher le modal
-    document.getElementById('article-modal').style.display = 'block';
+    // Utiliser la fonction unifiée avec seulement le paramètre term
+    filterAndShowArticles({ term });
 }
 
 // Afficher les articles pour un canton spécifique
 function showArticlesForCanton(canton) {
+    // Utiliser la fonction unifiée avec le paramètre canton
+    // Note: cette fonction n'est pas encore complètement implémentée dans filterAndShowArticles
+    // Pour l'instant, nous utilisons l'ancienne implémentation
+    
     // Trouver tous les articles de ce canton qui contiennent un des termes sélectionnés
     const articlesFromCanton = state.data.filter(article => 
         article.canton === canton && 
@@ -1213,26 +1453,8 @@ function showArticlesForCanton(canton) {
 
 // Afficher les articles pour un journal spécifique
 function showArticlesForJournal(journal) {
-    // Trouver tous les articles de ce journal qui contiennent un des termes sélectionnés
-    const articlesFromJournal = state.data.filter(article => 
-        article.journal === journal && 
-        state.selectedTerms.some(term => article.values[term] > 0)
-    );
-    
-    // Limiter le nombre d'articles à afficher
-    const limitedArticles = articlesFromJournal.slice(0, config.maxArticlesToShow);
-    
-    // Mettre à jour l'état
-    state.selectedArticles = limitedArticles;
-    
-    // Mettre à jour le titre du modal
-    document.getElementById('modal-title').textContent = `Articles du journal ${journal}`;
-    
-    // Afficher les articles
-    updateArticleDisplay(limitedArticles);
-    
-    // Afficher le modal
-    document.getElementById('article-modal').style.display = 'block';
+    // Utiliser la fonction unifiée avec le paramètre journal
+    filterAndShowArticles({ journal });
 }
 
 // Mettre à jour l'affichage des articles
@@ -1264,11 +1486,25 @@ function updateArticleDisplay(articles) {
         
         // Mettre en évidence les termes sélectionnés dans le contenu
         let highlightedContent = content;
+        
+        // D'abord, mettre en évidence le terme de recherche s'il existe
+        if (state.searchTerm && content && content.toLowerCase().includes(state.searchTerm.toLowerCase())) {
+            const regex = new RegExp(`(${state.searchTerm})`, 'gi');
+            highlightedContent = highlightedContent.replace(regex, '<span class="highlight search-term">$1</span>');
+            console.log(`Terme de recherche "${state.searchTerm}" trouvé et mis en évidence dans l'article ${article.id}`);
+        } else if (state.searchTerm) {
+            console.warn(`Terme de recherche "${state.searchTerm}" non trouvé dans l'article ${article.id}`);
+        }
+        
+        // Ensuite, mettre en évidence les autres termes sélectionnés
         state.selectedTerms.forEach(term => {
             // Vérifier si le terme est présent dans le contenu de l'article
             if (content && content.toLowerCase().includes(term.toLowerCase())) {
-                const regex = new RegExp(`(${term})`, 'gi');
-                highlightedContent = highlightedContent.replace(regex, '<span class="highlight">$1</span>');
+                // Ne pas remplacer les termes déjà mis en évidence comme terme de recherche
+                if (!state.searchTerm || term.toLowerCase() !== state.searchTerm.toLowerCase()) {
+                    const regex = new RegExp(`(${term})`, 'gi');
+                    highlightedContent = highlightedContent.replace(regex, '<span class="highlight">$1</span>');
+                }
             }
         });
         
@@ -1286,7 +1522,12 @@ function updateArticleDisplay(articles) {
             </div>
             <div class="article-footer">
                 <div class="article-tags">
-                    ${state.selectedTerms.filter(term => content && content.toLowerCase().includes(term.toLowerCase()))
+                    ${state.searchTerm && content && content.toLowerCase().includes(state.searchTerm.toLowerCase()) ? 
+                        `<span class="article-tag search-term">${state.searchTerm}</span>` : ''}
+                    ${state.selectedTerms.filter(term => 
+                        content && content.toLowerCase().includes(term.toLowerCase()) && 
+                        (!state.searchTerm || term.toLowerCase() !== state.searchTerm.toLowerCase())
+                    )
                         .map(term => `<span class="article-tag">${term}</span>`)
                         .join('')}
                 </div>

@@ -26,7 +26,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Chargement des données
 function loadData() {
-    d3.csv('data/results/exports/collections/heatmap_similars/bd607f58-f47b-4c3e-9ef0-1ca126b15d2f/source_files/similar_terms_term_tracking_results.csv')
+    // Chemin vers le fichier CSV (pour compatibilité)
+    const csvPath = 'data/results/exports/collections/heatmap_similars/bd607f58-f47b-4c3e-9ef0-1ca126b15d2f/source_files/similar_terms_term_tracking_results.csv';
+    
+    // Chemin vers le fichier Parquet (nouvelle version)
+    const parquetPath = csvPath.replace('.csv', '.parquet');
+    
+    // Vérifier si le fichier Parquet existe
+    fetch(parquetPath, { method: 'HEAD' })
+        .then(response => {
+            if (response.ok) {
+                // Le fichier Parquet existe, on l'utilise
+                console.log('Chargement des données depuis Parquet...');
+                return loadParquetData(parquetPath);
+            } else {
+                // Sinon, on utilise le CSV comme avant
+                console.log('Fichier Parquet non trouvé, utilisation du CSV...');
+                return d3.csv(csvPath);
+            }
+        })
         .then(data => {
             // Stocker les données
             state.data = data;
@@ -39,6 +57,48 @@ function loadData() {
             document.getElementById('heatmap-container').innerHTML = 
                 '<div class="error-message">Erreur lors du chargement des données. Veuillez réessayer.</div>';
         });
+}
+
+// Fonction pour charger les données depuis un fichier Parquet
+async function loadParquetData(parquetPath) {
+    try {
+        // Vérifier si Apache Arrow est disponible
+        if (typeof arrow === 'undefined') {
+            // Charger Apache Arrow si nécessaire
+            await loadScript('https://cdn.jsdelivr.net/npm/apache-arrow@latest/Arrow.es2015.min.js');
+        }
+        
+        // Charger le fichier Parquet
+        const response = await fetch(parquetPath);
+        const arrayBuffer = await response.arrayBuffer();
+        
+        // Utiliser Apache Arrow pour lire le fichier Parquet
+        const table = await arrow.Table.from(new Uint8Array(arrayBuffer));
+        
+        // Convertir la table Arrow en format compatible avec d3
+        return table.toArray().map(row => {
+            const obj = {};
+            table.schema.fields.forEach((field, i) => {
+                obj[field.name] = row[i];
+            });
+            return obj;
+        });
+    } catch (error) {
+        console.error('Erreur lors du chargement du fichier Parquet:', error);
+        // En cas d'erreur, on revient au CSV
+        return d3.csv(parquetPath.replace('.parquet', '.csv'));
+    }
+}
+
+// Fonction pour charger un script externe
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
 }
 
 // Initialisation des contrôles
