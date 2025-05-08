@@ -1,0 +1,511 @@
+/* Styles pour la page de citations rétro */
+
+/* Importer la police rétro pixel */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+:root {
+    --retro-cyan: #00ffff;
+    --retro-magenta: #ff00ff;
+    --retro-orange: #ff8800;
+    --retro-green: #00ff88;
+    --retro-blue: #0088ff;
+    --retro-dark: #000033;
+    --retro-glow: 0 0 10px;
+}
+
+body {
+    background-color: var(--retro-dark);
+    color: #ffffff;
+}
+
+.retro-container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background-color: rgba(0, 0, 0, 0.7);
+    border: 2px solid var(--retro-cyan);
+    border-radius: 8px;
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+}
+
+.retro-title {
+    font-family: 'Press Start 2P', monospace;
+    text-align: center;
+    color: var(--retro-cyan);
+    text-shadow: var(--retro-glow) var(--retro-cyan);
+    margin-bottom: 2rem;
+    font-size: 1.8rem;
+    letter-spacing: 1px;
+}
+
+/* Styles pour le carrousel */
+.retro-swiper {
+    height: 650px;
+    margin-bottom: 2rem;
+    position: relative;
+}
+
+.citation-card {
+    background-color: rgba(0, 0, 0, 0.8);
+    border: 2px solid;
+    border-radius: 8px;
+    padding: 2rem;
+    height: 550px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.3s ease;
+    overflow: hidden;
+    position: relative;
+}
+
+.citation-card.informatique {
+    border-color: var(--retro-cyan);
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+}
+
+.citation-card.ordinateur {
+    border-color: var(--retro-green);
+    box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+}
+
+.citation-card.internet {
+    border-color: var(--retro-magenta);
+    box-shadow: 0 0 15px rgba(255, 0, 255, 0.3);
+}
+
+.term-icon {
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.term-icon img {
+    width: 80px;
+    height: 80px;
+    filter: drop-shadow(0 0 5px currentColor);
+}
+
+.term-title {
+    font-family: 'Press Start 2P', monospace;
+    text-align: center;
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.term-title.informatique {
+    color: var(--retro-cyan);
+}
+
+.term-title.ordinateur {
+    color: var(--retro-green);
+}
+
+.term-title.internet {
+    color: var(--retro-magenta);
+}
+
+.term-year {
+    font-family: 'Press Start 2P', monospace;
+    text-align: center;
+    font-size: 1.8rem;
+    margin-bottom: 1rem;
+}
+
+.term-year.informatique {
+    color: var(--retro-cyan);
+}
+
+.term-year.ordinateur {
+    color: var(--retro-green);
+}
+
+.term-year.internet {
+    color: var(--retro-magenta);
+}
+
+.citation-text {
+    font-family: 'VT323', monospace;
+    font-size: 1.4rem;
+    line-height: 1.4;
+    margin-bottom: 1rem;
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 0.5rem;
+    text-align: justify;
+    color: #ffffff;
+    height: 300px;
+    max-height: 300px;
+}
+
+.citation-source {
+    font-family: 'VT323', monospace;
+    font-size: 1.2rem;
+    text-align: right;
+    font-style: italic;
+    margin-top: 1rem;
+}
+
+.article-links {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 1rem;
+    gap: 1rem;
+}
+
+.view-article-link,
+.view-full-article {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.7rem;
+    padding: 0.5rem;
+    text-align: center;
+    border: 2px solid;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    flex: 1;
+}
+
+.view-article-link {
+    color: var(--retro-orange);
+    border-color: var(--retro-orange);
+    background-color: transparent;
+    box-shadow: 0 0 5px rgba(255, 136, 0, 0.3);
+}
+
+.view-article-link:hover {
+    background-color: var(--retro-orange);
+    color: var(--retro-dark);
+}
+
+.view-full-article {
+    color: var(--retro-cyan);
+    border-color: var(--retro-cyan);
+    background-color: transparent;
+    box-shadow: 0 0 5px rgba(0, 255, 255, 0.3);
+}
+
+.view-full-article:hover {
+    background-color: var(--retro-cyan);
+    color: var(--retro-dark);
+}
+
+/* Styles pour les contrôles */
+.retro-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 2rem;
+}
+
+.retro-button {
+    font-family: 'Press Start 2P', monospace;
+    background-color: var(--retro-dark);
+    color: var(--retro-cyan);
+    border: 2px solid var(--retro-cyan);
+    padding: 0.8rem 1.5rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-shadow: var(--retro-glow) var(--retro-cyan);
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+}
+
+.retro-button:hover {
+    background-color: var(--retro-cyan);
+    color: var(--retro-dark);
+}
+
+.term-filters {
+    display: flex;
+    gap: 1rem;
+}
+
+.term-filter {
+    font-family: 'Press Start 2P', monospace;
+    background-color: var(--retro-dark);
+    border: 2px solid;
+    padding: 0.5rem 1rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.term-filter[data-term="informatique"] {
+    color: var(--retro-cyan);
+    border-color: var(--retro-cyan);
+}
+
+.term-filter[data-term="ordinateur"] {
+    color: var(--retro-green);
+    border-color: var(--retro-green);
+}
+
+.term-filter[data-term="internet"] {
+    color: var(--retro-magenta);
+    border-color: var(--retro-magenta);
+}
+
+.term-filter.active[data-term="informatique"] {
+    background-color: var(--retro-cyan);
+    color: var(--retro-dark);
+}
+
+.term-filter.active[data-term="ordinateur"] {
+    background-color: var(--retro-green);
+    color: var(--retro-dark);
+}
+
+.term-filter.active[data-term="internet"] {
+    background-color: var(--retro-magenta);
+    color: var(--retro-dark);
+}
+
+/* Styles pour les flèches et pagination du swiper */
+.swiper-button-next,
+.swiper-button-prev {
+    color: var(--retro-cyan);
+    text-shadow: var(--retro-glow) var(--retro-cyan);
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 40px;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+.swiper-button-next {
+    right: 10px;
+}
+
+.swiper-button-prev {
+    left: 10px;
+}
+
+.swiper-button-next:hover,
+.swiper-button-prev:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+    box-shadow: 0 0 15px var(--retro-cyan);
+}
+
+.swiper-button-next:after,
+.swiper-button-prev:after {
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.swiper-pagination-bullet {
+    background-color: var(--retro-cyan);
+    opacity: 0.5;
+}
+
+.swiper-pagination-bullet-active {
+    background-color: var(--retro-cyan);
+    opacity: 1;
+}
+
+/* Animation de scan rétro */
+@keyframes scanline {
+    0% {
+        transform: translateY(-100%);
+    }
+    100% {
+        transform: translateY(100%);
+    }
+}
+
+.citation-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 5px;
+    background: linear-gradient(to bottom, 
+        rgba(0, 255, 255, 0), 
+        rgba(0, 255, 255, 0.2), 
+        rgba(0, 255, 255, 0));
+    animation: scanline 8s linear infinite;
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* Styles pour le modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(5px);
+}
+
+.modal-content {
+    background-color: var(--retro-dark);
+    margin: 5% auto;
+    padding: 20px;
+    border: 2px solid var(--retro-cyan);
+    border-radius: 8px;
+    width: 80%;
+    max-width: 900px;
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+    animation: glow 2s infinite alternate;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+@keyframes glow {
+    from {
+        box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+    }
+    to {
+        box-shadow: 0 0 20px rgba(0, 255, 255, 0.8);
+    }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--retro-cyan);
+}
+
+.modal-header h3 {
+    font-family: 'Press Start 2P', monospace;
+    color: var(--retro-cyan);
+    margin: 0;
+    font-size: 1.2rem;
+    text-shadow: var(--retro-glow) var(--retro-cyan);
+}
+
+.close {
+    color: var(--retro-cyan);
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: var(--retro-magenta);
+}
+
+.modal-body {
+    padding: 1rem 0;
+    flex-grow: 1;
+    overflow-y: auto;
+    margin: 1rem 0;
+}
+
+#full-article-content {
+    font-family: 'VT323', monospace;
+    font-size: 1.4rem;
+    line-height: 1.5;
+    color: #ffffff;
+    white-space: pre-wrap;
+    padding: 0 1rem;
+}
+
+/* Styles pour les termes mis en surbrillance */
+.highlight-informatique {
+    background-color: rgba(0, 255, 255, 0.2);
+    color: var(--retro-cyan);
+    font-weight: bold;
+    padding: 0 2px;
+    border-radius: 3px;
+    box-shadow: 0 0 5px var(--retro-cyan);
+    text-shadow: 0 0 5px var(--retro-cyan);
+}
+
+.highlight-ordinateur {
+    background-color: rgba(0, 255, 136, 0.2);
+    color: var(--retro-green);
+    font-weight: bold;
+    padding: 0 2px;
+    border-radius: 3px;
+    box-shadow: 0 0 5px var(--retro-green);
+    text-shadow: 0 0 5px var(--retro-green);
+}
+
+.highlight-internet {
+    background-color: rgba(255, 0, 255, 0.2);
+    color: var(--retro-magenta);
+    font-weight: bold;
+    padding: 0 2px;
+    border-radius: 3px;
+    box-shadow: 0 0 5px var(--retro-magenta);
+    text-shadow: 0 0 5px var(--retro-magenta);
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 1rem;
+    border-top: 1px solid var(--retro-cyan);
+}
+
+.article-info {
+    font-family: 'VT323', monospace;
+    font-size: 1.2rem;
+    color: #ffffff;
+}
+
+#article-date, #article-newspaper {
+    display: inline-block;
+    margin-right: 1rem;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .retro-title {
+        font-size: 1.2rem;
+    }
+    
+    .retro-swiper {
+        height: 600px;
+    }
+    
+    .citation-card {
+        height: 520px;
+    }
+    
+    .retro-controls {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .term-filters {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .modal-content {
+        width: 95%;
+        margin: 10% auto;
+    }
+    
+    .modal-header h3 {
+        font-size: 1rem;
+    }
+    
+    #full-article-content {
+        font-size: 1.2rem;
+    }
+    
+    .modal-footer {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .article-info {
+        margin-bottom: 0.5rem;
+    }
+}
