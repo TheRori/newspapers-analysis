@@ -1,6 +1,32 @@
 {
-  "informatique": [
-    "informatique",
-    "ordinateur"
+  "z4_eth": [
+    "ordinateur scientifique", "informatique", "calcul numérique", "programmation", "ETH", "Konrad Zuse"
+  ],
+  "ermeth": [
+    "ordinateur suisse", "recherche scientifique", "tubes électroniques", "développement local", "ETH"
+  ],
+  "ein_signature": [
+    "réseau européen", "internet expérimental", "collaboration transnationale", "transfert de données", "EIN"
+  ],
+  "smaky_1": [
+    "micro-ordinateur", "pédagogie", "innovation suisse", "Smaky", "Jean-Daniel Nicoud", "UNIL"
+  ],
+  "stamm_premier_article": [
+    "journalisme informatique", "vulgarisation technologique", "Marielle Stamm", "Suisse romande", "01 Informatique"
+  ],
+  "eth_informatique_1980": [
+    "enseignement informatique", "ETH", "discipline scientifique", "formation universitaire", "institutionnalisation"
+  ],
+  "ib_01_lancement": [
+    "presse informatique", "communication numérique", "vulgarisation", "magazine suisse", "Informatique & Bureautique", "Marielle Stamm"
+  ],
+  "videotex_suisse": [
+    "réseau interactif", "terminal numérique", "service en ligne", "PTT Suisse", "Vidéotex"
+  ],
+  "internet_suisse": [
+    "web", "connexion à domicile", "adresses email", "fournisseur d'accès", "Internet", "Swisscom"
+  ],
+  "musee_bolo": [
+    "mémoire informatique", "patrimoine numérique", "conservation technologique", "Musée Bolo", "EPFL", "Marielle Stamm"
   ]
 }

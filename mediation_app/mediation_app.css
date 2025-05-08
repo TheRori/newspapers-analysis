@@ -580,7 +580,87 @@ footer {
     padding: 20px;
     margin-top: 40px;
     background-color: var(--primary-color);
-    color: white;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.9rem;
+}
+
+footer p {
+    margin: 5px 0;
+}
+
+/* Timeline historique */
+.timeline-events {
+    margin-top: 30px;
+    background-color: #1e1e1e;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    border: 1px solid rgba(52, 152, 219, 0.3);
+}
+
+.event-category {
+    margin-bottom: 25px;
+}
+
+.event-category h4 {
+    color: var(--secondary-color);
+    margin-bottom: 15px;
+    font-size: 1.2rem;
+    border-bottom: 1px solid rgba(52, 152, 219, 0.3);
+    padding-bottom: 5px;
+}
+
+.event-item {
+    display: flex;
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.event-date {
+    flex: 0 0 120px;
+    font-weight: bold;
+    color: var(--secondary-color);
+}
+
+.event-content {
+    flex: 1;
+}
+
+.event-content h5 {
+    margin-bottom: 5px;
+    font-size: 1rem;
+}
+
+.event-impact {
+    font-style: italic;
+    color: #888;
+    margin-top: 5px;
+    font-size: 0.9rem;
+}
+
+/* Annotations sur le graphique */
+.event-line {
+    stroke-dasharray: 3,3;
+    opacity: 0.6;
+}
+
+.event-marker {
+    fill: var(--secondary-color);
+    stroke: white;
+    stroke-width: 1px;
+}
+
+.event-label {
+    font-size: 10px;
+    fill: var(--text-color);
+}
+
+/* Styles pour les checkboxes de la timeline */
+#timeline-term-checkboxes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 /* D3 specific styles */
@@ -639,4 +719,396 @@ footer {
     header h1 {
         font-size: 1.8rem;
     }
+}
+
+/* Timeline events */
+.timeline-events {
+    margin-top: 30px;
+    padding: 20px;
+    background-color: var(--light-gray);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+}
+
+.timeline-events h3 {
+    margin-bottom: 15px;
+    color: var(--secondary-color);
+}
+
+.event-category {
+    margin-bottom: 20px;
+}
+
+.event-category h4 {
+    color: var(--accent-color);
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--dark-gray);
+    padding-bottom: 5px;
+}
+
+.event-item {
+    display: flex;
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 5px;
+    transition: all 0.3s ease;
+}
+
+.event-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.event-item.highlighted {
+    background-color: rgba(52, 152, 219, 0.2);
+    border-left: 4px solid var(--secondary-color);
+    transform: translateX(5px);
+}
+
+.event-date {
+    flex: 0 0 100px;
+    font-weight: bold;
+    color: var(--secondary-color);
+}
+
+.event-content {
+    flex: 1;
+}
+
+.event-content h5 {
+    margin-bottom: 5px;
+    color: white;
+}
+
+.event-impact {
+    font-style: italic;
+    color: var(--dark-gray);
+    margin-top: 5px;
+    font-size: 0.9em;
+}
+
+/* Styles pour les mots-clés des événements */
+.event-keywords {
+    margin-top: 10px;
+}
+
+.keywords-title {
+    font-size: 0.9em;
+    color: var(--secondary-color);
+    margin-bottom: 5px;
+}
+
+.keywords-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.keyword-tag {
+    background-color: rgba(52, 152, 219, 0.15);
+    color: var(--secondary-color);
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.keyword-tag:hover {
+    background-color: rgba(52, 152, 219, 0.3);
+    transform: translateY(-2px);
+}
+
+/* --- TIMELINE MODERNISÉE --- */
+.timeline-card {
+    background: var(--light-gray);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 24px 32px;
+    margin-bottom: 30px;
+    transition: box-shadow 0.3s;
+}
+.timeline-card:hover {
+    box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+}
+
+.timeline-svg {
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+    background: var(--background-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+}
+
+.timeline-point {
+    fill: var(--secondary-color);
+    stroke: white;
+    stroke-width: 2px;
+    cursor: pointer;
+    transition: r 0.2s, fill 0.2s;
+}
+.timeline-point:hover, .timeline-point.active {
+    fill: var(--accent-color);
+    r: 10;
+    filter: drop-shadow(0 0 8px var(--accent-color));
+}
+
+.timeline-event-marker {
+    fill: var(--accent-color);
+    stroke: white;
+    stroke-width: 2px;
+    opacity: 0.95;
+    cursor: pointer;
+    transition: r 0.2s, fill 0.2s, opacity 0.2s;
+}
+.timeline-event-marker:hover, .timeline-event-marker.active {
+    fill: #ffd700;
+    opacity: 1;
+    r: 13;
+    filter: drop-shadow(0 0 12px #ffd700cc);
+}
+
+.timeline-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: #222b3aee;
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 1rem;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    z-index: 20;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    transform: translateY(-12px) scale(0.98);
+    max-width: 320px;
+    word-break: break-word;
+}
+.timeline-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+@media (max-width: 700px) {
+    .timeline-card {
+        padding: 12px 4px;
+    }
+    .timeline-tooltip {
+        font-size: 0.9rem;
+        max-width: 95vw;
+    }
+}
+
+/* Styles pour les groupes d'événements dans la timeline */
+.event-checkbox-group {
+    margin-bottom: 12px;
+    padding: 8px;
+    border-radius: 6px;
+    background-color: rgba(52, 152, 219, 0.1);
+    border-left: 3px solid var(--secondary-color);
+    transition: all 0.2s ease;
+}
+
+.event-checkbox-group:hover {
+    background-color: rgba(52, 152, 219, 0.2);
+    transform: translateX(2px);
+}
+
+.event-title {
+    display: flex;
+    align-items: center;
+    font-size: 1rem;
+    color: var(--text-color);
+    cursor: pointer;
+}
+
+.event-title input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+.event-checkbox {
+    transform: scale(1.2);
+}
+
+.ungrouped-terms {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+.ungrouped-terms h4 {
+    margin-bottom: 10px;
+    color: var(--text-color);
+    font-size: 0.95rem;
+    opacity: 0.8;
+}
+
+/* Styles pour les bulles d'information des événements */
+.event-tooltip {
+    pointer-events: none; /* Permet les clics à travers */
+}
+
+.event-tooltip rect {
+    fill: rgba(0, 0, 0, 0.85);
+    stroke-width: 2px;
+    rx: 5px;
+    ry: 5px;
+    pointer-events: none;
+}
+
+.event-tooltip path {
+    fill: rgba(0, 0, 0, 0.75);
+    stroke-width: 1.5px;
+    pointer-events: none;
+}
+
+.event-tooltip text {
+    fill: #ffffff;
+    text-anchor: middle;
+    pointer-events: none;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+    dominant-baseline: middle; /* Améliore l'alignement vertical */
+    word-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+.event-tooltip text.event-title {
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.event-tooltip text.event-description {
+    font-size: 11px;
+}
+
+.event-tooltip text.event-category {
+    font-size: 11px;
+    font-weight: bold;
+}
+
+/* Style pour l'info des termes associés aux événements */
+.event-term-info {
+    font-size: 0.85em;
+    color: var(--secondary-color);
+    font-style: italic;
+    opacity: 0.8;
+    transition: opacity 0.2s ease;
+}
+
+.term-checkbox:hover .event-term-info {
+    opacity: 1;
+}
+
+/* Interface de recherche par mots-clés */
+.keyword-search-section {
+    margin-top: 30px;
+    padding: 20px;
+    background-color: var(--light-gray);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+}
+
+.keyword-search-section h3 {
+    margin-bottom: 15px;
+    color: var(--secondary-color);
+}
+
+.keyword-search-container {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+#keyword-search-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--text-color);
+}
+
+#keyword-search-button {
+    padding: 8px 15px;
+    background-color: var(--secondary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+#keyword-search-button:hover {
+    background-color: #2980b9;
+}
+
+.keywords-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.keyword-cloud-tag {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--text-color);
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 0.9em;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.keyword-cloud-tag:hover {
+    background-color: rgba(52, 152, 219, 0.3);
+    color: white;
+}
+
+.keyword-search-results {
+    margin-top: 15px;
+}
+
+.no-results {
+    color: var(--dark-gray);
+    font-style: italic;
+}
+
+.search-results-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.search-result-item {
+    display: flex;
+    padding: 10px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.search-result-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.search-result-item.highlighted {
+    background-color: rgba(52, 152, 219, 0.2);
+    border-left: 4px solid var(--secondary-color);
+}
+
+.result-date {
+    flex: 0 0 100px;
+    font-weight: bold;
+    color: var(--secondary-color);
+}
+
+.result-content {
+    flex: 1;
+}
+
+.result-content h5 {
+    margin-bottom: 5px;
+    color: white;
 }

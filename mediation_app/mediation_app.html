@@ -5,12 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Médiation App - Évolution des termes informatiques</title>
     <link rel="stylesheet" href="mediation_app.css">
+    <link rel="stylesheet" href="timeline.css">
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@14.6.3/distribute/nouislider.min.css">
     <script src="https://cdn.jsdelivr.net/npm/nouislider@14.6.3/distribute/nouislider.min.js"></script>
+    <link rel="stylesheet" href="timeline_retro.css">
+    <script src="timeline_retro_style.js"></script>
 </head>
 <body>
     <header>
@@ -30,6 +33,7 @@
         <div class="tabs">
             <button class="tab-button active" data-tab="chrono-tab">Évolution chronologique</button>
             <button class="tab-button" data-tab="journal-tab">Répartition par journal</button>
+            <button class="tab-button" data-tab="timeline-tab">Timeline historique</button>
         </div>
         
         <!-- Contenu de l'onglet Évolution chronologique -->
@@ -109,6 +113,41 @@
             </div>
         </div><!-- Fin de l'onglet Répartition par journal -->
         
+        <!-- Contenu de l'onglet Timeline historique -->
+        <div id="timeline-tab" class="tab-content">
+            <div class="controls">
+                <div class="filter-row">
+                    <div class="term-selector">
+                        <h3>Sélectionner des termes</h3>
+                        <div id="timeline-term-checkboxes"></div>
+                    </div>
+                    <div class="right-filters">
+                        <div class="visualization-type">
+                            <h3>Type de visualisation</h3>
+                            <select id="timeline-viz-type">
+                                <option value="line">Ligne temporelle</option>
+                                <option value="stacked">Aires empilées</option>
+                            </select>
+                        </div>
+                        <div class="time-period">
+                            <h3>Période</h3>
+                            <div id="timeline-year-slider"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="visualization">
+                <div id="timeline-visualization"></div>
+                <div id="timeline-tooltip" class="tooltip"></div>
+            </div>
+            
+            <div class="timeline-events">
+                <h3>Événements historiques</h3>
+                <div id="timeline-events-content"></div>
+            </div>
+        </div><!-- Fin de l'onglet Timeline historique -->
+        
         <!-- Modal pour afficher les articles -->
         <div id="article-modal" class="modal">
             <div class="modal-content">
@@ -151,7 +190,9 @@
         <p><small>Développé avec D3.js et Swiper.js pour une expérience interactive</small></p>
     </footer>
 
+    <script src="data_loader.js"></script>
     <script src="mediation_app.js"></script>
     <script src="journal_viz.js"></script>
+    <script src="timeline_viz.js"></script>
 </body>
 </html>

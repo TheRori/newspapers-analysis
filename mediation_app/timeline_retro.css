@@ -1,0 +1,37 @@
+/* Styles rétro pour la timeline */
+
+/* Importer la police rétro pixel */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+/* Styles pour les axes */
+.x-axis text, .y-axis text {
+    font-family: 'Press Start 2P', monospace !important;
+    fill: #ffffff !important;
+    font-size: 8px !important;
+}
+
+/* Styles pour les titres des axes */
+.axis-title {
+    font-family: 'Press Start 2P', monospace !important;
+    fill: #ffffff !important;
+    font-size: 10px !important;
+}
+
+/* Styles pour les labels d'année des événements */
+.event-year-label {
+    font-family: 'Press Start 2P', monospace !important;
+    fill: #ffffff !important;
+    font-size: 7px !important;
+}
+
+/* Masquer les cercles de halo derrière les années */
+.event-marker-halo {
+    display: none !important;
+}
+
+/* Styles pour la légende */
+.legend text {
+    font-family: 'Press Start 2P', monospace !important;
+    fill: #ffffff !important;
+    font-size: 10px !important;
+}

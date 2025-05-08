@@ -79,6 +79,25 @@ function initTabs() {
             if (tabId === 'journal-tab' && !state.journalVizInitialized) {
                 initJournalVisualization();
             }
+            
+            // Initialiser la visualisation de la timeline historique si nécessaire
+            if (tabId === 'timeline-tab' && !state.timelineVizInitialized) {
+                // Vérifier si la fonction existe avant de l'appeler
+                if (typeof window.initTimelineVisualization === 'function') {
+                    window.initTimelineVisualization();
+                } else {
+                    console.error('La fonction initTimelineVisualization n\'est pas définie. Assurez-vous que timeline_viz.js est chargé correctement.');
+                    // Essayer de charger le script dynamiquement
+                    const script = document.createElement('script');
+                    script.src = 'timeline_viz.js';
+                    script.onload = function() {
+                        if (typeof window.initTimelineVisualization === 'function') {
+                            window.initTimelineVisualization();
+                        }
+                    };
+                    document.head.appendChild(script);
+                }
+            }
         });
     });
 }
@@ -495,6 +514,28 @@ function updateFilteredData() {
 // Fonction unifiée pour filtrer et afficher les articles selon différents critères
 function filterAndShowArticles(filters) {
     console.log('Filtrage des articles avec les critères:', filters);
+    
+    // Vérifier si nous avons accès aux données de dataLoader
+    if (window.dataLoader && window.dataLoader.state && window.dataLoader.state.availableArticles) {
+        // Synchroniser les données avec state.availableArticles
+        if (!state.availableArticles) {
+            state.availableArticles = {};
+        }
+        
+        // Copier les articles disponibles de dataLoader vers state
+        Object.keys(window.dataLoader.state.availableArticles).forEach(year => {
+            if (!state.availableArticles[year]) {
+                state.availableArticles[year] = {};
+            }
+            
+            Object.keys(window.dataLoader.state.availableArticles[year]).forEach(term => {
+                state.availableArticles[year][term] = window.dataLoader.state.availableArticles[year][term];
+            });
+        });
+        
+        console.log('Articles disponibles synchronisés depuis dataLoader:', 
+                  Object.keys(state.availableArticles).length, 'années');
+    }
             
     // Normaliser les noms de journaux pour la comparaison
     function normalizeJournalName(name) {

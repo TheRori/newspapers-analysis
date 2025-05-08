@@ -1,0 +1,124 @@
+/* Styles spécifiques pour la timeline */
+
+/* Styles globaux pour les textes dans les graphiques */
+.timeline-svg text {
+    font-family: 'Arial', sans-serif;
+    fill: #aaaaaa;
+    font-size: 12px;
+    font-weight: normal;
+}
+
+/* Styles pour les axes et leurs labels */
+.x-axis text, .y-axis text {
+    fill: #aaaaaa;
+    font-size: 11px;
+}
+
+/* Style pour les titres d'axes */
+.axis-title {
+    fill: #aaaaaa;
+    font-size: 13px;
+    font-weight: normal;
+}
+
+/* Style pour les marqueurs d'événements */
+.timeline-event-marker {
+    fill: #2196F3;
+    stroke: #ffffff;
+    stroke-width: 1.5px;
+    r: 8;
+}
+
+/* Style pour les labels d'années */
+.event-year-label {
+    fill: #aaaaaa;
+    font-size: 11px;
+    font-weight: normal;
+    stroke: none;
+}
+.timeline-card {
+    background: var(--light-gray);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 24px 32px;
+    margin-bottom: 30px;
+    margin-top: 40px; /* Espace supplémentaire en haut */
+    transition: box-shadow 0.3s;
+    position: relative; /* Pour le positionnement des tooltips */
+    min-height: 1000px; /* Hauteur minimale augmentée pour le conteneur (plus grande que le SVG) */
+    overflow: visible; /* Permet aux tooltips de déborder */
+    margin-bottom: 60px; /* Marge inférieure pour l'espace en bas */
+}
+.timeline-card:hover {
+    box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+}
+
+.timeline-svg {
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+    background: var(--background-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+}
+
+.timeline-point {
+    fill: var(--secondary-color);
+    stroke: white;
+    stroke-width: 2px;
+    cursor: pointer;
+    transition: r 0.2s, fill 0.2s;
+}
+.timeline-point:hover, .timeline-point.active {
+    fill: var(--accent-color);
+    r: 10;
+    filter: drop-shadow(0 0 8px var(--accent-color));
+}
+
+.timeline-event-marker {
+    fill: var(--accent-color);
+    stroke: white;
+    stroke-width: 2px;
+    opacity: 0.95;
+    cursor: pointer;
+    transition: r 0.2s, fill 0.2s, opacity 0.2s;
+}
+.timeline-event-marker:hover, .timeline-event-marker.active {
+    fill: #ffd700;
+    opacity: 1;
+    r: 13;
+    filter: drop-shadow(0 0 12px #ffd700cc);
+}
+
+.timeline-tooltip {
+    position: fixed; /* Position fixe par rapport à la fenêtre pour éviter les contraintes de conteneur */
+    pointer-events: none;
+    background: #222b3aee;
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 1rem;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    z-index: 1000; /* Z-index très élevé pour être au-dessus de tout */
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    transform: translateY(-12px) scale(0.98);
+    max-width: 320px;
+    word-break: break-word;
+    border: 1px solid rgba(255,255,255,0.2); /* Bordure subtile */
+    backdrop-filter: blur(2px); /* Effet de flou derrière le tooltip */
+}
+.timeline-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+@media (max-width: 700px) {
+    .timeline-card {
+        padding: 12px 4px;
+    }
+    .timeline-tooltip {
+        font-size: 0.9rem;
+        max-width: 95vw;
+    }
+}

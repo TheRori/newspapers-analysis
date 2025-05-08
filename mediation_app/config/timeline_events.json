@@ -1,0 +1,141 @@
+{
+  "events": [
+    {
+      "year": 1950,
+      "title": "Arrivée du Z4 à l'ETH Zurich",
+      "description": "Premier ordinateur programmable utilisé scientifiquement sur le continent européen.",
+      "impact": "Marque le début de l'informatique en Suisse.",
+      "category": "Naissance de l'informatique académique",
+      "keywords": [
+        "ordinateur scientifique",
+        "informatique",
+        "calcul numérique",
+        "programmation",
+        "ETH",
+        "Konrad Zuse"
+      ]
+    },
+    {
+      "year": 1956,
+      "title": "Mise en service de l'ERMETH (ETH Zurich)",
+      "description": "Premier ordinateur suisse conçu localement.",
+      "impact": "Symbole de l'innovation académique sans visée industrielle.",
+      "category": "Développement suisse",
+      "keywords": [
+        "ordinateur suisse",
+        "recherche scientifique",
+        "tubes électroniques",
+        "développement local",
+        "ETH Zurich"
+      ]
+    },
+    {
+      "year": 1971,
+      "month": 11,
+      "day": 23,
+      "title": "Signature du projet EIN",
+      "description": "La Suisse co-fonde le réseau européen de données, avec nœud à Zurich.",
+      "impact": "Ambition suisse de participer à une infrastructure numérique continentale.",
+      "category": "Réseaux & ambitions européennes",
+      "keywords": [
+        "réseau européen",
+        "internet expérimental",
+        "collaboration transnationale",
+        "transfert de données",
+        "EIN"
+      ]
+    },
+    {
+      "year": 1974,
+      "month": 12,
+      "day": 25,
+      "title": "Naissance du Smaky 1",
+      "description": "Premier micro-ordinateur suisse (UNIL/Jean-Daniel Nicoud).",
+      "impact": "Matériel local emblématique, utilisé dans l'éducation romande.",
+      "category": "Micro-informatique suisse & médiation",
+      "keywords": [
+        "micro-ordinateur",
+        "pédagogie",
+        "innovation suisse",
+        "Smaky",
+        "Jean-Daniel Nicoud",
+        "UNIL"
+      ]
+    },
+    {
+      "year": 1974,
+      "month": 10,
+      "day": 14,
+      "title": "Premier article de Marielle Stamm en Suisse",
+      "description": "Publication dans 01 Informatique.",
+      "impact": "Début du journalisme informatique romand et de la médiation technologique.",
+      "category": "Micro-informatique suisse & médiation",
+      "keywords": [
+        "journalisme informatique",
+        "vulgarisation technologique",
+        "Marielle Stamm",
+        "Suisse romande",
+        "01 Informatique"
+      ]
+    },
+    {
+      "year": 1980,
+      "title": "Création du Département d'informatique à l'ETH Zurich",
+      "description": "Institutionnalisation de l'informatique académique.",
+      "impact": "Reconnaissance officielle de la discipline académique.",
+      "category": "Institutionnalisation & vulgarisation",
+      "keywords": [
+        "enseignement informatique",
+        "ETH Zurich",
+        "discipline scientifique",
+        "formation universitaire",
+        "institutionnalisation"
+      ]
+    },
+    {
+      "year": 1982,
+      "title": "Lancement d'Informatique & Bureautique 01 (IB)",
+      "description": "Premier magazine romand de vulgarisation informatique par Marielle Stamm.",
+      "impact": "Démocratisation des connaissances informatiques en Suisse romande.",
+      "category": "Institutionnalisation & vulgarisation",
+      "endYear": 1986,
+      "keywords": [
+        "presse informatique",
+        "communication numérique",
+        "vulgarisation",
+        "magazine suisse",
+        "Informatique & Bureautique",
+        "Marielle Stamm"
+      ]
+    },
+    {
+      "year": 1987,
+      "title": "Lancement du Vidéotex suisse",
+      "description": "Réseau national interactif avant Internet.",
+      "impact": "Tentative suisse de démocratisation numérique avant Internet.",
+      "category": "Transition numérique",
+      "keywords": [
+        "réseau interactif",
+        "terminal numérique",
+        "service en ligne",
+        "PTT Suisse",
+        "Vidéotex"
+      ]
+    },
+    {
+      "year": 1994,
+      "title": "Début de la diffusion d'Internet en Suisse",
+      "description": "Arrivée d'Internet auprès du grand public.",
+      "impact": "Tournant numérique majeur.",
+      "category": "Transition numérique",
+      "keywords": [
+        "web",
+        "connexion à domicile",
+        "adresses email",
+        "fournisseur d'accès",
+        "Internet",
+        "Swisscom"
+      ]
+    }
+  ]
+}
