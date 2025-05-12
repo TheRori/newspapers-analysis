@@ -1,0 +1,214 @@
+/* Sentiment Heatmap specific styles */
+.visualization-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 20px;
+    position: relative;
+}
+
+#map-container {
+    width: 100%;
+    height: 600px;
+    background-color: #1a1a2e;
+    border-radius: 8px;
+    position: relative;
+}
+
+.legend-container {
+    margin-top: 20px;
+    text-align: center;
+    width: 100%;
+}
+
+#color-legend {
+    height: 20px;
+    width: 80%;
+    margin: 10px auto;
+    border-radius: 4px;
+    background: linear-gradient(to right, #313695, #4575b4, #74add1, #abd9e9, #e0f3f8, #fee090, #fdae61, #f46d43, #d73027, #a50026);
+}
+
+.legend-labels {
+    display: flex;
+    justify-content: space-between;
+    width: 80%;
+    margin: 5px auto;
+}
+
+.tooltip {
+    position: absolute;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    border-radius: 5px;
+    pointer-events: none;
+    font-size: 14px;
+    max-width: 250px;
+    z-index: 1000;
+}
+
+.canton {
+    stroke: #333;
+    stroke-width: 0.5px;
+    transition: fill 0.3s ease, stroke-width 0.3s ease;
+}
+
+.canton:hover {
+    stroke-width: 2px;
+    stroke: #fff;
+    cursor: pointer;
+}
+
+/* Neon effect for the title */
+header h1 {
+    color: #ff00ff;
+    text-shadow: 0 0 5px #ff00ff, 0 0 10px #ff00ff, 0 0 15px #ff00ff;
+    font-family: 'Courier New', monospace;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+/* Controls styling */
+.controls {
+    background-color: #1a1a2e;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.filter-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.sentiment-selector, .right-filters {
+    flex: 1;
+}
+
+.right-filters {
+    display: flex;
+    justify-content: flex-end;
+    gap: 20px;
+}
+
+.radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+select, input[type="range"] {
+    background-color: #2a2a4a;
+    color: #fff;
+    border: 1px solid #3a3a5a;
+    border-radius: 4px;
+    padding: 8px;
+    width: 100%;
+    margin-top: 10px;
+}
+
+/* Retro computer terminal styling */
+.info-panel {
+    background-color: #1a1a2e;
+    border: 1px solid #00ffff;
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 20px;
+    font-family: 'Courier New', monospace;
+    color: #00ffff;
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+}
+
+.info-panel h3 {
+    color: #ff00ff;
+    margin-top: 0;
+}
+
+/* Retro computer icons */
+.retro-icons {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 30px;
+}
+
+.retro-icon {
+    color: #00ffff;
+    font-size: 24px;
+    transition: color 0.3s ease, transform 0.3s ease;
+}
+
+.retro-icon:hover {
+    color: #ff00ff;
+    transform: scale(1.2);
+}
+
+/* Error and loading messages */
+.error-message {
+    background-color: rgba(255, 0, 0, 0.1);
+    color: #ff3333;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 10px 0;
+    text-align: center;
+    font-weight: bold;
+    border: 1px solid #ff3333;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 80%;
+    z-index: 100;
+}
+
+.loading-message {
+    background-color: rgba(0, 0, 0, 0.7);
+    color: #00ffff;
+    padding: 20px;
+    border-radius: 5px;
+    text-align: center;
+    font-weight: bold;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 100;
+    font-size: 18px;
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+}
+
+.loading-message i {
+    margin-right: 10px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .filter-row {
+        flex-direction: column;
+    }
+    
+    .right-filters {
+        margin-top: 20px;
+        justify-content: flex-start;
+    }
+    
+    #map-container {
+        height: 400px;
+    }
+}

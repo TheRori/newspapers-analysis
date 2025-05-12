@@ -164,7 +164,13 @@ def save_analysis(
     if save_source_files:
         # Créer un sous-répertoire pour les fichiers source
         source_dir = analysis_dir / "source_files"
+        log_info(f"Création du répertoire source_files: {source_dir}")
         source_dir.mkdir(exist_ok=True)
+        log_info(f"Répertoire source_files créé avec succès: {source_dir.exists()}")
+        log_info(f"Contenu du répertoire parent: {list(analysis_dir.iterdir())}")
+        log_info(f"Type d'analyse: {analysis_type}")
+        log_info(f"save_source_files: {save_source_files}")
+        log_info(f"Source data: {source_data}")
         
         # Sauvegarder les fichiers source mentionnés dans source_data
         saved_files = []
@@ -204,6 +210,48 @@ def save_analysis(
                                 json.dump(json_data, f, ensure_ascii=False, indent=2)
                     except Exception as e:
                         print(f"Erreur lors de la sauvegarde du fichier de données: {e}")
+        
+        # Fichier de sentiment (pour sentiment_analysis)
+        if analysis_type == "sentiment_analysis" and "results_file" in source_data and source_data["results_file"]:
+            # Copier le fichier de résumé de sentiment
+            sentiment_summary_file = Path(source_data["results_file"])
+            log_info(f"Traitement du fichier de sentiment: {sentiment_summary_file}")
+            
+            if sentiment_summary_file.exists():
+                dest_path = source_dir / sentiment_summary_file.name
+                log_info(f"Copie du fichier de résumé de sentiment vers: {dest_path}")
+                shutil.copy2(sentiment_summary_file, dest_path)
+                saved_files.append({
+                    "type": "sentiment_summary_file",
+                    "original_path": str(sentiment_summary_file),
+                    "saved_path": str(dest_path)
+                })
+                
+                # Extraire l'ID du fichier de résumé
+                try:
+                    file_id = sentiment_summary_file.stem.split('_')[-1]
+                    log_info(f"ID extrait du fichier de résumé: {file_id}")
+                    
+                    # Chercher et copier le fichier articles_with_sentiment associé
+                    articles_with_sentiment_file = sentiment_summary_file.parent / f"articles_with_sentiment_{file_id}.json"
+                    log_info(f"Recherche du fichier d'articles: {articles_with_sentiment_file}")
+                    
+                    if articles_with_sentiment_file.exists():
+                        dest_path = source_dir / articles_with_sentiment_file.name
+                        log_info(f"Copie du fichier d'articles vers: {dest_path}")
+                        shutil.copy2(articles_with_sentiment_file, dest_path)
+                        saved_files.append({
+                            "type": "articles_with_sentiment_file",
+                            "original_path": str(articles_with_sentiment_file),
+                            "saved_path": str(dest_path)
+                        })
+                    else:
+                        log_warning(f"Fichier d'articles non trouvé: {articles_with_sentiment_file}")
+                except Exception as e:
+                    log_error(f"Erreur lors de la copie des fichiers de sentiment: {str(e)}")
+            else:
+                log_warning(f"Fichier de résumé de sentiment non trouvé: {sentiment_summary_file}")
+
         
         # Fichier de termes (pour term_tracking ou semantic_drift)
         if (analysis_type in ["term_tracking", "semantic_drift"]) and "analysis_parameters" in source_data:

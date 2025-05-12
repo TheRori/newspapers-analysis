@@ -14,6 +14,7 @@ from src.webapp.term_tracking.utils import (
     get_term_files
 )
 from src.webapp.topic_filter_component import get_topic_filter_component
+from src.webapp.export_component import create_export_button, create_export_modal, create_feedback_toast
 
 def get_term_tracking_layout():
     """
@@ -243,21 +244,32 @@ def get_term_tracking_layout():
                         )
                     ], style={"marginBottom": "20px"}),
                     
-                    # Sélection du type de visualisation
-                    html.Div([
-                        html.Label("Type de visualisation:"),
-                        dcc.RadioItems(
-                            id="term-tracking-viz-type",
-                            options=[
-                                {"label": "Graphique à barres", "value": "bar"},
-                                {"label": "Graphique linéaire", "value": "line"},
-                                {"label": "Carte de chaleur", "value": "heatmap"},
-                                {"label": "Tableau", "value": "table"}
-                            ],
-                            value="bar",
-                            labelStyle={"display": "block", "marginBottom": "5px"}
-                        )
-                    ], style={"marginBottom": "20px"}),
+                    # Sélection du type de visualisation et bouton d'export
+                    dbc.Row([
+                        dbc.Col([
+                            html.Label("Type de visualisation:"),
+                            dcc.RadioItems(
+                                id="term-tracking-viz-type",
+                                options=[
+                                    {"label": "Graphique à barres", "value": "bar"},
+                                    {"label": "Graphique linéaire", "value": "line"},
+                                    {"label": "Carte de chaleur", "value": "heatmap"},
+                                    {"label": "Tableau", "value": "table"}
+                                ],
+                                value="bar",
+                                labelStyle={"display": "block", "marginBottom": "5px"}
+                            )
+                        ], width=10),
+                        dbc.Col([
+                            html.Div([
+                                create_export_button("term_tracking", "term-tracking-export-button")
+                            ], className="d-flex justify-content-end align-items-center h-100")
+                        ], width=2)
+                    ], className="mb-3"),
+                    
+                    # Add export modal and feedback toast
+                    create_export_modal("term_tracking", "term-tracking-export-modal"),
+                    create_feedback_toast("term-tracking-export-feedback"),
                     
                     # Conteneur pour les visualisations
                     html.Div(id="term-tracking-visualizations-container")

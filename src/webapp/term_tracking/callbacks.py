@@ -35,6 +35,7 @@ from src.webapp.topic_filter_component import (
     get_filter_states,
     are_filters_active
 )
+from src.webapp.export_component import register_export_callbacks
 
 def normalize_article_id(article_id):
     """
@@ -70,6 +71,129 @@ def register_term_tracking_callbacks(app):
     Args:
         app: L'application Dash
     """
+    
+    # Functions for export
+    def get_term_tracking_source_data():
+        """Obtient les données source pour l'exportation."""
+        results_file = ctx.states.get("term-tracking-results-dropdown.value")
+        viz_type = ctx.states.get("term-tracking-viz-type.value", "bar")
+        
+        source_data = {
+            "results_file": results_file,
+            "visualization_type": viz_type
+        }
+        
+        # Si un fichier de résultats est sélectionné, ajouter des métadonnées
+        if results_file:
+            try:
+                df = pd.read_csv(results_file)
+                
+                # Déterminer le type de résultats
+                key_column = df.columns[0]
+                
+                # Identifier les colonnes de termes (toutes sauf la première)
+                term_columns = df.columns[1:].tolist()
+                
+                source_data.update({
+                    "key_column": key_column,
+                    "term_columns": term_columns,
+                    "num_terms": len(term_columns),
+                    "num_keys": len(df),
+                    "file_name": Path(results_file).name
+                })
+                
+                # Ajouter des statistiques de base
+                if len(df) > 0:
+                    total_occurrences = df[term_columns].sum().sum()
+                    most_frequent_term = df[term_columns].sum().idxmax()
+                    
+                    source_data.update({
+                        "total_occurrences": int(total_occurrences),
+                        "most_frequent_term": most_frequent_term
+                    })
+            except Exception as e:
+                print(f"Erreur lors de la récupération des données source : {str(e)}")
+        
+        return source_data
+    
+    def get_term_tracking_figure():
+        """Obtient la figure pour l'exportation."""
+        # Récupérer les valeurs des composants
+        results_file = ctx.states.get("term-tracking-results-dropdown.value")
+        viz_type = ctx.states.get("term-tracking-viz-type.value", "bar")
+        
+        if not results_file:
+            return {}
+        
+        try:
+            # Charger les données
+            df = pd.read_csv(results_file)
+            
+            # Vérifier si le fichier est vide
+            if df.empty:
+                return {}
+            
+            # Déterminer le type de résultats
+            key_column = df.columns[0]
+            
+            # Identifier les colonnes de termes (toutes sauf la première)
+            term_columns = df.columns[1:].tolist()
+            
+            # Créer la figure en fonction du type de visualisation
+            if viz_type == "bar":
+                # Créer un graphique à barres
+                melted_df = pd.melt(df, id_vars=[key_column], value_vars=term_columns,
+                                    var_name="Terme", value_name="Fréquence")
+                
+                fig = px.bar(
+                    melted_df,
+                    x=key_column,
+                    y="Fréquence",
+                    color="Terme",
+                    title=f"Fréquence des termes par {key_column}",
+                    barmode="group"
+                )
+            elif viz_type == "line":
+                # Créer un graphique linéaire
+                melted_df = pd.melt(df, id_vars=[key_column], value_vars=term_columns,
+                                    var_name="Terme", value_name="Fréquence")
+                
+                fig = px.line(
+                    melted_df,
+                    x=key_column,
+                    y="Fréquence",
+                    color="Terme",
+                    title=f"Évolution des termes par {key_column}",
+                    markers=True
+                )
+            elif viz_type == "heatmap":
+                # Créer une heatmap
+                fig = px.imshow(
+                    df[term_columns].T,
+                    labels=dict(x=key_column, y="Terme", color="Fréquence"),
+                    title="Heatmap des termes",
+                    color_continuous_scale='Viridis'
+                )
+            else:
+                # Pour le tableau, pas de figure à exporter
+                return {}
+            
+            return fig.to_dict()
+            
+        except Exception as e:
+            print(f"Erreur lors de la création de la figure: {str(e)}")
+            return {}
+    
+    # Register export callbacks
+    register_export_callbacks(
+        app,
+        analysis_type="term_tracking",
+        get_source_data_function=get_term_tracking_source_data,
+        get_figure_function=get_term_tracking_figure,
+        button_id="term-tracking-export-button",
+        modal_id="term-tracking-export-modal",
+        toast_id="term-tracking-export-feedback"
+    )
     
     # Enregistrer les callbacks du composant de filtrage par topic/cluster
     register_topic_filter_callbacks(app, id_prefix="term-tracking-topic-filter")

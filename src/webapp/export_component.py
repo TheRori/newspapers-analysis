@@ -245,7 +245,8 @@ def register_export_callbacks(
                 analysis_type=analysis_type,
                 figure=figure,
                 collection=collection,
-                config=load_config(config_path)
+                config=load_config(config_path),
+                save_source_files=True
             )
             
             return False, "Analyse enregistrée avec succès !"

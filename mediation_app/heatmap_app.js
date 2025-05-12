@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Chargement des données
 function loadData() {
     // Chemin vers le fichier CSV (pour compatibilité)
-    const csvPath = 'data/results/exports/collections/heatmap_similars/bd607f58-f47b-4c3e-9ef0-1ca126b15d2f/source_files/similar_terms_term_tracking_results.csv';
+    const csvPath = 'data/source/collections/heatmap_similars/bd607f58-f47b-4c3e-9ef0-1ca126b15d2f/source_files/similar_terms_term_tracking_results.csv';
     
     // Chemin vers le fichier Parquet (nouvelle version)
     const parquetPath = csvPath.replace('.csv', '.parquet');

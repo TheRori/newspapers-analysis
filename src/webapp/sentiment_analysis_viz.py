@@ -20,6 +20,9 @@ import numpy as np
 import json
 import time  # Ajout du module time pour mesurer les performances
 
+# Import pour la sauvegarde des analyses
+from src.utils.export_utils import save_analysis
+
 from src.webapp.topic_filter_component import (
     get_topic_filter_component, 
     register_topic_filter_callbacks, 
@@ -27,6 +30,9 @@ from src.webapp.topic_filter_component import (
     get_filter_states,
     are_filters_active
 )
+
+# Import du composant d'exportation
+from src.webapp.export_component import create_export_button, create_export_modal, create_feedback_toast, register_export_callbacks
 
 # Import du module d'affichage des articles
 from src.webapp.article_display_utils import (
@@ -206,15 +212,25 @@ def get_sentiment_analysis_layout():
                             # Results dropdown
                             dbc.Row([
                                 dbc.Col([
-                                    dbc.Label("Sélectionnez un fichier de résultats", html_for="sentiment-results-dropdown"),
+                                    dbc.Label("Résultats disponibles"),
                                     dcc.Dropdown(
                                         id="sentiment-results-dropdown",
                                         options=sentiment_results,
                                         value=sentiment_results[0]['value'] if sentiment_results else None,
-                                        clearable=False
+                                        placeholder="Sélectionnez un fichier de résultats"
                                     )
-                                ])
-                            ]),
+                                ], width=10),
+                                dbc.Col([
+                                    html.Div([
+                                        create_export_button("sentiment_analysis", "sentiment-export-button")
+                                    ], className="d-flex justify-content-end")
+                                ], width=2)
+                            ], className="mb-3"),
+                            
+                            # Add export modal and feedback toast
+                            create_export_modal("sentiment_analysis", "sentiment-export-modal"),
+                            create_feedback_toast("sentiment-export-feedback"),
+                            
                             html.Br(),
                             
                             # Le composant de filtrage par cluster a été supprimé ici car il est utilisé uniquement en amont
@@ -739,6 +755,168 @@ def extract_sentiment_click_data(point, prop_id):
 
 # Callback registration (to be called from app.py)
 def register_sentiment_analysis_callbacks(app):
+    # Functions for export
+    def get_sentiment_source_data():
+        """Obtient les données source pour l'exportation."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Log all available states for debugging
+        logger.info("États disponibles dans le contexte:")
+        for key, value in ctx.states.items():
+            logger.info(f"  {key}: {value}")
+        
+        # Récupérer le fichier de résultats sélectionné
+        results_file = ctx.states.get("sentiment-results-dropdown.value")
+        logger.info(f"Fichier de résultats récupéré: {results_file}")
+        
+        # Si aucun fichier n'est sélectionné, essayer de récupérer le dernier fichier utilisé
+        if not results_file:
+            # Chercher dans les options du dropdown
+            dropdown_options = ctx.states.get("sentiment-results-dropdown.options", [])
+            logger.info(f"Options du dropdown: {dropdown_options}")
+            
+            if dropdown_options and len(dropdown_options) > 0:
+                # Prendre le premier fichier disponible
+                try:
+                    results_file = dropdown_options[0].get('value')
+                    logger.info(f"Utilisation du premier fichier disponible: {results_file}")
+                except Exception as e:
+                    logger.error(f"Erreur lors de la récupération du premier fichier: {str(e)}")
+        
+        # Extraire le chemin du fichier du paramètre de cache-busting
+        if results_file and '?' in results_file:
+            results_file = results_file.split('?')[0]
+            logger.info(f"Fichier de résultats après nettoyage: {results_file}")
+        
+        # Si toujours aucun fichier, chercher directement dans le répertoire des résultats
+        if not results_file:
+            import os
+            from pathlib import Path
+            from src.utils.config_loader import load_config
+            
+            try:
+                # Charger la configuration
+                project_root = Path(__file__).parent.parent.parent
+                config_path = os.path.join(project_root, "config", "config.yaml")
+                config = load_config(config_path)
+                
+                # Construire le chemin vers le répertoire des résultats d'analyse de sentiment
+                results_dir = os.path.join(config['data']['results_dir'], 'sentiment_analysis')
+                logger.info(f"Recherche dans le répertoire: {results_dir}")
+                
+                # Trouver le fichier sentiment_summary le plus récent
+                sentiment_files = [f for f in os.listdir(results_dir) if f.startswith('sentiment_summary_')]
+                if sentiment_files:
+                    sentiment_files.sort(key=lambda x: os.path.getmtime(os.path.join(results_dir, x)), reverse=True)
+                    results_file = os.path.join(results_dir, sentiment_files[0])
+                    logger.info(f"Fichier de sentiment le plus récent trouvé: {results_file}")
+            except Exception as e:
+                logger.error(f"Erreur lors de la recherche de fichiers de sentiment: {str(e)}")
+        
+        source_data = {
+            "results_file": results_file
+        }
+        logger.info(f"Source data final: {source_data}")
+        
+        
+        # Si un fichier de résultats est sélectionné, ajouter des métadonnées
+        if results_file:
+            try:
+                with open(results_file, 'r', encoding='utf-8') as f:
+                    summary_data = json.load(f)
+                
+                # Ajouter des métadonnées de base
+                source_data.update({
+                    "model": summary_data.get("model", "vader"),
+                    "transformer_model": summary_data.get("transformer_model"),
+                    "num_articles": summary_data.get("num_articles", 0),
+                    "filter_settings": summary_data.get("filter_settings", {}),
+                    "run_id": summary_data.get("run_id"),
+                    "timestamp": summary_data.get("timestamp")
+                })
+                
+                # Ajouter des statistiques de sentiment
+                summary = summary_data.get("summary", {})
+                if summary:
+                    source_data.update({
+                        "mean_compound": summary.get("mean_compound"),
+                        "positive_count": summary.get("positive_count"),
+                        "neutral_count": summary.get("neutral_count"),
+                        "negative_count": summary.get("negative_count"),
+                        "positive_percentage": summary.get("positive_percentage"),
+                        "neutral_percentage": summary.get("neutral_percentage"),
+                        "negative_percentage": summary.get("negative_percentage")
+                    })
+            except Exception as e:
+                print(f"Erreur lors de la récupération des données source : {str(e)}")
+        
+        return source_data
+    
+    def get_sentiment_figure():
+        """Obtient la figure pour l'exportation."""
+        # Récupérer le fichier de résultats
+        results_file = ctx.states.get("sentiment-results-dropdown.value")
+        
+        # Extraire le chemin du fichier du paramètre de cache-busting
+        if results_file and '?' in results_file:
+            results_file = results_file.split('?')[0]
+        
+        if not results_file:
+            return {}
+        
+        try:
+            # Charger les données de sentiment
+            with open(results_file, 'r', encoding='utf-8') as f:
+                summary_data = json.load(f)
+            
+            # Extraire les données de sentiment
+            summary = summary_data.get("summary", {})
+            
+            if not summary:
+                return {}
+            
+            # Créer un graphique en camembert pour la distribution des sentiments
+            fig = go.Figure(data=[
+                go.Pie(
+                    labels=['Positif', 'Neutre', 'Négatif'],
+                    values=[
+                        summary.get("positive_count", 0),
+                        summary.get("neutral_count", 0),
+                        summary.get("negative_count", 0)
+                    ],
+                    hole=0.4,
+                    marker_colors=['#2ca02c', '#d3d3d3', '#d62728']
+                )
+            ])
+            
+            fig.update_layout(
+                title="Distribution du sentiment",
+                annotations=[{
+                    "text": f"Score moyen: {summary.get('mean_compound', 0):.2f}",
+                    "showarrow": False,
+                    "font_size": 14,
+                    "x": 0.5,
+                    "y": 0.5
+                }]
+            )
+            
+            return fig.to_dict()
+        
+        except Exception as e:
+            print(f"Erreur lors de la création de la figure: {str(e)}")
+            return {}
+    
+    # Register export callbacks
+    register_export_callbacks(
+        app,
+        analysis_type="sentiment_analysis",
+        get_source_data_function=get_sentiment_source_data,
+        get_figure_function=get_sentiment_figure,
+        button_id="sentiment-export-button",
+        modal_id="sentiment-export-modal",
+        toast_id="sentiment-export-feedback"
+    )
     # Register callbacks for topic filter component (uniquement pour l'analyse)
     register_topic_filter_callbacks(app, id_prefix="sentiment-run-filter")
     
@@ -848,6 +1026,31 @@ def register_sentiment_analysis_callbacks(app):
     # Le callback pour lancer une analyse de sentiment filtrée a été supprimé car nous utilisons maintenant le filtrage par cluster directement
 
     # Le callback toggle_article_modal a été supprimé car nous utilisons maintenant les fonctions de article_display_utils.py
+    
+    # Callback pour préremplir le titre et la description dans la modal d'exportation
+    @app.callback(
+        Output("sentiment-export-title-input", "value"),
+        Output("sentiment-export-description-input", "value"),
+        Input("sentiment-export-modal", "is_open"),
+        State("sentiment-results-dropdown", "value"),
+        prevent_initial_call=True
+    )
+    def prefill_export_modal(is_open, results_file):
+        if not is_open or not results_file:
+            return "", ""
+        
+        # Extraire le chemin du fichier du paramètre de cache-busting
+        if '?' in results_file:
+            results_file = results_file.split('?')[0]
+        
+        # Extraire le nom du fichier pour le titre par défaut
+        file_name = os.path.basename(results_file)
+        title = f"Analyse de sentiment - {file_name.replace('sentiment_summary_', '').replace('.json', '')}"
+        
+        # Description par défaut
+        description = "Analyse de sentiment des articles de presse"
+        
+        return title, description
     
     # Callback pour le bouton de parcourir du fichier source
     @app.callback(
