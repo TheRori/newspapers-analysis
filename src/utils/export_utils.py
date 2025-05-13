@@ -251,6 +251,47 @@ def save_analysis(
                     log_error(f"Erreur lors de la copie des fichiers de sentiment: {str(e)}")
             else:
                 log_warning(f"Fichier de résumé de sentiment non trouvé: {sentiment_summary_file}")
+        
+        # Fichier d'entités nommées (pour entity_recognition)
+        if analysis_type == "entity_recognition" and "results_file" in source_data and source_data["results_file"]:
+            # Copier le fichier de résumé d'entités
+            entity_summary_file = Path(source_data["results_file"])
+            log_info(f"Traitement du fichier d'entités: {entity_summary_file}")
+            
+            if entity_summary_file.exists():
+                dest_path = source_dir / entity_summary_file.name
+                log_info(f"Copie du fichier de résumé d'entités vers: {dest_path}")
+                shutil.copy2(entity_summary_file, dest_path)
+                saved_files.append({
+                    "type": "entity_summary_file",
+                    "original_path": str(entity_summary_file),
+                    "saved_path": str(dest_path)
+                })
+                
+                # Extraire l'ID du fichier de résumé
+                try:
+                    file_id = entity_summary_file.stem.split('_')[-1]
+                    log_info(f"ID extrait du fichier de résumé: {file_id}")
+                    
+                    # Chercher et copier le fichier articles_with_entities associé
+                    articles_with_entities_file = entity_summary_file.parent / f"articles_with_entities_{file_id}.json"
+                    log_info(f"Recherche du fichier d'articles avec entités: {articles_with_entities_file}")
+                    
+                    if articles_with_entities_file.exists():
+                        dest_path = source_dir / articles_with_entities_file.name
+                        log_info(f"Copie du fichier d'articles avec entités vers: {dest_path}")
+                        shutil.copy2(articles_with_entities_file, dest_path)
+                        saved_files.append({
+                            "type": "articles_with_entities_file",
+                            "original_path": str(articles_with_entities_file),
+                            "saved_path": str(dest_path)
+                        })
+                    else:
+                        log_warning(f"Fichier d'articles avec entités non trouvé: {articles_with_entities_file}")
+                except Exception as e:
+                    log_error(f"Erreur lors de la copie des fichiers d'entités: {str(e)}")
+            else:
+                log_warning(f"Fichier de résumé d'entités non trouvé: {entity_summary_file}")
 
         
         # Fichier de termes (pour term_tracking ou semantic_drift)

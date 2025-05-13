@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entités Nommées - Organisations</title>
+    <link rel="stylesheet" href="entity_cards.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1>Entités Nommées dans la Presse Suisse</h1>
+            <p>Visualisation des organisations les plus mentionnées dans les articles</p>
+        </div>
+        <nav class="main-nav">
+            <a href="index.html" class="nav-link"><i class="fas fa-home"></i> Accueil</a>
+            <a href="mediation_app.html" class="nav-link"><i class="fas fa-chart-line"></i> Évolution chronologique</a>
+            <a href="entity_cards.html" class="nav-link active"><i class="fas fa-building"></i> Organisations</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <div class="entity-type-selector">
+            <button class="entity-type-button active" data-type="ORG">Organisations</button>
+            <button class="entity-type-button" data-type="LOC">Lieux</button>
+            <button class="entity-type-button" data-type="PERSON">Personnes</button>
+        </div>
+
+        <div class="entity-cards-container">
+            <div class="swiper entity-swiper">
+                <div class="swiper-wrapper" id="entity-cards">
+                    <!-- Cards will be generated here -->
+                </div>
+                <!-- Navigation buttons -->
+                <div class="swiper-button-next"></div>
+                <div class="swiper-button-prev"></div>
+                <!-- Pagination -->
+                <div class="swiper-pagination"></div>
+            </div>
+        </div>
+
+        <div class="entity-details">
+            <div class="entity-stats">
+                <h3 id="selected-entity-name">Sélectionnez une organisation</h3>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-value" id="entity-count">0</div>
+                        <div class="stat-label">Occurrences</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="article-count">0</div>
+                        <div class="stat-label">Articles</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="year-range">-</div>
+                        <div class="stat-label">Période</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="entity-articles">
+                <h3>Articles mentionnant cette organisation</h3>
+                <div id="entity-articles-list" class="articles-list">
+                    <!-- Articles will be listed here -->
+                    <p class="no-selection">Sélectionnez une organisation pour voir les articles associés</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal pour afficher les articles -->
+    <div id="article-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Article</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="article-content">
+                    <!-- Article content will be displayed here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="article-metadata">
+                    <span id="article-date"></span> | 
+                    <span id="article-newspaper"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>Données issues de l'analyse d'entités nommées dans la presse suisse</p>
+        <p><small>Développé avec D3.js et Swiper.js pour une expérience interactive</small></p>
+    </footer>
+
+    <script src="data_loader.js"></script>
+    <script src="entity_cards.js"></script>
+</body>
+</html>

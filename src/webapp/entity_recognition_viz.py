@@ -20,6 +20,9 @@ import numpy as np
 import json
 import time  # Ajout du module time pour mesurer les performances
 
+# Import pour la sauvegarde des analyses
+from src.utils.export_utils import save_analysis
+
 from src.webapp.topic_filter_component import (
     get_topic_filter_component, 
     register_topic_filter_callbacks, 
@@ -27,6 +30,9 @@ from src.webapp.topic_filter_component import (
     get_filter_states,
     are_filters_active
 )
+
+# Import du composant d'exportation
+from src.webapp.export_component import create_export_button, create_export_modal, create_feedback_toast, register_export_callbacks
 
 # Import du module d'affichage des articles
 from src.webapp.article_display_utils import (
@@ -198,8 +204,17 @@ def get_entity_recognition_layout():
                                 value=entity_results[0]['value'] if entity_results else None,
                                 placeholder="Sélectionnez un fichier de résultats"
                             )
-                        ], width=6)
+                        ], width=10),
+                        dbc.Col([
+                            html.Div([
+                                create_export_button("entity_recognition", "entity-export-button")
+                            ], className="d-flex justify-content-end")
+                        ], width=2)
                     ]),
+                    
+                    # Add export modal and feedback toast
+                    create_export_modal("entity_recognition", "entity-export-modal"),
+                    create_feedback_toast("entity-export-feedback"),
                     html.Br(),
                     
                     # Le composant de filtrage par cluster a été supprimé ici car il est utilisé uniquement en amont
@@ -613,6 +628,161 @@ def create_filtered_entity_visualizations(summary_file_path, cluster_file, clust
 
 # Callback registration (to be called from app.py)
 def register_entity_recognition_callbacks(app):
+    # Functions for export
+    def get_entity_source_data():
+        """Obtient les données source pour l'exportation."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Log all available states for debugging
+        logger.info("États disponibles dans le contexte:")
+        for key, value in ctx.states.items():
+            logger.info(f"  {key}: {value}")
+        
+        # Récupérer le fichier de résultats sélectionné
+        results_file = ctx.states.get("entity-results-dropdown.value")
+        logger.info(f"Fichier de résultats récupéré: {results_file}")
+        
+        # Si aucun fichier n'est sélectionné, essayer de récupérer le dernier fichier utilisé
+        if not results_file:
+            # Chercher dans les options du dropdown
+            dropdown_options = ctx.states.get("entity-results-dropdown.options", [])
+            logger.info(f"Options du dropdown: {dropdown_options}")
+            
+            if dropdown_options and len(dropdown_options) > 0:
+                # Prendre le premier fichier disponible
+                try:
+                    results_file = dropdown_options[0].get('value')
+                    logger.info(f"Utilisation du premier fichier disponible: {results_file}")
+                except Exception as e:
+                    logger.error(f"Erreur lors de la récupération du premier fichier: {str(e)}")
+        
+        # Extraire le chemin du fichier du paramètre de cache-busting
+        if results_file and '?' in results_file:
+            results_file = results_file.split('?')[0]
+            logger.info(f"Fichier de résultats après nettoyage: {results_file}")
+        
+        # Si toujours aucun fichier, chercher directement dans le répertoire des résultats
+        if not results_file:
+            import os
+            from pathlib import Path
+            from src.utils.config_loader import load_config
+            
+            try:
+                # Charger la configuration
+                project_root = Path(__file__).parent.parent.parent
+                config_path = os.path.join(project_root, "config", "config.yaml")
+                config = load_config(config_path)
+                
+                # Construire le chemin vers le répertoire des résultats d'analyse d'entités
+                results_dir = os.path.join(config['data']['results_dir'], 'entity_recognition')
+                logger.info(f"Recherche dans le répertoire: {results_dir}")
+                
+                # Trouver le fichier entity_summary le plus récent
+                entity_files = [f for f in os.listdir(results_dir) if f.startswith('entity_summary_')]
+                if entity_files:
+                    entity_files.sort(key=lambda x: os.path.getmtime(os.path.join(results_dir, x)), reverse=True)
+                    results_file = os.path.join(results_dir, entity_files[0])
+                    logger.info(f"Fichier d'entités le plus récent trouvé: {results_file}")
+            except Exception as e:
+                logger.error(f"Erreur lors de la recherche de fichiers d'entités: {str(e)}")
+        
+        source_data = {
+            "results_file": results_file
+        }
+        logger.info(f"Source data final: {source_data}")
+        
+        # Si un fichier de résultats est sélectionné, ajouter des métadonnées
+        if results_file:
+            try:
+                with open(results_file, 'r', encoding='utf-8') as f:
+                    summary_data = json.load(f)
+                
+                # Ajouter des métadonnées de base
+                source_data.update({
+                    "model": summary_data.get("model", "spacy"),
+                    "num_articles": summary_data.get("num_articles", 0),
+                    "filter_settings": summary_data.get("filter_settings", {}),
+                    "run_id": summary_data.get("run_id"),
+                    "timestamp": summary_data.get("timestamp")
+                })
+                
+                # Ajouter des statistiques d'entités
+                summary = summary_data.get("summary", {})
+                if summary:
+                    source_data.update({
+                        "total_entities": summary.get("total_entities", 0),
+                        "unique_entities": summary.get("unique_entities", 0),
+                        "entity_types": list(summary.get("total_by_type", {}).keys())
+                    })
+            except Exception as e:
+                print(f"Erreur lors de la récupération des données source : {str(e)}")
+        
+        return source_data
+    
+    def get_entity_figure():
+        """Obtient la figure pour l'exportation."""
+        # Récupérer le fichier de résultats
+        results_file = ctx.states.get("entity-results-dropdown.value")
+        
+        # Extraire le chemin du fichier du paramètre de cache-busting
+        if results_file and '?' in results_file:
+            results_file = results_file.split('?')[0]
+        
+        if not results_file:
+            return {}
+        
+        try:
+            # Charger les données d'entités
+            with open(results_file, 'r', encoding='utf-8') as f:
+                summary_data = json.load(f)
+            
+            # Extraire les données d'entités
+            summary = summary_data.get("summary", {})
+            
+            if not summary:
+                return {}
+            
+            # Créer un graphique en camembert pour la distribution des entités par type
+            entity_types = list(summary.get("total_by_type", {}).keys())
+            entity_counts = list(summary.get("total_by_type", {}).values())
+            
+            fig = go.Figure(data=[
+                go.Pie(
+                    labels=entity_types,
+                    values=entity_counts,
+                    hole=0.4
+                )
+            ])
+            
+            fig.update_layout(
+                title="Distribution des entités par type",
+                annotations=[{
+                    "text": f"Total: {summary.get('total_entities', 0)}",
+                    "showarrow": False,
+                    "font_size": 14,
+                    "x": 0.5,
+                    "y": 0.5
+                }]
+            )
+            
+            return fig.to_dict()
+        
+        except Exception as e:
+            print(f"Erreur lors de la création de la figure: {str(e)}")
+            return {}
+    
+    # Register export callbacks
+    register_export_callbacks(
+        app,
+        analysis_type="entity_recognition",
+        get_source_data_function=get_entity_source_data,
+        get_figure_function=get_entity_figure,
+        button_id="entity-export-button",
+        modal_id="entity-export-modal",
+        toast_id="entity-export-feedback"
+    )
+    
     # Register callbacks for topic filter component (uniquement pour l'analyse)
     register_topic_filter_callbacks(app, id_prefix="entity-run-filter")
     
@@ -663,6 +833,31 @@ def register_entity_recognition_callbacks(app):
         except Exception as e:
             print(f"Erreur lors de l'ouverture de la boîte de dialogue: {e}")
             return current_value
+    
+    # Callback pour préremplir le titre et la description dans la modal d'exportation
+    @app.callback(
+        Output("entity-export-title-input", "value"),
+        Output("entity-export-description-input", "value"),
+        Input("entity-export-modal", "is_open"),
+        State("entity-results-dropdown", "value"),
+        prevent_initial_call=True
+    )
+    def prefill_export_modal(is_open, results_file):
+        if not is_open or not results_file:
+            return "", ""
+        
+        # Extraire le chemin du fichier du paramètre de cache-busting
+        if '?' in results_file:
+            results_file = results_file.split('?')[0]
+        
+        # Extraire le nom du fichier pour le titre par défaut
+        file_name = os.path.basename(results_file)
+        title = f"Analyse d'entités nommées - {file_name.replace('entity_summary_', '').replace('.json', '')}"
+        
+        # Description par défaut
+        description = "Analyse d'entités nommées des articles de presse"
+        
+        return title, description
     
     # Callback to run entity recognition
     @app.callback(
