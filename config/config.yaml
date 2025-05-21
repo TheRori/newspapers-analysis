@@ -26,6 +26,7 @@ analysis:
       - NOUN
       - PROPN
       - ADJ
+      filter_ads: true  # Activer la détection de publicités via LLM
       min_token_length: 3
       spacy_model: fr_core_news_md
     use_spacy_preprocessing: true

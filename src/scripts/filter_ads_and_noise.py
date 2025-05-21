@@ -102,42 +102,56 @@ def has_excessive_noise(article):
     
     return False
 
-def is_tv_program(article, min_matches=2):
+def is_tv_program(article, min_channel_matches=1, min_time_mentions=5):
     """
     Vérifie si un article est probablement un programme TV en exigeant
-    au moins `min_matches` mots-clés présents dans le titre ou le contenu.
+    au moins `min_channel_matches` chaînes TV présentes dans le titre ou le contenu
+    ET au moins `min_time_mentions` mentions d'heures.
     
     Args:
         article: Dictionnaire contenant les données de l'article
-        min_matches: Nombre minimum de mots-clés qui doivent être présents
+        min_channel_matches: Nombre minimum de chaînes TV qui doivent être présentes
+        min_time_mentions: Nombre minimum de mentions d'heures qui doivent être présentes
         
     Returns:
         True si l'article est probablement un programme TV, False sinon
     """
     title = article.get('title', '').lower()
     content = article.get('content', '').lower()
-    
-    tv_keywords = [
-        'programme tv', 'programme télé', 'grille des programmes',
-        'ce soir à la télé', 'horaires de diffusion', 'film de la soirée',
-        'à la télévision', 'aujourd\'hui à la télé',
-        'en première partie de soirée'
-    ]
-    
-    tv_channels = [
-        'tf1', 'france 2', 'france 3', 'arte', 'm6', 'canal+', 'c8',
-        'tsr 1', 'tsr2', 'rts un', 'rts deux', 'télévision suisse romande',
-        'tv5', 'tv5monde', 'la cinq', 'w9', 'tfx', 'nrj12', '6ter', 'rtl9'
-    ]
-    
-    keywords = tv_keywords + tv_channels
     combined_text = f"{title} {content}"
     
-    matches = sum(1 for kw in keywords if kw in combined_text)
+    # Liste des chaînes TV à détecter
+    tv_channels = [
+        'tf1', 'france 2', 'france 3', 'm6', 'canal+', 'c8',
+        'tsr 1', 'tsr2', 'télévision suisse romande',
+        'tv5', 'tv5monde', 'w9','nrj12', '6ter', 'rtl9',
+        'france 5', 'rts un', 'rts deux', 'fr3','antenne 2'
+    ]
     
-    return matches >= min_matches
+    # Compter les chaînes TV présentes
+    matched_channels = [ch for ch in tv_channels if ch in combined_text]
+    channel_matches = len(matched_channels)
+    
+    # Définir différents formats d'heures à détecter
+    time_patterns = [
+        r'\d{1,2}[.:]\d{2}',          # Format 11.30 ou 11:30
+        r'\d{1,2}h\d{0,2}',           # Format 11h30 ou 11h
+        r'\d{1,2}\s*h\s*\d{0,2}',     # Format 11 h 30 ou 11 h
+        r'\d{1,2}\s*heures?\s*\d{0,2}' # Format 11 heures 30 ou 11 heures
+    ]
+    
+    # Récupérer toutes les mentions d'heures
+    all_time_mentions = []
+    for pattern in time_patterns:
+        all_time_mentions.extend(re.findall(pattern, combined_text))
+    
+    # Déduplication des heures trouvées (pour éviter de compter plusieurs fois la même heure)
+    unique_time_mentions = set(all_time_mentions)
+    
+    # Retourner True si au moins une chaîne TV ET suffisamment de mentions d'heures sont présentes
+    return channel_matches >= min_channel_matches and len(unique_time_mentions) >= min_time_mentions
 
-def is_job_offer(article, min_matches=2):
+def is_job_offer(article, min_matches=3):
     """
     Vérifie si un article est probablement une offre d'emploi en exigeant
     au moins `min_matches` mots-clés présents dans le titre ou le contenu.
@@ -188,16 +202,128 @@ def process_article_batch(articles_batch, batch_idx=0, total_batches=1):
         if i % 1000 == 0 and i > 0:
             logger.debug(f"Batch {batch_idx+1}/{total_batches}: Processed {i}/{len(articles_batch)} articles")
         
+        # Créer une copie de l'article pour ne pas modifier l'original
+        article_copy = article.copy()
+        
         if is_advertisement(article):
-            ad_articles.append(article)
+            # Ajouter les mots-clés de publicité détectés
+            title = article.get('title', '').lower()
+            ad_keywords = [
+                'advertisement', 'advertisements', 
+                'ad ', ' ad', '^ad$',
+                'ads ', ' ads', '^ads$',
+                'publicité', 'publicites', 
+                'annonce', 'annonces'
+            ]
+            matched_keywords = [kw for kw in ad_keywords if re.search(kw, title, re.IGNORECASE)]
+            article_copy["filter_reason"] = {
+                "type": "advertisement",
+                "matched_keywords": matched_keywords
+            }
+            ad_articles.append(article_copy)
+            
         elif is_tv_program(article):
-            tv_articles.append(article)
+            # Ajouter les chaînes TV et mentions d'heures détectées
+            title = article.get('title', '').lower()
+            content = article.get('content', '').lower()
+            combined_text = f"{title} {content}"
+            
+            # Détecter les chaînes TV
+            tv_channels = [
+                'tf1', 'france 2', 'france 3', 'm6', 'canal+', 'c8',
+                'tsr 1', 'tsr2', 'télévision suisse romande',
+                'tv5', 'tv5monde', 'w9', 'tfx', 'nrj12', '6ter', 'rtl9',
+                'france 5', 'fr3','antenne 2'
+            ]
+            matched_channels = [ch for ch in tv_channels if ch in combined_text]
+            
+            # Détecter les formats d'heures
+            time_patterns = [
+                r'\d{1,2}[.:]\d{2}',          # Format 11.30 ou 11:30
+                r'\d{1,2}h\d{0,2}',           # Format 11h30 ou 11h
+                r'\d{1,2}\s*h\s*\d{0,2}',     # Format 11 h 30 ou 11 h
+                r'\d{1,2}\s*heures?\s*\d{0,2}' # Format 11 heures 30 ou 11 heures
+            ]
+            
+            # Récupérer tous les formats d'heures trouvés
+            time_matches = {}
+            all_time_mentions = []
+            
+            for i, pattern in enumerate(time_patterns):
+                found_times = re.findall(pattern, combined_text)
+                all_time_mentions.extend(found_times)
+                if found_times:
+                    pattern_name = [
+                        "format_point_deux_points",  # 11.30 ou 11:30
+                        "format_h",                 # 11h30 ou 11h
+                        "format_h_espace",          # 11 h 30 ou 11 h
+                        "format_heures"             # 11 heures 30 ou 11 heures
+                    ][i]
+                    time_matches[pattern_name] = found_times[:10]  # Limiter à 10 exemples par format
+            
+            # Déduplication des heures trouvées
+            unique_time_mentions = set(all_time_mentions)
+            
+            article_copy["filter_reason"] = {
+                "type": "tv_program",
+                "matched_channels": matched_channels,
+                "time_formats": time_matches,
+                "unique_time_mentions": len(unique_time_mentions),
+                "total_time_mentions": len(all_time_mentions)
+            }
+            tv_articles.append(article_copy)
+            
         elif is_job_offer(article):
-            job_articles.append(article)
+            # Ajouter les mots-clés d'offre d'emploi détectés
+            title = article.get('title', '').lower()
+            content = article.get('content', '').lower()
+            combined_text = f"{title} {content}"
+            
+            job_keywords = [
+                'offre d\'emploi', 'poste à pourvoir', 'nous recrutons', 
+                'candidature', 'cv et lettre', 'recrutement',
+                'recherche', 'embauche', 'postuler', 'candidat',
+                'expérience requise', 'profil recherché', 'cdi', 'cdd',
+                'temps plein', 'temps partiel'
+            ]
+            
+            matched_keywords = [kw for kw in job_keywords if kw in combined_text]
+            
+            article_copy["filter_reason"] = {
+                "type": "job_offer",
+                "matched_keywords": matched_keywords
+            }
+            job_articles.append(article_copy)
+            
         elif has_excessive_noise(article):
-            noisy_articles.append(article)
+            # Ajouter les raisons de bruit détectées
+            content = article.get('content', '') or article.get('text', '') or article.get('original_content', '')
+            noise_reasons = []
+            
+            if re.search(r'[^\w\s.,;:!?()-]{5,}', content):
+                noise_reasons.append("caractères spéciaux consécutifs")
+                
+            if re.search(r'(\n\s*){5,}', content):
+                noise_reasons.append("retours à la ligne excessifs")
+                
+            if re.search(r'[.,;:!?]{5,}', content):
+                noise_reasons.append("séquences de ponctuation anormales")
+            
+            total_chars = len(content)
+            if total_chars > 0:
+                special_chars = len(re.findall(r'[^\w\s.,;:!?()-]', content))
+                special_ratio = special_chars / total_chars
+                if special_ratio > 0.15:
+                    noise_reasons.append(f"ratio élevé de caractères spéciaux ({special_ratio:.2%})")
+            
+            article_copy["filter_reason"] = {
+                "type": "excessive_noise",
+                "noise_patterns": noise_reasons
+            }
+            noisy_articles.append(article_copy)
+            
         else:
-            normal_articles.append(article)
+            normal_articles.append(article_copy)
     
     return normal_articles, ad_articles, noisy_articles, tv_articles, job_articles
 

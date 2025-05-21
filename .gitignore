@@ -29,7 +29,7 @@ Thumbs.db
 .idea/
 *.sublime-project
 *.sublime-workspace
-
+models/
 # Ignore test outputs
 /test_outputs/
 app_log*Construction des modèles Word2Vec
