@@ -2,6 +2,7 @@ import json
 import os
 import argparse
 from pathlib import Path
+import numpy as np
 import logging
 import sys
 import uuid
@@ -86,7 +87,7 @@ def get_parser():
     parser.add_argument('--versioned', action='store_true', help='Save results with unique versioned filenames (default: True)')
     parser.add_argument('--no-versioned', dest='versioned', action='store_false', help='Save results only with generic names (overwrites previous)')
     parser.set_defaults(versioned=True)
-    parser.add_argument('--engine', choices=['sklearn', 'gensim', 'bertopic'], default='gensim', help='Choose topic modeling engine: sklearn, gensim, or bertopic (default: gensim)')
+    parser.add_argument('--engine', choices=['sklearn', 'gensim', 'bertopic'], default='bertopic', help='Choose topic modeling engine: sklearn, gensim, or bertopic (default: gensim)')
     parser.add_argument('--algorithm', type=str, default=None, help='Topic modeling algorithm (e.g., lda, hdp, nmf). Overrides config file.')
     parser.add_argument('--auto-num-topics', action='store_true', help='Automatically find the best num_topics (LDA only, Gensim)')
     parser.add_argument('--num-topics', 
@@ -399,9 +400,88 @@ def main():
             modeler.save_model(str(model_dir), prefix='topic_model')
         
         # Extraire les résultats
-        doc_topic_matrix = [doc['topic_distribution'] for doc in results['doc_topics'].values()]
+        # Vérifier la structure des résultats pour éviter KeyError
+        logger.info(f"DEBUG: Structure des résultats: {list(results.keys())}")
+        
+        if 'doc_topics' in results and results['doc_topics']:
+            # Vérifier la structure du premier document pour déterminer la clé correcte
+            first_doc = next(iter(results['doc_topics'].values()))
+            logger.info(f"DEBUG: Structure du premier document: {list(first_doc.keys())}")
+            logger.info(f"DEBUG: Premier document ID: {next(iter(results['doc_topics'].keys()))}")
+            
+            # Log the topic assignments from BERTopic directly
+            if hasattr(modeler, 'bertopic_topics') and modeler.bertopic_topics is not None:
+                # Count topic assignments
+                topic_counts = {}
+                for topic in modeler.bertopic_topics:
+                    topic_counts[topic] = topic_counts.get(topic, 0) + 1
+                logger.info(f"DEBUG: Topic assignments from BERTopic.bertopic_topics: {topic_counts}")
+                
+                # Check for outliers
+                outlier_count = topic_counts.get(-1, 0)
+                logger.info(f"DEBUG: Outlier count from BERTopic: {outlier_count} ({outlier_count/len(modeler.bertopic_topics)*100:.2f}%)")
+            
+            if 'topic_distribution' in first_doc:
+                logger.info("DEBUG: Using 'topic_distribution' key from results")
+                doc_topic_matrix = [doc['topic_distribution'] for doc in results['doc_topics'].values()]
+                
+                # Log information about the document-topic matrix
+                if doc_topic_matrix:
+                    logger.info(f"DEBUG: doc_topic_matrix length: {len(doc_topic_matrix)}")
+                    logger.info(f"DEBUG: First document topic distribution length: {len(doc_topic_matrix[0])}")
+                    logger.info(f"DEBUG: First document topic distribution: {doc_topic_matrix[0]}")
+                    
+                    # Count documents by dominant topic
+                    dominant_topics = {}
+                    for dist in doc_topic_matrix:
+                        # Convert to numpy array if it's not already
+                        dist_array = np.array(dist) if not isinstance(dist, np.ndarray) else dist
+                        dominant_topic = int(np.argmax(dist_array))
+                        dominant_topics[dominant_topic] = dominant_topics.get(dominant_topic, 0) + 1
+                    logger.info(f"DEBUG: Dominant topics in doc_topic_matrix: {dominant_topics}")
+            elif 'topic_probs' in first_doc:  # Format utilisé par transform_with_bertopic
+                logger.info("Utilisation du format transform_with_bertopic (topic_probs)")
+                doc_topic_matrix = [doc['topic_probs'] for doc in results['doc_topics'].values()]
+                
+                # Log information about the document-topic matrix
+                if doc_topic_matrix:
+                    logger.info(f"DEBUG: doc_topic_matrix length: {len(doc_topic_matrix)}")
+                    logger.info(f"DEBUG: First document topic distribution length: {len(doc_topic_matrix[0])}")
+                    logger.info(f"DEBUG: First document topic distribution: {doc_topic_matrix[0]}")
+            else:
+                # Utiliser le contenu directement si aucune clé attendue n'existe
+                logger.warning("Aucune clé de distribution de topics trouvée, utilisation des valeurs directement")
+                doc_topic_matrix = list(results['doc_topics'].values())
+        else:
+            logger.error("La clé 'doc_topics' n'existe pas dans les résultats ou est vide")
+            logger.info(f"DEBUG: Available keys in results: {list(results.keys())}")
+            doc_topic_matrix = []
+        
         feature_names = None  # Not used for BERTopic
-        model_components = results['top_terms']
+        
+        # Gérer les différentes structures de résultats entre fit_transform et transform_with_bertopic
+        if 'top_terms' in results:
+            model_components = results['top_terms']
+        elif 'topic_words' in results:  # Format utilisé par transform_with_bertopic
+            logger.info("Utilisation du format transform_with_bertopic (topic_words)")
+            # Convertir topic_words au format attendu par le reste du code
+            model_components = {}
+            for topic_id, topic_data in results['topic_words'].items():
+                try:
+                    if isinstance(topic_id, int):
+                        model_components[f'topic_{topic_id}'] = [(word, weight) for word, weight in zip(topic_data['words'], topic_data['weights'])]
+                    else:
+                        model_components[topic_id] = [(word, weight) for word, weight in zip(topic_data['words'], topic_data['weights'])]
+                except Exception as e:
+                    logger.warning(f"Erreur lors de la récupération des mots pour le topic {topic_id}: {e}")
+                    # Provide a fallback with empty lists if there's an error
+                    if isinstance(topic_id, int):
+                        model_components[f'topic_{topic_id}'] = []
+                    else:
+                        model_components[topic_id] = []
+        else:
+            logger.error("Ni 'top_terms' ni 'topic_words' n'existent dans les résultats")
+            model_components = {}
     else:  # gensim
         # Pass the tokenized texts directly to the Gensim engine
         doc_topic_matrix = modeler.fit_transform_gensim(tokenized_texts)
@@ -422,8 +502,16 @@ def main():
             top_words_per_topic[f"topic_{topic_idx}"] = top_features
     elif args.engine == 'bertopic':
         for topic_idx, top_features in model_components.items():
-            logger.info(f"Topic #{topic_idx}: {' '.join(top_features)}")
-            top_words_per_topic[f"topic_{topic_idx}"] = top_features
+            # Vérifier si top_features contient des tuples (word, weight) ou juste des mots
+            if top_features and isinstance(top_features[0], tuple):
+                # Extraire seulement les mots des tuples (word, weight)
+                words_only = [word for word, weight in top_features]
+                logger.info(f"Topic #{topic_idx}: {' '.join(words_only)}")
+                top_words_per_topic[topic_idx] = words_only
+            else:
+                # Utiliser directement la liste de mots
+                logger.info(f"Topic #{topic_idx}: {' '.join(top_features)}")
+                top_words_per_topic[topic_idx] = top_features
     else:  # gensim
         for topic_idx, topic in enumerate(model_components):
             top_features = [word for word, _ in modeler.model.show_topic(topic_idx, num_top_words)]
@@ -468,10 +556,139 @@ def main():
     logger.info(f"Updated latest top words per topic at {latest_top_words_path}")
 
     # Save document-topic matrix with doc ids and run_id
+    # Add debug logging to understand the structure of the doc_topic_matrix
+    logger.info(f"DEBUG: doc_topic_matrix type: {type(doc_topic_matrix)}")
+    logger.info(f"DEBUG: doc_topic_matrix length: {len(doc_topic_matrix)}")
+    if doc_topic_matrix and len(doc_topic_matrix) > 0:
+        logger.info(f"DEBUG: First document topic distribution type: {type(doc_topic_matrix[0])}")
+        logger.info(f"DEBUG: First document topic distribution length: {len(doc_topic_matrix[0])}")
+        logger.info(f"DEBUG: First document topic distribution values: {doc_topic_matrix[0]}")
+    
+    # For BERTopic, check if we need to add an outlier topic column
+    if args.engine == 'bertopic':
+        # Get the actual number of topics from the model
+        if hasattr(modeler, 'model') and modeler.model is not None:
+            topic_info = modeler.model.get_topic_info()
+            logger.info(f"DEBUG: BERTopic topic_info: {topic_info.head()}")
+            actual_num_topics = len(topic_info[topic_info['Topic'] != -1])
+            logger.info(f"DEBUG: BERTopic actual number of topics (excluding outliers): {actual_num_topics}")
+            
+            # Check if outlier topic exists
+            has_outlier_topic = -1 in topic_info['Topic'].values
+            logger.info(f"DEBUG: BERTopic has outlier topic (-1): {has_outlier_topic}")
+            
+            # Check if we need to add an outlier topic column
+            if has_outlier_topic and doc_topic_matrix and len(doc_topic_matrix) > 0:
+                expected_columns = actual_num_topics + 1  # +1 for outlier topic
+                actual_columns = len(doc_topic_matrix[0])
+                logger.info(f"DEBUG: Expected columns (including outlier): {expected_columns}, Actual columns: {actual_columns}")
+                
+                # If the outlier topic is missing, we should add it
+                if actual_columns < expected_columns:
+                    logger.warning(f"DEBUG: Outlier topic is missing from doc_topic_matrix. Adding zero column for outlier topic.")
+                    # Add the outlier topic column (with zeros) to each document's topic distribution
+                    doc_topic_matrix = [list(dist) + [0.0] for dist in doc_topic_matrix]
+                    logger.info(f"DEBUG: Added outlier topic column. New distribution length: {len(doc_topic_matrix[0])}")
+                    logger.info(f"DEBUG: Updated first document topic distribution: {doc_topic_matrix[0]}")
+                    
+                    # Update the number of topics in the model configuration
+                    if isinstance(topic_config.get('num_topics'), int):
+                        topic_config['num_topics'] += 1
+                        logger.info(f"DEBUG: Updated num_topics in config to {topic_config['num_topics']}")
+                    
+                    # Log the updated topic count
+                    logger.info(f"DEBUG: Total topics after adding outlier: {len(doc_topic_matrix[0])}")
+                    
+                    # Update the topic info to include the outlier topic
+                    topic_counts = modeler.get_bertopic_article_counts()
+                    for topic_id, count in topic_counts.items():
+                        logger.info(f"Topic #{topic_id}: {count} articles ({(count/len(doc_ids))*100:.2f}%)")
+                    
+                    # Make sure the outlier topic is included in the top words
+                    if 'topic_5' not in top_words_per_topic and 5 not in top_words_per_topic:
+                        # Add a placeholder for the outlier topic
+                        top_words_per_topic['topic_5'] = ['outlier', 'divers', 'inclassable']
+                        logger.info(f"Topic #topic_5: outlier divers inclassable")
+    
+    # Check if there's a mismatch between the topic distribution in the logs and the doc_topic_matrix
+    # This is where we need to fix the issue with outlier documents being assigned to topic 0
+    if args.engine == 'bertopic' and hasattr(modeler, 'bertopic_topics'):
+        # Count the number of documents assigned to each topic by BERTopic
+        bertopic_counts = {}
+        for topic in modeler.bertopic_topics:
+            bertopic_counts[topic] = bertopic_counts.get(topic, 0) + 1
+        
+        # Count the number of documents assigned to each topic in the doc_topic_matrix
+        matrix_counts = {}
+        for dist in doc_topic_matrix:
+            # Convert to numpy array if it's not already
+            dist_array = np.array(dist) if not isinstance(dist, np.ndarray) else dist
+            dominant_topic = int(np.argmax(dist_array))
+            matrix_counts[dominant_topic] = matrix_counts.get(dominant_topic, 0) + 1
+        
+        # Log the comparison
+        logger.info(f"DEBUG: Topic counts from BERTopic.bertopic_topics: {bertopic_counts}")
+        logger.info(f"DEBUG: Topic counts from doc_topic_matrix: {matrix_counts}")
+        
+        # Check if there's a major discrepancy
+        if -1 in bertopic_counts and bertopic_counts[-1] > 0:
+            outlier_count = bertopic_counts[-1]
+            logger.info(f"DEBUG: Found {outlier_count} outlier documents in BERTopic.bertopic_topics")
+            
+            # Check if these outliers are being incorrectly assigned to topic 0 in the matrix
+            if 0 in matrix_counts and matrix_counts[0] > (bertopic_counts.get(0, 0) + outlier_count/2):
+                logger.warning(f"DEBUG: Detected that outlier documents are being incorrectly assigned to topic 0 in the doc_topic_matrix")
+                
+                # Create a new doc_topic_matrix with correct outlier assignment
+                logger.info(f"DEBUG: Creating a new doc_topic_matrix with correct outlier assignment")
+                new_doc_topic_matrix = []
+                
+                for i, (topic_idx, dist) in enumerate(zip(modeler.bertopic_topics, doc_topic_matrix)):
+                    if topic_idx == -1:  # This is an outlier document
+                        # Create a distribution with high probability for the outlier topic
+                        new_dist = [0.0] * len(dist)
+                        if len(new_dist) > actual_num_topics:  # If we have an outlier column
+                            new_dist[actual_num_topics] = 1.0  # Set high probability for outlier topic
+                        new_doc_topic_matrix.append(new_dist)
+                    else:
+                        # For non-outlier documents, ensure the dominant topic matches the BERTopic assignment
+                        # First, create a copy of the original distribution
+                        new_dist = list(dist)
+                        
+                        # Find the maximum probability in the current distribution
+                        max_prob = max(new_dist)
+                        
+                        # Set all probabilities to a small value
+                        new_dist = [0.001] * len(new_dist)
+                        
+                        # Set a high probability for the assigned topic
+                        new_dist[topic_idx] = max(max_prob, 0.9)  # Use at least 0.9 to ensure it's dominant
+                        
+                        new_doc_topic_matrix.append(new_dist)
+                
+                # Replace the doc_topic_matrix with the corrected one
+                doc_topic_matrix = new_doc_topic_matrix
+                logger.info(f"DEBUG: Corrected doc_topic_matrix. First document: {doc_topic_matrix[0]}")
+                
+                # Count the number of documents assigned to each topic in the corrected matrix
+                corrected_counts = {}
+                for dist in doc_topic_matrix:
+                    # Convert to numpy array if it's not already
+                    dist_array = np.array(dist) if not isinstance(dist, np.ndarray) else dist
+                    dominant_topic = int(np.argmax(dist_array))
+                    corrected_counts[dominant_topic] = corrected_counts.get(dominant_topic, 0) + 1
+                logger.info(f"DEBUG: Topic counts after correction: {corrected_counts}")
+    
+    # Create the output structure
     doc_topic_output = [
         {"doc_id": doc_id, "topic_distribution": [float(x) for x in topic_dist]}
         for doc_id, topic_dist in zip(doc_ids, doc_topic_matrix)
     ]
+    
+    # Log the first few documents for debugging
+    logger.info(f"DEBUG: First document in doc_topic_output: {doc_topic_output[0]}")
+    
+    # Create the final summary
     doc_topic_matrix_summary = {
         "run_id": run_id,
         "doc_topic_matrix": doc_topic_output

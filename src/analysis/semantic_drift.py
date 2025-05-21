@@ -373,7 +373,9 @@ def find_most_similar_terms(models: Dict[str, Word2Vec],
 
 def export_similar_terms_to_csv(similarity_results: Dict[str, Dict[str, List[Tuple[str, float]]]], 
                               output_file: str, 
-                              results_dir: Optional[str] = None) -> str:
+                              results_dir: Optional[str] = None,
+                              source_file: Optional[str] = None,
+                              metadata: Optional[Dict[str, Any]] = None) -> str:
     """
     Exporte les résultats des termes similaires vers un fichier CSV.
     
@@ -382,6 +384,8 @@ def export_similar_terms_to_csv(similarity_results: Dict[str, Dict[str, List[Tup
                            et les listes de tuples (mot, similarité) comme valeurs
         output_file: Nom du fichier de sortie
         results_dir: Répertoire de sortie (optionnel)
+        source_file: Chemin vers le fichier source des articles (optionnel)
+        metadata: Dictionnaire de métadonnées supplémentaires à inclure (optionnel)
     
     Returns:
         Chemin vers le fichier CSV créé
@@ -413,6 +417,21 @@ def export_similar_terms_to_csv(similarity_results: Dict[str, Dict[str, List[Tup
                 })
     
     df = pd.DataFrame(rows)
+    
+    # Sauvegarder les métadonnées supplémentaires si fournies
+    if metadata is None:
+        metadata = {}
+    
+    # Ajouter le fichier source aux métadonnées s'il est fourni
+    if source_file:
+        metadata['source_file'] = source_file
+    
+    # Sauvegarder les métadonnées dans un fichier JSON séparé
+    if metadata:
+        metadata_path = output_path.with_suffix('.meta.json')
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+        logger.info(f"Métadonnées exportées vers {metadata_path}")
     
     # Exporter vers CSV
     df.to_csv(output_path, index=False)

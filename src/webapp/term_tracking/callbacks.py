@@ -601,7 +601,7 @@ def register_term_tracking_callbacks(app):
                 dbc.Col([
                     dbc.Label("Collection:"),
                     dcc.Dropdown(
-                        id="semantic-drift-save-collection-dropdown",
+                        id="similar-terms-save-collection-dropdown",
                         options=[],  # Sera rempli dynamiquement
                         placeholder="Sélectionnez une collection (optionnel)"
                     )
@@ -610,11 +610,11 @@ def register_term_tracking_callbacks(app):
             html.Br(),
             dbc.Button(
                 "Sauvegarder l'analyse",
-                id="semantic-drift-save-button",
+                id="similar-terms-save-button",
                 color="success",
                 className="mt-2"
             ),
-            html.Div(id="semantic-drift-save-output", className="mt-3")
+            html.Div(id="similar-terms-save-output", className="mt-3")
         ], className="mt-4")
         
         # Retourner les visualisations avec le bouton de sauvegarde
@@ -1081,18 +1081,14 @@ def register_term_tracking_callbacks(app):
             print(f"Erreur lors de l'affichage de l'article complet : {str(e)}")
             return html.P(f"Erreur lors de l'affichage de l'article : {str(e)}"), True
     
-    # Callback pour remplir les dropdowns de collections
+    # Callback pour remplir le dropdown de collections
     @app.callback(
-        [
-            Output("term-tracking-save-collection-dropdown", "options"),
-            Output("semantic-drift-save-collection-dropdown", "options"),
-            Output("similar-terms-save-collection-dropdown", "options")
-        ],
+        Output("term-tracking-save-collection-dropdown", "options"),
         Input("term-tracking-save-collection-dropdown", "id")  # Déclenché au chargement
     )
     def populate_collection_dropdowns(_):
         """
-        Remplit les dropdowns de collections pour tous les types d'analyses.
+        Remplit le dropdown de collections pour l'analyse de suivi de termes.
         """
         from src.utils.export_utils import get_collections
         from src.webapp.term_tracking.utils import load_config
@@ -1104,14 +1100,14 @@ def register_term_tracking_callbacks(app):
             # Obtenir les collections disponibles
             collections = get_collections(config=config)
             
-            # Formater les options pour les dropdowns
+            # Formater les options pour le dropdown
             options = [{'label': coll['name'], 'value': coll['name']} for coll in collections]
             
-            # Retourner les mêmes options pour tous les dropdowns
-            return options, options, options
+            # Retourner les options
+            return options
         except Exception as e:
             print(f"Erreur lors du chargement des collections: {str(e)}")
-            return [], [], []
+            return []
     
     # Callback pour sauvegarder l'analyse de suivi de termes
     @app.callback(

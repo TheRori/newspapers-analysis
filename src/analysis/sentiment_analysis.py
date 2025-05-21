@@ -71,6 +71,7 @@ class SentimentAnalyzer:
     def analyze_text_transformers(self, text: str) -> Dict[str, float]:
         """
         Analyze sentiment of text using transformers.
+        Compatible with French models like CamemBERT fine-tuned for sentiment.
         
         Args:
             text: Input text
@@ -84,20 +85,22 @@ class SentimentAnalyzer:
             text = ' '.join(text.split()[:max_length])
         
         result = self.analyzer(text)[0]
+        label = result['label']
+        score = result['score']
         
-        # Convert to standardized format
-        if result['label'] == 'POSITIVE':
-            return {
-                'negative': 1 - result['score'],
-                'positive': result['score'],
-                'compound': result['score'] * 2 - 1  # Scale to [-1, 1]
-            }
-        else:
-            return {
-                'negative': result['score'],
-                'positive': 1 - result['score'],
-                'compound': -1 * result['score'] * 2 + 1  # Scale to [-1, 1]
-            }
+        # cmarkea/distilcamembert-base-sentiment uses LABEL_0=neg, LABEL_1=neu, LABEL_2=pos
+        sentiment_map = {
+            "LABEL_0": {"negative": score, "neutral": 1 - score, "positive": 0.0, "compound": -score},
+            "LABEL_1": {"negative": 0.0, "neutral": score, "positive": 0.0, "compound": 0.0},
+            "LABEL_2": {"negative": 0.0, "neutral": 1 - score, "positive": score, "compound": score},
+        }
+        
+        return sentiment_map.get(label, {
+            "negative": 0.0,
+            "neutral": 1.0,
+            "positive": 0.0,
+            "compound": 0.0
+        })
     
     def analyze_text(self, text: str) -> Dict[str, float]:
         """

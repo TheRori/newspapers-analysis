@@ -12,8 +12,8 @@ analysis:
     - DATE
     model: fr_core_news_md
   sentiment:
-    model: vader
-    transformer_model: distilbert-base-uncased-finetuned-sst-2-english
+    model: transformers
+    transformer_model: cmarkea/distilcamembert-base-sentiment
   topic_modeling:
     algorithm: lda
     clustering_method: kmeans

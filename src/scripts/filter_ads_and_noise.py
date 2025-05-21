@@ -102,9 +102,73 @@ def has_excessive_noise(article):
     
     return False
 
+def is_tv_program(article, min_matches=2):
+    """
+    Vérifie si un article est probablement un programme TV en exigeant
+    au moins `min_matches` mots-clés présents dans le titre ou le contenu.
+    
+    Args:
+        article: Dictionnaire contenant les données de l'article
+        min_matches: Nombre minimum de mots-clés qui doivent être présents
+        
+    Returns:
+        True si l'article est probablement un programme TV, False sinon
+    """
+    title = article.get('title', '').lower()
+    content = article.get('content', '').lower()
+    
+    tv_keywords = [
+        'programme tv', 'programme télé', 'grille des programmes',
+        'ce soir à la télé', 'horaires de diffusion', 'film de la soirée',
+        'à la télévision', 'aujourd\'hui à la télé',
+        'en première partie de soirée'
+    ]
+    
+    tv_channels = [
+        'tf1', 'france 2', 'france 3', 'arte', 'm6', 'canal+', 'c8',
+        'tsr 1', 'tsr2', 'rts un', 'rts deux', 'télévision suisse romande',
+        'tv5', 'tv5monde', 'la cinq', 'w9', 'tfx', 'nrj12', '6ter', 'rtl9'
+    ]
+    
+    keywords = tv_keywords + tv_channels
+    combined_text = f"{title} {content}"
+    
+    matches = sum(1 for kw in keywords if kw in combined_text)
+    
+    return matches >= min_matches
+
+def is_job_offer(article, min_matches=2):
+    """
+    Vérifie si un article est probablement une offre d'emploi en exigeant
+    au moins `min_matches` mots-clés présents dans le titre ou le contenu.
+    
+    Args:
+        article: Dictionnaire contenant les données de l'article
+        min_matches: Nombre minimum de mots-clés qui doivent être présents
+        
+    Returns:
+        True si l'article est probablement une offre d'emploi, False sinon
+    """
+    title = article.get('title', '').lower()
+    content = article.get('content', '').lower()
+    
+    job_keywords = [
+        'offre d\'emploi', 'poste à pourvoir', 'nous recrutons', 
+        'candidature', 'cv et lettre', 'recrutement',
+        'recherche', 'embauche', 'postuler', 'candidat',
+        'expérience requise', 'profil recherché', 'cdi', 'cdd',
+        'temps plein', 'temps partiel'
+    ]
+    
+    combined_text = f"{title} {content}"
+    
+    matches = sum(1 for kw in job_keywords if kw in combined_text)
+    
+    return matches >= min_matches
+
 def process_article_batch(articles_batch, batch_idx=0, total_batches=1):
     """
-    Traite un lot d'articles pour détecter les publicités et le bruit.
+    Traite un lot d'articles pour détecter les publicités, le bruit, les programmes TV et les offres d'emploi.
     
     Args:
         articles_batch: Liste d'articles à traiter
@@ -112,11 +176,13 @@ def process_article_batch(articles_batch, batch_idx=0, total_batches=1):
         total_batches: Nombre total de lots (pour le logging)
         
     Returns:
-        Tuple (articles normaux, articles publicitaires, articles bruités)
+        Tuple (articles normaux, articles publicitaires, articles bruités, articles TV, articles emploi)
     """
     normal_articles = []
     ad_articles = []
     noisy_articles = []
+    tv_articles = []
+    job_articles = []
     
     for i, article in enumerate(articles_batch):
         if i % 1000 == 0 and i > 0:
@@ -124,16 +190,20 @@ def process_article_batch(articles_batch, batch_idx=0, total_batches=1):
         
         if is_advertisement(article):
             ad_articles.append(article)
+        elif is_tv_program(article):
+            tv_articles.append(article)
+        elif is_job_offer(article):
+            job_articles.append(article)
         elif has_excessive_noise(article):
             noisy_articles.append(article)
         else:
             normal_articles.append(article)
     
-    return normal_articles, ad_articles, noisy_articles
+    return normal_articles, ad_articles, noisy_articles, tv_articles, job_articles
 
-def filter_ads_and_noise(articles, batch_size=1000, num_processes=None):
+def filter_articles(articles, batch_size=1000, num_processes=None):
     """
-    Filtre les articles contenant des publicités ou du bruit.
+    Filtre les articles contenant des publicités, du bruit, des programmes TV ou des offres d'emploi.
     
     Args:
         articles: Liste des articles à analyser
@@ -141,9 +211,9 @@ def filter_ads_and_noise(articles, batch_size=1000, num_processes=None):
         num_processes: Nombre de processus à utiliser (None = auto)
         
     Returns:
-        Tuple (articles normaux, articles publicitaires, articles bruités)
+        Tuple (articles normaux, articles publicitaires, articles bruités, articles TV, articles emploi)
     """
-    logger.info(f"Filtering {len(articles)} articles for ads and noise...")
+    logger.info(f"Filtering {len(articles)} articles...")
     
     # Déterminer le nombre de processus à utiliser
     if num_processes is None:
@@ -183,17 +253,40 @@ def filter_ads_and_noise(articles, batch_size=1000, num_processes=None):
     normal_articles = []
     ad_articles = []
     noisy_articles = []
+    tv_articles = []
+    job_articles = []
     
-    for normal_batch, ad_batch, noisy_batch in results:
+    for normal_batch, ad_batch, noisy_batch, tv_batch, job_batch in results:
         normal_articles.extend(normal_batch)
         ad_articles.extend(ad_batch)
         noisy_articles.extend(noisy_batch)
+        tv_articles.extend(tv_batch)
+        job_articles.extend(job_batch)
     
     logger.info(f"Filtering complete: {len(normal_articles)} normal articles, "
                 f"{len(ad_articles)} advertisement articles, "
-                f"{len(noisy_articles)} noisy articles")
+                f"{len(noisy_articles)} noisy articles, "
+                f"{len(tv_articles)} TV program articles, "
+                f"{len(job_articles)} job offer articles")
     
-    return normal_articles, ad_articles, noisy_articles
+    return normal_articles, ad_articles, noisy_articles, tv_articles, job_articles
+
+# Garder l'ancienne fonction pour la compatibilité avec le code existant
+def filter_ads_and_noise(articles, batch_size=1000, num_processes=None):
+    """
+    Filtre les articles contenant des publicités ou du bruit (fonction maintenue pour compatibilité).
+    
+    Args:
+        articles: Liste des articles à analyser
+        batch_size: Taille des lots d'articles à traiter en parallèle
+        num_processes: Nombre de processus à utiliser (None = auto)
+        
+    Returns:
+        Tuple (articles normaux, articles publicitaires, articles bruités)
+    """
+    logger.warning("La fonction filter_ads_and_noise est dépréciée. Utilisez filter_articles à la place.")
+    normal, ads, noise, _, _ = filter_articles(articles, batch_size, num_processes)
+    return normal, ads, noise
 
 def parse_arguments():
     """Parse command line arguments."""
@@ -213,7 +306,7 @@ def parse_arguments():
     return parser.parse_args()
 
 def main():
-    """Fonction principale pour filtrer les articles contenant des publicités ou du bruit."""
+    """Fonction principale pour filtrer les articles contenant des publicités, du bruit, des programmes TV ou des offres d'emploi."""
     args = parse_arguments()
     
     # Charger la configuration
@@ -250,7 +343,7 @@ def main():
         sys.exit(1)
     
     # Filtrer les articles
-    normal_articles, ad_articles, noisy_articles = filter_ads_and_noise(
+    normal_articles, ad_articles, noisy_articles, tv_articles, job_articles = filter_articles(
         articles,
         batch_size=args.batch_size,
         num_processes=args.processes
@@ -261,6 +354,8 @@ def main():
     normal_file = output_dir / f"filtered_articles_{timestamp}.json"
     ads_file = output_dir / f"advertisement_articles_{timestamp}.json"
     noisy_file = output_dir / f"noisy_articles_{timestamp}.json"
+    tv_file = output_dir / f"tv_program_articles_{timestamp}.json"
+    job_file = output_dir / f"job_offer_articles_{timestamp}.json"
     
     # Sauvegarder les articles normaux
     logger.info(f"Saving {len(normal_articles)} normal articles to {normal_file}")
@@ -277,10 +372,22 @@ def main():
     with open(noisy_file, 'w', encoding='utf-8') as f:
         json.dump(noisy_articles, f, ensure_ascii=False, indent=2)
     
+    # Sauvegarder les articles de programmes TV
+    logger.info(f"Saving {len(tv_articles)} TV program articles to {tv_file}")
+    with open(tv_file, 'w', encoding='utf-8') as f:
+        json.dump(tv_articles, f, ensure_ascii=False, indent=2)
+    
+    # Sauvegarder les articles d'offres d'emploi
+    logger.info(f"Saving {len(job_articles)} job offer articles to {job_file}")
+    with open(job_file, 'w', encoding='utf-8') as f:
+        json.dump(job_articles, f, ensure_ascii=False, indent=2)
+    
     logger.info("Filtering complete!")
     logger.info(f"Normal articles: {len(normal_articles)} ({len(normal_articles)/len(articles):.2%})")
     logger.info(f"Advertisement articles: {len(ad_articles)} ({len(ad_articles)/len(articles):.2%})")
     logger.info(f"Noisy articles: {len(noisy_articles)} ({len(noisy_articles)/len(articles):.2%})")
+    logger.info(f"TV program articles: {len(tv_articles)} ({len(tv_articles)/len(articles):.2%})")
+    logger.info(f"Job offer articles: {len(job_articles)} ({len(job_articles)/len(articles):.2%})")
 
 if __name__ == "__main__":
     main()
