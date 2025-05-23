@@ -7,6 +7,9 @@ results/
 venv/
 .env/
 
+# Ignore environment variables file
+.env
+
 # Ignore Python cache and compiled files
 __pycache__/
 *.pyc

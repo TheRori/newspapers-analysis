@@ -3,25 +3,52 @@ Configuration loading utilities for newspaper analysis project.
 """
 
 import os
+import re
 import yaml
 from typing import Dict, Any, Optional
+from pathlib import Path
+from dotenv import load_dotenv
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
     """
-    Load configuration from a YAML file.
+    Load configuration from a YAML file and substitute environment variables.
     
     Args:
         config_path: Path to the YAML configuration file
         
     Returns:
-        Dictionary containing configuration
+        Dictionary containing configuration with environment variables substituted
     """
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
     
+    # Load environment variables from .env file if it exists
+    project_root = Path(config_path).parent.parent
+    env_file = project_root / '.env'
+    if env_file.exists():
+        load_dotenv(env_file)
+    
+    # Read the YAML file as a string first
     with open(config_path, 'r', encoding='utf-8') as file:
-        config = yaml.safe_load(file)
+        yaml_str = file.read()
+    
+    # Replace environment variables in the format ${VAR_NAME}
+    pattern = r'\${([^}]+)}'
+    
+    def replace_env_var(match):
+        var_name = match.group(1)
+        env_value = os.environ.get(var_name)
+        if env_value is None:
+            print(f"Warning: Environment variable '{var_name}' not found")
+            return match.group(0)  # Return the original placeholder if not found
+        return env_value
+    
+    # Substitute environment variables
+    yaml_str = re.sub(pattern, replace_env_var, yaml_str)
+    
+    # Parse the YAML with substituted values
+    config = yaml.safe_load(yaml_str)
     
     return config
 

@@ -63,7 +63,7 @@ llm:
     model: mistral-small
     provider: mistral
   openai:
-    api_key: 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
+    api_key: ${OPENAI_API_KEY}
     endpoint: https://api.openai.com/v1/chat/completions
     language: fr
     model: gpt-4o
