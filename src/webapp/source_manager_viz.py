@@ -298,25 +298,50 @@ def register_source_manager_callbacks(app):
     # Callback : Appliquer le chemin sélectionné dans le dropdown
     @app.callback(
         Output("source-file-feedback", "children"),
+        Output("current-source-path", "children"),
+        Output("article-count", "children"),
         Input("apply-dropdown-selection", "n_clicks"),
         State("source-file-path", "value")
     )
     def apply_selected_source_file(n_clicks, selected_path):
         if not n_clicks or not selected_path:
-            return dash.no_update
+            return dash.no_update, dash.no_update, dash.no_update
         try:
             path = Path(selected_path)
             if not path.exists():
-                return dbc.Alert(f"Fichier non trouvé : {selected_path}", color="danger")
+                return dbc.Alert(f"Fichier non trouvé : {selected_path}", color="danger"), dash.no_update, dash.no_update
+            
             # Mettre à jour le fichier de config
             config = load_config(config_path)
             config['data']['processed_dir'] = str(path.parent)
+            
+            # Sauvegarder également le nom du fichier dans la configuration
+            if 'files' not in config['data']:
+                config['data']['files'] = {}
+            config['data']['files']['articles'] = path.name
+            
             with open(config_path, 'w', encoding='utf-8') as f:
                 import yaml
                 yaml.safe_dump(config, f, allow_unicode=True)
-            return dbc.Alert("Chemin du fichier source mis à jour avec succès !", color="success")
+            
+            # Calculer le nombre d'articles dans le nouveau fichier source
+            article_count = 0
+            try:
+                with open(selected_path, 'r', encoding='utf-8') as f:
+                    articles = json.load(f)
+                article_count = len(articles)
+                print(f"Nombre d'articles dans le nouveau fichier source: {article_count}")
+            except Exception as e:
+                print(f"Erreur lors du calcul du nombre d'articles: {e}")
+            
+            # Mettre à jour les variables globales pour les années et journaux disponibles
+            global available_years, available_newspapers
+            available_years = detect_years_from_file(selected_path)
+            print(f"Années détectées dans le nouveau fichier source: {available_years[:10] if len(available_years) > 10 else available_years}")
+            
+            return dbc.Alert("Chemin du fichier source mis à jour avec succès !", color="success"), selected_path, str(article_count)
         except Exception as e:
-            return dbc.Alert(f"Erreur : {str(e)}", color="danger")
+            return dbc.Alert(f"Erreur : {str(e)}", color="danger"), dash.no_update, dash.no_update
     
     # Callback : Mettre à jour la plage d'années disponibles
     @app.callback(
@@ -1293,7 +1318,8 @@ def get_source_manager_layout():
     print("\n==== Début de get_source_manager_layout ====")
     
     # Obtenir le chemin actuel du fichier source depuis la configuration
-    current_source_path = str(project_root / config['data']['processed_dir'] / "articles.json")
+    articles_filename = config.get('data', {}).get('files', {}).get('articles', "articles.json")
+    current_source_path = str(project_root / config['data']['processed_dir'] / articles_filename)
     print(f"Chemin du fichier source: {current_source_path}")
     
     # Détecter les années directement ici pour s'assurer qu'elles sont disponibles immédiatement

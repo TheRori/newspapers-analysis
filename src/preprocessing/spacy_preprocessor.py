@@ -14,20 +14,8 @@ import os
 import sys
 from tqdm import tqdm
 
-# Configuration du logger
+# Initialiser le logger avec notre utilitaire centralisé
 logger = logging.getLogger(__name__)
-
-# Créer un gestionnaire de fichier pour les logs spécifiques à Spacy
-log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
-os.makedirs(log_dir, exist_ok=True)
-spacy_log_file = os.path.join(log_dir, f"spacy_preprocessing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
-
-# Créer un gestionnaire de fichier pour les logs spécifiques à Spacy
-file_handler = logging.FileHandler(spacy_log_file, encoding='utf-8')
-file_handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
 
 def load_spacy_model(model_name: str = "fr_core_news_md") -> spacy.language.Language:
     """
@@ -286,39 +274,59 @@ class SpacyPreprocessor:
     def process_documents(self, documents: List[Dict[str, Any]],
                            text_key: str = "cleaned_text",
                            output_key: str = "tokens",
+                           alternative_keys: List[str] = None,
                            show_progress: bool = True) -> List[Dict[str, Any]]:
-        start_time = time.time()
-        logger.info(f"SpaCy batch preprocessing started for {len(documents)} documents (text_key='{text_key}')")
-        logger.info(f"SpacyPreprocessor configuration: model={self.model_name}, allowed_pos={self.allowed_pos}, min_token_length={self.min_token_length}")
+        """Process a list of documents with SpaCy.
         
-        # Chercher les clés alternatives si text_key n'est pas disponible
-        alternative_keys = ["content", "text", "original_content"]
-        key_stats = {key: 0 for key in alternative_keys + [text_key]}
+        Args:
+            documents: List of document dictionaries
+            text_key: Key in documents containing text to process
+            output_key: Key to store processed tokens in documents
+            alternative_keys: List of alternative keys to try if text_key is not found
+            show_progress: Whether to show a progress bar
+            
+        Returns:
+            List of processed documents with tokens added
+        """
+        if alternative_keys is None:
+            alternative_keys = ["content", "text", "original_content"]
         
-        # Vérifier les clés disponibles dans les documents
+        # Initialiser les compteurs pour le résumé final
+        total_docs = len(documents)
+        processed_success = 0
+        processed_with_alt_key = 0
+        processed_empty = 0
+        error_docs = 0
+        error_details = {}
+        
+        logger.info(f"========== DÉBUT DU PRÉTRAITEMENT SPACY ==========")
+        logger.info(f"Traitement de {total_docs} documents avec SpaCy (modèle: {self.model_name})")
+        logger.info(f"Paramètres: text_key='{text_key}', output_key='{output_key}', POS tags={self.allowed_pos}, min_token_length={self.min_token_length}")
+        
+        # Vérifier la disponibilité des clés dans les documents
+        key_availability = {key: 0 for key in [text_key] + alternative_keys}
         for doc in documents:
-            for key in key_stats.keys():
-                if key in doc and doc[key]:
-                    key_stats[key] += 1
+            for key in key_availability.keys():
+                if key in doc:
+                    key_availability[key] += 1
         
-        logger.info(f"Key availability in documents: {key_stats}")
+        logger.info(f"Disponibilité des clés dans les documents: {key_availability}")
         
-        # Créer une barre de progression
+        # Initialiser la barre de progression
+        start_time = time.time()
         progress_bar = None
         if show_progress:
-            progress_bar = tqdm(total=len(documents), desc=f"SpaCy ({self.model_name})", 
-                               unit="doc", ncols=100, file=sys.stdout)
-            # Ajouter une représentation de la barre dans les logs
-            logger.info("Progress: [" + "-" * 50 + "] 0%")
+            progress_bar = tqdm(total=total_docs, desc=f"SpaCy ({self.model_name})",
+                                unit="doc", ncols=100, file=sys.stdout)
         
-        # Fonction pour mettre à jour la barre de progression dans les logs
+        # Fonction pour mettre à jour la barre de progression dans les logs (moins fréquemment)
         def update_log_progress(current, total):
             if not show_progress:
                 return
             progress = int(50 * current / total)
             percent = int(100 * current / total)
             progress_bar = "[" + "#" * progress + "-" * (50 - progress) + f"] {percent}%"
-            logger.info(f"Progress: {progress_bar} - {current}/{total} documents")
+            logger.info(f"Progression: {progress_bar} - {current}/{total} documents")
         
         # Traiter les documents
         processed_docs = []
@@ -329,52 +337,69 @@ class SpacyPreprocessor:
             if progress_bar:
                 progress_bar.update(1)
             
-            # Log progress at specific intervals (5% of total)
-            if i % max(1, len(documents) // 20) == 0:
-                progress = (i / len(documents)) * 100
+            # Log progress at specific intervals (10% of total) pour réduire le défilement
+            if i % max(1, total_docs // 10) == 0:
                 elapsed = time.time() - start_time
                 docs_per_sec = i / max(elapsed, 0.001)
-                estimated_remaining = (len(documents) - i) / max(docs_per_sec, 0.001)
-                update_log_progress(i, len(documents))
-                logger.info(f"Stats: {docs_per_sec:.2f} docs/sec - Est. remaining: {estimated_remaining:.1f} sec")
+                estimated_remaining = (total_docs - i) / max(docs_per_sec, 0.001)
+                update_log_progress(i, total_docs)
+                # Convertir le temps restant en format plus lisible
+                remaining_min = int(estimated_remaining // 60)
+                remaining_sec = int(estimated_remaining % 60)
+                logger.info(f"Vitesse: {docs_per_sec:.2f} docs/sec - Temps restant estimé: {remaining_min}m {remaining_sec}s")
             
             # Essayer de traiter le document
             try:
                 processed_doc = self.process_document(doc, text_key, output_key)
                 processed_docs.append(processed_doc)
+                processed_success += 1
             except KeyError as e:
-                logger.warning(f"Error processing document {doc_id}: {str(e)}")
+                # Ne pas logger chaque erreur pour éviter le défilement
+                error_type = str(e)
+                error_details[error_type] = error_details.get(error_type, 0) + 1
+                
                 # Essayer avec des clés alternatives
+                alt_key_success = False
                 for alt_key in alternative_keys:
                     if alt_key in doc and doc[alt_key]:
-                        logger.info(f"Using alternative key '{alt_key}' for document {doc_id}")
                         try:
                             processed_doc = self.process_document(doc, alt_key, output_key)
                             processed_docs.append(processed_doc)
+                            processed_with_alt_key += 1
+                            alt_key_success = True
                             break
                         except Exception as alt_e:
-                            logger.warning(f"Error with alternative key '{alt_key}' for document {doc_id}: {str(alt_e)}")
-                else:
-                    # Si aucune clé alternative ne fonctionne, ajouter le document sans tokens
-                    logger.warning(f"No valid text key found for document {doc_id}, adding empty tokens")
+                            error_type = f"Alt key '{alt_key}': {str(alt_e)}"
+                            error_details[error_type] = error_details.get(error_type, 0) + 1
+                
+                # Si aucune clé alternative ne fonctionne, ajouter le document sans tokens
+                if not alt_key_success:
                     doc[output_key] = []
                     processed_docs.append(doc)
+                    processed_empty += 1
+            except Exception as e:
+                # Capturer toutes les autres exceptions et ajouter quand même le document
+                error_type = f"Unexpected: {str(e)}"
+                error_details[error_type] = error_details.get(error_type, 0) + 1
+                doc[output_key] = []
+                processed_docs.append(doc)
+                error_docs += 1
         
         # Fermer la barre de progression
         if progress_bar:
             progress_bar.close()
             # Afficher une barre de progression complète dans les logs
-            logger.info("Progress: [" + "#" * 50 + "] 100%")
+            logger.info("Progression: [" + "#" * 50 + "] 100% - Terminé")
         
         # Calculer les statistiques sur les tokens
         token_stats = {"min": float('inf'), "max": 0, "total": 0, "empty": 0}
         for doc in processed_docs:
             num_tokens = len(doc[output_key])
-            if num_tokens == 0:
-                token_stats["empty"] += 1
             token_stats["min"] = min(token_stats["min"], num_tokens) if num_tokens > 0 else token_stats["min"]
             token_stats["max"] = max(token_stats["max"], num_tokens)
             token_stats["total"] += num_tokens
+            if num_tokens == 0:
+                token_stats["empty"] += 1
         
         # Calculer la moyenne des tokens par document
         non_empty_docs = len(processed_docs) - token_stats["empty"]
@@ -385,9 +410,30 @@ class SpacyPreprocessor:
         total_time = time.time() - start_time
         docs_per_sec = len(processed_docs) / max(total_time, 0.001)
         
-        logger.info(f"SpaCy batch preprocessing finished in {total_time:.2f} seconds ({docs_per_sec:.2f} docs/sec)")
-        logger.info(f"Token statistics: min={token_stats['min']}, max={token_stats['max']}, avg={token_stats['avg']:.2f}, total={token_stats['total']}, empty_docs={token_stats['empty']}")
-        if processed_docs:
-            logger.info(f"Sample tokens from first doc: {processed_docs[0][output_key][:20] if processed_docs[0][output_key] else '[]'}")
+        # Afficher un résumé complet à la fin
+        logger.info(f"\n========== RÉSUMÉ DU PRÉTRAITEMENT SPACY ==========")
+        logger.info(f"Temps total: {total_time:.2f} secondes ({docs_per_sec:.2f} docs/sec)")
+        logger.info(f"Documents traités: {len(processed_docs)}/{total_docs} ({len(processed_docs)/total_docs*100:.1f}%)")
+        logger.info(f"  - Succès avec clé principale: {processed_success} ({processed_success/total_docs*100:.1f}%)")
+        logger.info(f"  - Succès avec clé alternative: {processed_with_alt_key} ({processed_with_alt_key/total_docs*100:.1f}%)")
+        logger.info(f"  - Documents sans tokens: {processed_empty} ({processed_empty/total_docs*100:.1f}%)")
+        logger.info(f"  - Erreurs non récupérables: {error_docs} ({error_docs/total_docs*100:.1f}%)")
+        
+        if error_details:
+            logger.info(f"\nDétail des erreurs rencontrées:")
+            for error_type, count in sorted(error_details.items(), key=lambda x: x[1], reverse=True):
+                logger.info(f"  - {error_type}: {count} occurrences")
+        
+        logger.info(f"\nStatistiques des tokens:")
+        logger.info(f"  - Minimum par document: {token_stats['min']}")
+        logger.info(f"  - Maximum par document: {token_stats['max']}")
+        logger.info(f"  - Moyenne par document: {token_stats['avg']:.2f}")
+        logger.info(f"  - Total de tokens: {token_stats['total']}")
+        logger.info(f"  - Documents sans tokens: {token_stats['empty']} ({token_stats['empty']/len(processed_docs)*100:.1f}%)")
+        
+        if processed_docs and processed_docs[0].get(output_key):
+            logger.info(f"\nExemple de tokens (premier document): {processed_docs[0][output_key][:10]}...")
+        
+        logger.info(f"========== FIN DU PRÉTRAITEMENT SPACY ==========\n")
         
         return processed_docs

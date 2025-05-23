@@ -26,22 +26,48 @@ analysis:
       - NOUN
       - PROPN
       - ADJ
-      filter_ads: true  # Activer la détection de publicités via LLM
+      filter_ads: true
       min_token_length: 3
       spacy_model: fr_core_news_md
     use_spacy_preprocessing: true
+    bertopic:
+      # Paramètres UMAP pour la réduction de dimensionnalité
+      umap_n_neighbors: 15
+      umap_n_components: 5
+      umap_min_dist: 0.0
+      # Paramètres HDBSCAN pour le clustering (valeurs réduites pour moins d'outliers)
+      hdbscan_min_cluster_size: 5  # Valeur par défaut réduite (15 → 5)
+      hdbscan_min_samples: 3       # Valeur par défaut réduite (10 → 3)
+      # Activation de la redistribution des outliers
+      redistribute_outliers: true
+      # Modèle d'embedding
+      embedding_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+      # Autres paramètres
+      batch_size: 64
+      use_pca: true
+      pca_components: 50
 data:
   cluster_results_dir: data/results/clusters/
+  files:
+    articles: classified_tv_programs_20250523_104843_filtered.json
   lexical_analysis_dir: data/results/lexical_analysis/
   processed_dir: C:\Users\nicol\Documents\Projects\newspapers-analysis\data\processed
   raw_dir: data/raw
   results_dir: data/results
 llm:
-  api_key: feMLPgurZBqgTtUb2ENswldmMUZNBf53
-  endpoint: https://api.mistral.ai/v1/chat/completions
-  language: fr
-  model: mistral-small
-  provider: mistral
+  default_provider: openai
+  mistral:
+    api_key: feMLPgurZBqgTtUb2ENswldmMUZNBf53
+    endpoint: https://api.mistral.ai/v1/chat/completions
+    language: fr
+    model: mistral-small
+    provider: mistral
+  openai:
+    api_key: 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
+    endpoint: https://api.openai.com/v1/chat/completions
+    language: fr
+    model: gpt-4o
+    provider: openai
 logging:
   level: INFO
   log_file: ../logs/newspaper_analysis.log

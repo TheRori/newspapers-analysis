@@ -9,7 +9,10 @@ import os
 import sys
 import json
 import yaml
+import re
+
 import logging
+import time
 import argparse
 import pathlib
 from datetime import datetime
@@ -45,7 +48,7 @@ def load_config(config_path):
         return {"llm": {"provider": "mistral", "model": "mistral-small"}}
 
 
-def process_batch_for_categories(batch: List[Dict[str, Any]], llm_client: LLMClient, batch_size: int) -> List[Tuple[str, str]]:
+def process_batch_for_categories(batch: List[Dict[str, Any]], llm_client: LLMClient, batch_size: int, max_retries: int = 3, fallback_client: Optional[LLMClient] = None) -> List[Tuple[str, str]]:
     """
     Traite un lot d'articles pour déterminer leur catégorie.
     
@@ -105,12 +108,54 @@ Texte: "Ce soir sur TF1: 20h15 Film 'Avatar', 22h30 Journal, 23h00 Série 'Dr Ho
             continue
             
         # Limiter la taille du contenu pour éviter de dépasser les limites du LLM
-        content = content[:1000]  # Limiter à 1000 caractères
+        content = content[:500]  # Limiter à 1000 caractères
         
         prompt += f"\nTexte {i+1}: {content}\n"
     
-    # Envoyer la requête au LLM
-    response = llm_client.ask(prompt, max_tokens=1000)
+    # Envoyer la requête au LLM avec système de réessai
+    response = None
+    retry_count = 0
+    backoff_time = 2  # Temps initial d'attente entre les tentatives (en secondes)
+    quota_exceeded = False
+    current_client = llm_client
+    
+    while retry_count < max_retries:
+        try:
+            logger.info(f"Tentative {retry_count + 1}/{max_retries} d'envoi de requête au LLM ({current_client.provider}/{current_client.model})")
+            response = current_client.ask(prompt, max_tokens=1000)
+            # Si nous arrivons ici, la requête a réussi
+            break
+        except Exception as e:
+            error_str = str(e).lower()
+            
+            # Vérifier si c'est une erreur de quota OpenAI
+            if ("quota" in error_str or "insufficient_quota" in error_str or "exceeded" in error_str) and fallback_client and not quota_exceeded:
+                logger.warning(f"Quota OpenAI dépassé. Basculement vers le client de secours Mistral.")
+                current_client = fallback_client
+                quota_exceeded = True
+                # Réinitialiser le compteur de tentatives pour le nouveau client
+                retry_count = 0
+                continue
+            
+            retry_count += 1
+            if retry_count >= max_retries:
+                logger.error(f"Erreur après {max_retries} tentatives avec {current_client.provider}: {str(e)}")
+                # Retourner des résultats par défaut si toutes les tentatives échouent
+                return [("article", f"Erreur LLM après {max_retries} tentatives: {str(e)[:100]}...") for _ in batch]
+            else:
+                # Attendre avant de réessayer avec un temps d'attente exponentiel
+                match = re.search(r"try again in ([\d\.]+)s", str(e).lower())
+                if match:
+                    wait_time = float(match.group(1)) + 0.3  # petite marge de sécurité
+                else:
+                    wait_time = backoff_time * (2 ** (retry_count - 1))
+                logger.warning(f"Erreur LLM avec {current_client.provider}: {str(e)}. Nouvelle tentative dans {wait_time} secondes...")
+                time.sleep(wait_time)
+    
+    # Si nous n'avons pas de réponse après toutes les tentatives
+    if not response:
+        logger.error("Aucune réponse du LLM après plusieurs tentatives")
+        return [("article", "Pas de réponse du LLM après plusieurs tentatives") for _ in batch]
     
     # Analyser la réponse
     results = []
@@ -201,7 +246,19 @@ def filter_ads_from_topic_categories(
         raise ValueError("Configuration LLM manquante dans le fichier config.yaml")
     
     llm_client = LLMClient(config['llm'])
-    logger.info(f"Client LLM initialisé: {config['llm'].get('provider', 'mistral')}/{config['llm'].get('model', 'mistral-small')}")
+    
+    # Déterminer le provider et le modèle pour le logging
+    if 'default_provider' in config['llm']:
+        # Nouvelle structure de configuration
+        provider = config['llm'].get('default_provider', 'openai')
+        provider_config = config['llm'].get(provider, {})
+        model = provider_config.get('model', 'unknown')
+        logger.info(f"Client LLM initialisé: {provider}/{model}")
+    else:
+        # Ancienne structure de configuration
+        provider = config['llm'].get('provider', 'mistral')
+        model = config['llm'].get('model', 'mistral-small')
+        logger.info(f"Client LLM initialisé: {provider}/{model}")
     
     # Charger les articles
     logger.info(f"Chargement des articles depuis {articles_path}")
@@ -313,8 +370,14 @@ def filter_ads_from_topic_categories(
         with tqdm(total=len(articles_to_analyze), desc=f"Analyse du topic {topic_id}") as pbar:
             for batch in batches:
                 try:
-                    # Traiter le lot
-                    results = process_batch_for_categories(batch, llm_client, batch_size)
+                    # Traiter le lot avec le client principal et éventuellement le client de secours
+                    results = process_batch_for_categories(
+                        batch=batch, 
+                        llm_client=llm_client, 
+                        batch_size=batch_size, 
+                        max_retries=3, 
+                        fallback_client=fallback_client if 'fallback_client' in locals() else None
+                    )
                     
                     # Traiter les résultats
                     for article, (category, explanation) in zip(batch, results):

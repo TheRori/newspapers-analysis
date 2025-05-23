@@ -31,6 +31,8 @@ import sys
 print("[topic_modeling_viz] sys importé")
 import threading
 print("[topic_modeling_viz] threading importé")
+import re
+print("[topic_modeling_viz] re importé")
 
 print("[topic_modeling_viz] Début des définitions de fonctions")
 
@@ -41,8 +43,63 @@ def get_config_and_paths():
     with open(config_path, encoding='utf-8') as f:
         config = yaml.safe_load(f)
     results_dir = project_root / config['data']['results_dir']
-    advanced_topic_json = results_dir / 'advanced_topic' / 'advanced_topic_analysis.json'
-    return project_root, config, advanced_topic_json
+    advanced_topic_dir = results_dir / 'advanced_topic'
+    return project_root, config, advanced_topic_dir
+
+# Helper to get available topic modeling result files
+def get_topic_modeling_results():
+    print("Démarrage de get_topic_modeling_results()...")
+    
+    project_root, config, advanced_topic_dir = get_config_and_paths()
+    
+    if not advanced_topic_dir.exists():
+        print(f"Répertoire {advanced_topic_dir} non trouvé")
+        return []
+    
+    # Get all topic modeling result files
+    print(f"Recherche des fichiers dans {advanced_topic_dir}...")
+    result_files = list(advanced_topic_dir.glob('advanced_topic_analysis*.json'))
+    print(f"Nombre de fichiers trouvés: {len(result_files)}")
+    
+    # Sort by modification time (newest first)
+    result_files.sort(key=lambda x: os.stat(x).st_mtime, reverse=True)
+    
+    # Ajout du paramètre de cache-busting pour forcer le rechargement des fichiers
+    import time as time_module
+    cache_buster = int(time_module.time())
+    
+    # Format for dropdown
+    options = []
+    for file in result_files:
+        # Extract date and time from filename if possible
+        match = re.search(r'advanced_topic_analysis_?(\d+)?\.json', file.name)
+        if match and match.group(1):
+            # If there's a timestamp in the filename
+            timestamp = match.group(1)
+            # Try to format it nicely if it's a valid timestamp format
+            try:
+                from datetime import datetime
+                date_str = datetime.strptime(timestamp, '%Y%m%d_%H%M%S').strftime('%d/%m/%Y %H:%M')
+                label = f"Analyse du {date_str}"
+            except ValueError:
+                # If not a valid timestamp format, just use the raw string
+                label = f"Analyse {timestamp}"
+        else:
+            # If no timestamp in filename, use last modified time
+            from datetime import datetime
+            mod_time = datetime.fromtimestamp(os.path.getmtime(file))
+            label = f"Analyse du {mod_time.strftime('%d/%m/%Y %H:%M')}"
+        
+        # Add cache buster to force reload when needed
+        value = f"{file}?cache={cache_buster}"
+        options.append({"label": label, "value": value})
+    
+    # Add default option if no files found
+    if not options:
+        options = [{"label": "Aucun résultat disponible", "value": ""}]
+    
+    print(f"Options de fichiers de résultats: {len(options)}")
+    return options
 
 # Extract parser arguments from run_topic_modeling.py
 def get_topic_modeling_args():
@@ -186,6 +243,26 @@ def get_topic_modeling_layout():
                         _html.Div(id="topic-modeling-run-status", className="mb-3"),
                     ]),
                 ], className="mb-4 shadow"),
+            ], width=12)
+        ]),
+        # Sélecteur de fichiers de résultats
+        dbc.Row([
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader(_html.H4("Résultats de Topic Modeling", className="mb-0")),
+                    dbc.CardBody([
+                        _html.Div([
+                            dbc.Label("Sélectionner un fichier de résultats:", className="fw-bold"),
+                            dcc.Dropdown(
+                                id="topic-modeling-results-dropdown",
+                                options=get_topic_modeling_results(),
+                                value=get_topic_modeling_results()[0]['value'] if get_topic_modeling_results() else None,
+                                clearable=False,
+                                className="mb-3"
+                            ),
+                        ]),
+                    ])
+                ], className="mb-4 shadow")
             ], width=12)
         ]),
         # Tabs for different visualizations
@@ -350,10 +427,13 @@ def get_cache_info():
     return cache_info
 
 # Function to load and display the article browser with topic distribution
-def load_article_browser():
+def load_article_browser(custom_doc_topic_path=None):
     """
     Loads the doc_topic_matrix.json file and creates an interactive table to browse articles
     with their topic distributions.
+    
+    Args:
+        custom_doc_topic_path: Chemin personnalisé vers un fichier doc_topic_matrix.json
     
     Returns:
         dash components for the article browser
@@ -365,7 +445,15 @@ def load_article_browser():
         config = yaml.safe_load(f)
     
     results_dir = project_root / config['data']['results_dir']
-    doc_topic_matrix_path = results_dir / 'doc_topic_matrix.json'
+    
+    # Utiliser le chemin personnalisé s'il est fourni, sinon utiliser le chemin par défaut
+    if custom_doc_topic_path and os.path.exists(custom_doc_topic_path):
+        doc_topic_matrix_path = custom_doc_topic_path
+        print(f"Utilisation du fichier doc_topic_matrix personnalisé: {doc_topic_matrix_path}")
+    else:
+        doc_topic_matrix_path = results_dir / 'doc_topic_matrix.json'
+        print(f"Utilisation du fichier doc_topic_matrix par défaut: {doc_topic_matrix_path}")
+        
     articles_path = project_root / 'data' / 'processed' / 'articles.json'
     
     if not doc_topic_matrix_path.exists():
@@ -651,6 +739,31 @@ def register_topic_modeling_callbacks(app):
         
         return topic_options
     
+    # Callback pour rafraîchir la liste des fichiers de résultats
+    @app.callback(
+        Output("topic-modeling-results-dropdown", "options"),
+        Input("btn-run-topic-modeling", "n_clicks"),
+        prevent_initial_call=False
+    )
+    def refresh_results_files(n_clicks):
+        return get_topic_modeling_results()
+    
+    # Callback pour activer/désactiver le sélecteur de cache Spacy en fonction du moteur sélectionné
+    @app.callback(
+        Output("cache-file-select", "disabled"),
+        Output("cache-info-display", "children", allow_duplicate=True),
+        Input("arg-engine", "value"),
+        prevent_initial_call=True
+    )
+    def toggle_cache_selector(engine):
+        if engine == "bertopic":
+            return True, html.Div([
+                html.P("Le cache Spacy est désactivé pour BERTopic", className="text-danger fw-bold"),
+                html.P("BERTopic utilise directement le champ 'content' des articles sans prétraitement Spacy", className="text-muted")
+            ])
+        else:
+            return False, html.Div("Sélectionnez un fichier de cache pour accélérer le traitement", className="text-muted")
+    
     # Callback pour initialiser la liste des fichiers de cache
     @app.callback(
         Output("cache-file-select", "options", allow_duplicate=True),
@@ -736,6 +849,9 @@ def register_topic_modeling_callbacks(app):
     # Add other inputs
     input_list += [Input("btn-run-topic-modeling", "n_clicks"), Input("page-content", "children")]
     
+    # Ajouter l'input pour le dropdown de résultats
+    input_list.append(Input("topic-modeling-results-dropdown", "value"))
+    
     @app.callback(
         [Output("topic-modeling-run-status", "children"),
          Output("advanced-topic-stats-content", "children")],
@@ -748,7 +864,7 @@ def register_topic_modeling_callbacks(app):
         status = ""
         stats_content = None
         
-        # Split args: filtered parser values, cluster values, source file, cache file, n_clicks, page_content
+        # Split args: filtered parser values, cluster values, source file, cache file, n_clicks, page_content, selected_results_file
         filtered_parser_values = args[:len(filtered_parser_args)]
         cluster_file = args[len(filtered_parser_args)]
         cluster_id = args[len(filtered_parser_args)+1]
@@ -756,6 +872,13 @@ def register_topic_modeling_callbacks(app):
         selected_cache = args[len(filtered_parser_args)+3]
         n_clicks = args[len(filtered_parser_args)+4]
         page_content = args[len(filtered_parser_args)+5]
+        selected_results_file = args[len(filtered_parser_args)+6] if len(args) > len(filtered_parser_args)+6 else None
+        
+        print(f"Fichier de résultats sélectionné: {selected_results_file}")
+        
+        # Vérifier si le fichier de résultats sélectionné existe
+        if selected_results_file and "?cache=" in selected_results_file:
+            selected_results_file = selected_results_file.split("?cache=")[0]
         
         trigger_id = ctx_trigger[0]["prop_id"].split(".")[0] if ctx_trigger else None
         project_root, config, advanced_topic_json = get_config_and_paths()
@@ -873,13 +996,30 @@ def register_topic_modeling_callbacks(app):
                 print(f"Erreur lors de l'exécution (code {e.returncode})")
                 status = dbc.Alert(f"Erreur lors de l'exécution (code {e.returncode})", color="danger")
         
-        # Charger les stats avancées si dispo
-        if advanced_topic_json.exists():
-            with open(advanced_topic_json, encoding='utf-8') as f:
+        # Utiliser le fichier de résultats sélectionné s'il existe
+        if selected_results_file and os.path.exists(selected_results_file):
+            print(f"Chargement des statistiques depuis le fichier sélectionné: {selected_results_file}")
+            with open(selected_results_file, encoding='utf-8') as f:
                 stats = json.load(f)
             stats_content = render_advanced_topic_stats(stats)
         else:
-            stats_content = dbc.Alert("Fichier de statistiques avancées introuvable.", color="warning")
+            # Si aucun fichier n'est sélectionné ou s'il n'existe pas, récupérer la liste des fichiers disponibles
+            result_files = get_topic_modeling_results()
+            if result_files and result_files[0]['value']:
+                # Nettoyer le chemin du fichier (supprimer le paramètre de cache-busting)
+                default_file = result_files[0]['value']
+                if "?cache=" in default_file:
+                    default_file = default_file.split("?cache=")[0]
+                    
+                if os.path.exists(default_file):
+                    print(f"Chargement des statistiques depuis le fichier par défaut: {default_file}")
+                    with open(default_file, encoding='utf-8') as f:
+                        stats = json.load(f)
+                    stats_content = render_advanced_topic_stats(stats)
+                else:
+                    stats_content = dbc.Alert(f"Fichier de statistiques avancées introuvable: {default_file}", color="warning")
+            else:
+                stats_content = dbc.Alert("Aucun fichier de résultats disponible.", color="warning")
         
         return status, stats_content
     
@@ -1033,16 +1173,48 @@ def register_topic_modeling_callbacks(app):
             print(f"Erreur lors de l'exécution du script: {str(e)}")
             return dbc.Alert(f"Erreur lors de l'exécution du script: {str(e)}", color="danger"), None
     
-    # Callback pour charger l'explorateur d'articles quand on change d'onglet
+    # Callback pour charger l'explorateur d'articles quand on change d'onglet ou qu'on sélectionne un fichier de résultats
     @app.callback(
         Output("article-browser-content", "children"),
         Input("topic-modeling-tabs", "active_tab"),
+        Input("topic-modeling-results-dropdown", "value"),
         prevent_initial_call=True
     )
-    def update_article_browser_tab(active_tab):
-        if active_tab == "article-browser-tab":
-            return load_article_browser()
-        return None
+    def update_article_browser_tab(active_tab, selected_file):
+        if active_tab != "article-browser-tab":
+            return None
+            
+        # Si un fichier de résultats est sélectionné, l'utiliser pour charger les données correspondantes
+        if selected_file:
+            # Nettoyer le chemin du fichier (supprimer le paramètre de cache-busting)
+            if "?cache=" in selected_file:
+                selected_file = selected_file.split("?cache=")[0]
+                
+            # Extraire l'UUID du fichier pour trouver le fichier doc_topic_matrix correspondant
+            import re
+            import os
+            
+            # Pattern pour extraire l'UUID du nom de fichier (supporte à la fois les formats avec timestamp et UUID)
+            uuid_pattern = r'advanced_topic_analysis_([a-f0-9\-]+|\d+)\.json'
+            match = re.search(uuid_pattern, os.path.basename(selected_file))
+            
+            if match and match.group(1):
+                # Extraire l'identifiant (UUID ou timestamp)
+                file_id = match.group(1)
+                project_root, config, _ = get_config_and_paths()
+                results_dir = project_root / config['data']['results_dir']
+                doc_topic_matrix_path = results_dir / f'doc_topic_matrix_{file_id}.json'
+                
+                print(f"Recherche du fichier doc_topic_matrix correspondant: {doc_topic_matrix_path}")
+                
+                if os.path.exists(doc_topic_matrix_path):
+                    print(f"Utilisation du fichier doc_topic_matrix spécifique: {doc_topic_matrix_path}")
+                    return load_article_browser(doc_topic_matrix_path)
+                else:
+                    print(f"Fichier doc_topic_matrix spécifique non trouvé, utilisation du fichier par défaut")
+        
+        # Si aucun fichier spécifique n'est trouvé, utiliser le fichier par défaut
+        return load_article_browser()
     
     # Callback pour mettre à jour la table des articles en fonction des options de tri et de filtrage
     @app.callback(
