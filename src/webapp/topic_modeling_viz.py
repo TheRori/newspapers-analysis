@@ -33,6 +33,8 @@ import threading
 print("[topic_modeling_viz] threading importé")
 import re
 print("[topic_modeling_viz] re importé")
+import ast
+
 
 print("[topic_modeling_viz] Début des définitions de fonctions")
 
@@ -231,8 +233,6 @@ def get_topic_modeling_layout():
                             ], width=12),
                         ], className="mb-3"),
                         
-
-                        
                         dbc.Form(get_topic_modeling_controls()),
                         
                         # Add topic filter component
@@ -291,6 +291,79 @@ def get_topic_modeling_layout():
                     ], width=12)
                 ])
             ], label="Explorateur d'articles", tab_id="article-browser-tab"),
+            dbc.Tab([
+                dbc.Row([
+                    dbc.Col([
+                        _html.H4("Nommage des topics avec LLM", className="mt-4 mb-3"),
+                        _html.P("Cet outil vous permet de générer automatiquement des noms et des résumés pour vos topics en utilisant un LLM.", className="text-muted"),
+                        dbc.Card([
+                            dbc.CardBody([
+                                dbc.Row([
+                                    dbc.Col([
+                                        dbc.Label("Méthode de génération", html_for="topic-naming-method"),
+                                        dbc.Select(
+                                            id="topic-naming-method",
+                                            options=[
+                                                {"label": "Utiliser les articles représentatifs", "value": "articles"},
+                                                {"label": "Utiliser les mots-clés", "value": "keywords"}
+                                            ],
+                                            value="articles",
+                                            className="mb-2"
+                                        ),
+                                    ], width=6),
+                                    dbc.Col([
+                                        dbc.Label("Nombre d'articles par topic", html_for="topic-naming-num-articles"),
+                                        dbc.Input(
+                                            id="topic-naming-num-articles",
+                                            type="number",
+                                            min=1,
+                                            max=20,
+                                            step=1,
+                                            value=10,
+                                            className="mb-2"
+                                        ),
+                                    ], width=6),
+                                ]),
+                                dbc.Row([
+                                    dbc.Col([
+                                        dbc.Label("Seuil de probabilité", html_for="topic-naming-threshold"),
+                                        dbc.Input(
+                                            id="topic-naming-threshold",
+                                            type="number",
+                                            min=0.1,
+                                            max=0.9,
+                                            step=0.1,
+                                            value=0.5,
+                                            className="mb-2"
+                                        ),
+                                    ], width=6),
+                                    dbc.Col([
+                                        dbc.Label("Fichier de sortie", html_for="topic-naming-output-path"),
+                                        dbc.Input(
+                                            id="topic-naming-output-path",
+                                            type="text",
+                                            placeholder="Laissez vide pour générer automatiquement",
+                                            className="mb-2"
+                                        ),
+                                    ], width=6),
+                                ]),
+                                dbc.Button(
+                                    "Générer les noms des topics",
+                                    id="btn-run-topic-naming",
+                                    color="primary",
+                                    className="mt-2"
+                                ),
+                            ])
+                        ], className="mb-4"),
+                        _html.Div(id="topic-naming-status", className="mt-3"),
+                        dcc.Loading(
+                            id="loading-topic-naming-results",
+                            type="default",
+                            children=_html.Div(id="topic-naming-results")
+                        )
+                    ], width=12)
+                ])
+            ], label="Nommage des topics", tab_id="topic-naming-tab"),
             dbc.Tab([
                 dbc.Row([
                     dbc.Col([
@@ -514,7 +587,6 @@ def load_article_browser(custom_doc_topic_path=None):
                     topic_names = stats['topic_names_llm']
                 else:
                     try:
-                        import ast
                         topic_names = ast.literal_eval(stats['topic_names_llm'])
                     except Exception:
                         topic_names = {}
@@ -620,794 +692,284 @@ def load_article_browser(custom_doc_topic_path=None):
     
     return html.Div(children)
 
+# Helper to render the results of the topic naming script.
+def render_topic_naming_results(topic_names):
+    """
+    Renders the topic naming results in a user-friendly format.
+    
+    Args:
+        topic_names (dict): A dictionary containing the generated topic names and summaries.
+    
+    Returns:
+        A Dash component to display the results.
+    """
+    if not topic_names:
+        return html.Div("Aucun nom de topic n'a été généré.", className="alert alert-info")
+    
+    # Can be a dict or a string representation of a dict
+    if isinstance(topic_names, str):
+        try:
+            topic_names = ast.literal_eval(topic_names)
+        except (ValueError, SyntaxError) as e:
+            return dbc.Alert(f"Erreur lors de la lecture des noms de topics: {e}", color="danger")
+
+    accordion_items = []
+    for topic_id, data in topic_names.items():
+        title = "Titre non disponible"
+        summary = "Résumé non disponible"
+        
+        if isinstance(data, dict):
+            title = data.get('title', title)
+            summary = data.get('summary', summary)
+        elif isinstance(data, (list, tuple)) and len(data) > 0:
+            title = data[0]
+            if len(data) > 1:
+                summary = data[1]
+
+        item = dbc.AccordionItem(
+            [
+                html.P(summary, className="mb-0")
+            ],
+            title=f"{topic_id.replace('_', ' ').title()}: {title}",
+        )
+        accordion_items.append(item)
+    
+    children = [
+        html.H5("Noms et résumés des topics générés", className="mt-4 mb-3"),
+        dbc.Accordion(
+            accordion_items,
+            start_collapsed=True,
+            always_open=True,
+            className="mb-4"
+        )
+    ]
+    
+    # Add a button to apply the names to visualizations and a store for the names
+    children.append(
+        html.Div([
+            dbc.Button(
+                "Appliquer ces noms aux visualisations",
+                id="btn-apply-topic-names",
+                color="success",
+                className="mb-3"
+            ),
+            dcc.Store(id="topic-names-store", data=topic_names),
+            html.P("Note: Les noms générés seront automatiquement appliqués aux visualisations et à l'explorateur d'articles.", 
+                  className="text-muted fst-italic small mt-2")
+        ])
+    )
+    
+    return html.Div(children)
+
 def register_topic_modeling_callbacks(app):
     # Register the topic filter component callbacks
     register_topic_filter_callbacks(app, id_prefix="topic-filter")
     parser_args = get_topic_modeling_args()
     
+    # Callback pour le bouton de nommage des topics
+    @app.callback(
+        Output("topic-naming-status", "children"),
+        Output("loading-topic-naming-results", "children"),
+        Output("topic-modeling-results-dropdown", "options", allow_duplicate=True),
+        Input("btn-run-topic-naming", "n_clicks"),
+        State("topic-naming-method", "value"),
+        State("topic-naming-num-articles", "value"),
+        State("topic-naming-threshold", "value"),
+        State("topic-naming-output-path", "value"),
+        prevent_initial_call=True
+    )
+    def run_topic_naming(n_clicks, method, num_articles, threshold, output_path):
+        if not n_clicks:
+            return dash.no_update, dash.no_update, dash.no_update
+        
+        # Récupérer les chemins nécessaires
+        project_root, config, advanced_topic_dir = get_config_and_paths()
+        results_dir = project_root / config['data']['results_dir']
+        
+        # Vérifier si les fichiers nécessaires existent
+        doc_topic_matrix_path = results_dir / 'doc_topic_matrix.json'
+        articles_path = project_root / config['data']['processed'] / 'articles.json'
+        advanced_topic_path = advanced_topic_dir / 'advanced_topic_analysis.json'
+        
+        if not doc_topic_matrix_path.exists():
+            return dbc.Alert("Fichier doc_topic_matrix.json introuvable. Exécutez d'abord le topic modeling.", color="danger"), dash.no_update, dash.no_update
+        
+        if not articles_path.exists():
+            return dbc.Alert("Fichier d'articles introuvable.", color="danger"), dash.no_update, dash.no_update
+        
+        # Préparer le chemin de sortie
+        if not output_path:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = str(results_dir / f"topic_names_llm_{timestamp}.json")
+        
+        # Construire la commande
+        script_path = project_root / "src" / "scripts" / "run_topic_naming.py"
+        
+        # Utiliser sys.executable pour s'assurer d'utiliser le bon interpréteur Python
+        python_executable = sys.executable
+        
+        # Construire les arguments de la commande
+        cmd_args = [
+            python_executable,
+            str(script_path),
+            "--source-file", str(articles_path),
+            "--doc-topic-matrix", str(doc_topic_matrix_path),
+            "--method", method,
+            "--output-file", output_path,
+            "--num-articles", str(num_articles),
+            "--threshold", str(threshold),
+            "--config", str(project_root / "config" / "config.yaml")
+        ]
+        
+        # Si la méthode est keywords, ajouter le chemin vers le fichier de mots-clés
+        if method == "keywords" and advanced_topic_path.exists():
+            cmd_args.extend(["--top-words-file", str(advanced_topic_path)])
+        
+        # Exécuter la commande
+        try:
+            # Créer un message de statut
+            status = dbc.Alert(
+                [
+                    html.P("Lancement du script de nommage des topics...", className="mb-0"),
+                    html.P(f"Méthode: {method}, Nombre d'articles: {num_articles}, Seuil: {threshold}", className="mb-0 small"),
+                    html.P(f"Fichier de sortie: {output_path}", className="mb-0 small")
+                ],
+                color="info"
+            )
+            
+            # Exécuter le script en arrière-plan
+            process = subprocess.Popen(
+                cmd_args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            # Attendre que le processus se termine
+            stdout, stderr = process.communicate()
+            
+            # Vérifier si le processus s'est terminé avec succès
+            if process.returncode == 0:
+                # Charger les résultats
+                try:
+                    with open(output_path, 'r', encoding='utf-8') as f:
+                        topic_names = json.load(f)
+                    
+                    # Mettre à jour le fichier d'analyse avancée avec les noms de topics
+                    if advanced_topic_path.exists():
+                        try:
+                            with open(advanced_topic_path, 'r', encoding='utf-8') as f:
+                                advanced_stats = json.load(f)
+                            
+                            # Ajouter les noms de topics au fichier d'analyse avancée
+                            advanced_stats['topic_names_llm'] = topic_names
+                            
+                            with open(advanced_topic_path, 'w', encoding='utf-8') as f:
+                                json.dump(advanced_stats, f, ensure_ascii=False, indent=2)
+                                
+                            print(f"Noms de topics ajoutés au fichier d'analyse avancée: {advanced_topic_path}")
+                        except Exception as e:
+                            print(f"Erreur lors de la mise à jour du fichier d'analyse avancée: {e}")
+                    
+                    # Afficher les résultats
+                    results = render_topic_naming_results(topic_names)
+                    return dbc.Alert("Nommage des topics terminé avec succès!", color="success"), results, get_topic_modeling_results()
+                    
+                except Exception as e:
+                    return dbc.Alert(f"Erreur lors du chargement des résultats: {str(e)}", color="danger"), no_update, no_update
+            else:
+                # Afficher l'erreur
+                return dbc.Alert(f"Erreur lors de l'exécution du script: {stderr}", color="danger"), no_update, no_update
+                
+        except Exception as e:
+            return dbc.Alert(f"Erreur: {str(e)}", color="danger"), no_update, no_update
+    
     # Callback pour remplir la liste des topics disponibles pour le filtrage des publicités
     @app.callback(
         Output("ad-filter-topic-id", "options"),
         [Input("topic-modeling-tabs", "active_tab"),
-         Input("btn-refresh-topics", "n_clicks"),
-         Input("page-content", "children")],
-        prevent_initial_call=False  # Permettre l'appel initial
+         Input("btn-refresh-topics", "n_clicks")],
+        prevent_initial_call=True
     )
-    def update_ad_filter_topic_options(active_tab, n_clicks, page_content):
+    def update_ad_filter_topic_options(active_tab, n_clicks):
         # Déterminer quel élément a déclenché le callback
         trigger = ctx.triggered_id if ctx.triggered else None
         
-        # Si le déclencheur est le changement d'onglet et que ce n'est pas l'onglet de filtrage, ne rien faire
-        if trigger == "topic-modeling-tabs" and active_tab != "ad-filter-tab":
+        # Only run if the ad filter tab is active or the refresh button is clicked
+        if active_tab != "ad-filter-tab" and trigger != "btn-refresh-topics":
             return dash.no_update
         
         # Récupérer les informations sur les topics
-        project_root, config, advanced_topic_json = get_config_and_paths()
+        project_root, config, advanced_topic_dir = get_config_and_paths()
         results_dir = project_root / config['data']['results_dir']
-        doc_topic_matrix_path = results_dir / 'doc_topic_matrix.json'
-        
-        # Vérifier si le fichier doc_topic_matrix.json existe
-        if not doc_topic_matrix_path.exists():
-            print("Fichier doc_topic_matrix.json introuvable. Exécutez d'abord le topic modeling.")
+        advanced_topic_path = advanced_topic_dir / 'advanced_topic_analysis.json'
+
+        # Vérifier si le fichier d'analyse existe
+        if not advanced_topic_path.exists():
+            print("Fichier advanced_topic_analysis.json introuvable.")
             return [{"label": "Aucun topic disponible", "value": ""}]
         
-        # Initialiser les options avec une option par défaut
         topic_options = [{"label": "Sélectionnez un topic", "value": ""}]
         
-        # Charger la matrice document-topic
         try:
-            with open(doc_topic_matrix_path, 'r', encoding='utf-8') as f:
-                doc_topic_data = json.load(f)
-            
-            # Vérifier la structure du fichier
-            if not isinstance(doc_topic_data, list) and 'doc_topic_matrix' in doc_topic_data:
-                doc_topic_matrix = doc_topic_data['doc_topic_matrix']
-            else:
-                doc_topic_matrix = doc_topic_data
-            
-            # Déterminer le nombre de topics à partir du premier document
-            if doc_topic_matrix and isinstance(doc_topic_matrix, list) and len(doc_topic_matrix) > 0:
-                first_doc = doc_topic_matrix[0]
-                if 'topic_distribution' in first_doc:
-                    num_topics = len(first_doc['topic_distribution'])
-                    
-                    # Essayer de charger les noms des topics depuis le fichier d'analyse avancée
-                    topic_names = {}
-                    if advanced_topic_json.exists():
-                        try:
-                            with open(advanced_topic_json, encoding='utf-8') as f:
-                                stats = json.load(f)
-                            
-                            if stats.get('topic_names_llm'):
-                                if isinstance(stats['topic_names_llm'], dict):
-                                    topic_names = stats['topic_names_llm']
-                                else:
-                                    try:
-                                        import ast
-                                        topic_names = ast.literal_eval(stats['topic_names_llm'])
-                                    except Exception:
-                                        topic_names = {}
-                        except Exception as e:
-                            print(f"Erreur lors du chargement des noms de topics: {e}")
-                    
-                    # Essayer de charger les mots-clés des topics depuis le fichier de débogage des clusters
-                    topic_keywords = {}
-                    debug_clusters_path = results_dir / 'topic_clusters_debug.json'
-                    if debug_clusters_path.exists():
-                        try:
-                            with open(debug_clusters_path, encoding='utf-8') as f:
-                                debug_data = json.load(f)
-                            
-                            clusters = debug_data.get('clusters', [])
-                            for i, cluster in enumerate(clusters):
-                                if i < num_topics:  # S'assurer que nous n'avons pas plus de clusters que de topics
-                                    keywords = cluster.get('keywords', [])
-                                    count = cluster.get('count', 0)
-                                    topic_keywords[i] = {
-                                        'keywords': keywords,
-                                        'count': count
-                                    }
-                        except Exception as e:
-                            print(f"Erreur lors du chargement des clusters de débogage: {e}")
-                    
-                    # Créer les options pour le dropdown en combinant toutes les informations disponibles
-                    for i in range(num_topics):
-                        topic_name = topic_names.get(f'topic_{i}', f"Topic {i}")
-                        
-                        # Ajouter les mots-clés et le nombre d'articles si disponibles
-                        if i in topic_keywords:
-                            keywords = topic_keywords[i].get('keywords', [])
-                            count = topic_keywords[i].get('count', 0)
-                            keywords_str = ", ".join(keywords[:5]) if keywords else ""
-                            
-                            if keywords_str:
-                                label = f"Topic {i} ({count} articles) - {keywords_str}"
-                            else:
-                                label = f"{topic_name} (Topic {i})"
-                        else:
-                            label = f"{topic_name} (Topic {i})"
-                        
-                        topic_options.append({
-                            "label": label,
-                            "value": str(i)
-                        })
-                    
-                    print(f"Chargé {num_topics} topics pour le filtrage des publicités")
-        except Exception as e:
-            print(f"Erreur lors du chargement des topics: {e}")
-            return [{"label": "Erreur lors du chargement des topics", "value": ""}]
-        
-        return topic_options
-    
-    # Callback pour rafraîchir la liste des fichiers de résultats
-    @app.callback(
-        Output("topic-modeling-results-dropdown", "options"),
-        Input("btn-run-topic-modeling", "n_clicks"),
-        prevent_initial_call=False
-    )
-    def refresh_results_files(n_clicks):
-        return get_topic_modeling_results()
-    
-    # Callback pour activer/désactiver le sélecteur de cache Spacy en fonction du moteur sélectionné
-    @app.callback(
-        Output("cache-file-select", "disabled"),
-        Output("cache-info-display", "children", allow_duplicate=True),
-        Input("arg-engine", "value"),
-        prevent_initial_call=True
-    )
-    def toggle_cache_selector(engine):
-        if engine == "bertopic":
-            return True, html.Div([
-                html.P("Le cache Spacy est désactivé pour BERTopic", className="text-danger fw-bold"),
-                html.P("BERTopic utilise directement le champ 'content' des articles sans prétraitement Spacy", className="text-muted")
-            ])
-        else:
-            return False, html.Div("Sélectionnez un fichier de cache pour accélérer le traitement", className="text-muted")
-    
-    # Callback pour initialiser la liste des fichiers de cache
-    @app.callback(
-        Output("cache-file-select", "options", allow_duplicate=True),
-        Output("cache-info-display", "children"),
-        Input("page-content", "children"),
-        prevent_initial_call=True
-    )
-    def refresh_cache_list(page_content):
-        cache_info = get_cache_info()
-        
-        # Préparer les options pour le sélecteur de cache
-        cache_options = [{"label": "Aucun (utiliser le plus récent)", "value": ""}]
-        
-        if cache_info["count"] == 0:
-            return cache_options, html.Div("Aucun fichier de cache trouvé.", className="text-muted")
-        
-        # Ajouter les options de cache
-        for cache_file in cache_info["files"]:
-            if "error" not in cache_file:
-                description = f"{cache_file['filename']} ({cache_file['articles_count']} articles, {cache_file['spacy_model']})"
-                cache_options.append({"label": description, "value": cache_file["filename"]})
-        
-        # Créer un résumé des informations de cache
-        cache_summary = html.Div([
-            html.P(f"{cache_info['count']} fichiers de cache trouvés", className="text-info"),
-        ])
-        
-        return cache_options, cache_summary
-    
-    # Callback pour le bouton de parcourir du fichier source
-    @app.callback(
-        Output("arg-input-file", "value"),
-        Input("source-file-browse", "n_clicks"),
-        State("arg-input-file", "value"),
-        prevent_initial_call=True
-    )
-    def browse_source_file(n_clicks, current_value):
-        if not n_clicks:
-            return current_value
-        
-        # Obtenir le répertoire de départ pour la boîte de dialogue
-        project_root, _, _ = get_config_and_paths()
-        data_dir = project_root / "data" / "processed"
-        
-        # Utiliser une commande PowerShell pour afficher une boîte de dialogue de sélection de fichier
-        try:
-            cmd = [
-                "powershell",
-                "-Command",
-                "Add-Type -AssemblyName System.Windows.Forms; " +
-                "$openFileDialog = New-Object System.Windows.Forms.OpenFileDialog; " +
-                "$openFileDialog.InitialDirectory = '" + str(data_dir).replace('\\', '\\\\') + "'; " +
-                "$openFileDialog.Filter = 'Fichiers JSON (*.json)|*.json|Tous les fichiers (*.*)|*.*'; " +
-                "$openFileDialog.ShowDialog() | Out-Null; " +
-                "$openFileDialog.FileName"
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            file_path = result.stdout.strip()
-            
-            if file_path and os.path.exists(file_path):
-                return file_path
-            return current_value
-        except Exception as e:
-            print(f"Erreur lors de l'ouverture de la boîte de dialogue: {e}")
-            return current_value
-    
-    # Filtres supprimés
-    filtered_parser_args = parser_args
-    
-    # Create input list for all arguments
-    input_list = [Input(f"arg-{arg['name']}", "value") for arg in filtered_parser_args]
-    
-    # Add cluster filter inputs
-    input_list.append(Input("topic-filter-cluster-file-dropdown", "value"))
-    input_list.append(Input("topic-filter-cluster-id-dropdown", "value"))
-    
-    # Add input for source file
-    input_list.append(Input("arg-input-file", "value"))
-    
-    # Add input for cache file
-    input_list.append(Input("cache-file-select", "value"))
-    
-    # Add other inputs
-    input_list += [Input("btn-run-topic-modeling", "n_clicks"), Input("page-content", "children")]
-    
-    # Ajouter l'input pour le dropdown de résultats
-    input_list.append(Input("topic-modeling-results-dropdown", "value"))
-    
-    @app.callback(
-        [Output("topic-modeling-run-status", "children"),
-         Output("advanced-topic-stats-content", "children")],
-        input_list,
-        prevent_initial_call=True
-    )
-    def run_or_load_topic_modeling(*args):
-        import json  # Import json at the function level to avoid variable shadowing
-        ctx_trigger = ctx.triggered
-        status = ""
-        stats_content = None
-        
-        # Split args: filtered parser values, cluster values, source file, cache file, n_clicks, page_content, selected_results_file
-        filtered_parser_values = args[:len(filtered_parser_args)]
-        cluster_file = args[len(filtered_parser_args)]
-        cluster_id = args[len(filtered_parser_args)+1]
-        source_file = args[len(filtered_parser_args)+2]
-        selected_cache = args[len(filtered_parser_args)+3]
-        n_clicks = args[len(filtered_parser_args)+4]
-        page_content = args[len(filtered_parser_args)+5]
-        selected_results_file = args[len(filtered_parser_args)+6] if len(args) > len(filtered_parser_args)+6 else None
-        
-        print(f"Fichier de résultats sélectionné: {selected_results_file}")
-        
-        # Vérifier si le fichier de résultats sélectionné existe
-        if selected_results_file and "?cache=" in selected_results_file:
-            selected_results_file = selected_results_file.split("?cache=")[0]
-        
-        trigger_id = ctx_trigger[0]["prop_id"].split(".")[0] if ctx_trigger else None
-        project_root, config, advanced_topic_json = get_config_and_paths()
-        
-        # Charger les données de clustering si disponibles
-        cluster_data = None
-        if cluster_file and cluster_id:
-            try:
-                from src.webapp.topic_filter_component import load_cluster_data
-                cluster_data = load_cluster_data(cluster_file)
-                print(f"Données de clustering chargées depuis {cluster_file}")
-            except Exception as e:
-                print(f"Erreur lors du chargement des données de clustering: {e}")
-        
-        if trigger_id == "btn-run-topic-modeling" and n_clicks:
-            # Build argument list for filtered parser args
-            arg_list = []
-            for arg, val in zip(filtered_parser_args, filtered_parser_values):
-                if arg['type'] == 'bool':
-                    if val:
-                        arg_list.append(f"--{arg['name'].replace('_','-')}")
-                elif val is not None and val != "":
-                    arg_list.append(f"--{arg['name'].replace('_','-')}")
-                    arg_list.append(str(val))
-            
-            # Vérifier si un fichier source personnalisé est spécifié
-            if source_file:
-                # Comme l'argument --input-file a été supprimé du script, nous devons créer un fichier temporaire
-                # qui sera utilisé comme source d'articles par défaut
-                try:
-                    # Copier le fichier source personnalisé vers le chemin par défaut attendu par le script
-                    import shutil
-                    temp_articles_path = project_root / 'data' / 'temp' / 'custom_source.json'
-                    os.makedirs(os.path.dirname(temp_articles_path), exist_ok=True)
-                    shutil.copy2(source_file, temp_articles_path)
-                    print(f"Fichier source personnalisé copié vers {temp_articles_path}")
-                    
-                    # Modifier le chemin du fichier d'articles dans la configuration
-                    os.environ['TOPIC_MODELING_SOURCE_FILE'] = str(temp_articles_path)
-                    print(f"Variable d'environnement TOPIC_MODELING_SOURCE_FILE définie sur {temp_articles_path}")
-                except Exception as e:
-                    print(f"Erreur lors de la copie du fichier source personnalisé: {e}")
-            
-            # Ajouter le fichier de cache sélectionné si spécifié
-            if selected_cache:
-                # Créer un fichier de configuration pour indiquer quel cache utiliser
-                cache_config_path = project_root / "config" / "cache_config.json"
-                
-                with open(cache_config_path, 'w', encoding='utf-8') as f:
-                    json.dump({"selected_cache": selected_cache}, f, ensure_ascii=False, indent=2)
-                    
-                print(f"Cache sélectionné configuré: {selected_cache}")
-            else:
-                # Si aucun cache n'est sélectionné, supprimer le fichier de configuration s'il existe
-                cache_config_path = project_root / "config" / "cache_config.json"
-                if cache_config_path.exists():
-                    os.remove(cache_config_path)
-                    print("Configuration de cache supprimée, le cache par défaut sera utilisé s'il existe.")
-
-            
-            # Si nous avons des données de clustering et qu'aucun fichier source personnalisé n'est spécifié
-            if cluster_data and cluster_id and not source_file:
-                # Charger les articles
-                from src.utils.filter_utils import filter_articles_by_cluster
-                
-                articles_path = project_root / 'data' / 'processed' / 'articles.json'
-                with open(articles_path, 'r', encoding='utf-8') as f:
-                    articles = json.load(f)
-                
-                # Filtrer les articles par cluster
-                filtered_articles = filter_articles_by_cluster(articles, cluster_id, cluster_data)
-                
-                # Sauvegarder les articles filtrés dans un fichier temporaire
-                temp_articles_path = project_root / 'data' / 'temp' / 'filtered_articles.json'
-                os.makedirs(os.path.dirname(temp_articles_path), exist_ok=True)
-                with open(temp_articles_path, 'w', encoding='utf-8') as f:
-                    json.dump(filtered_articles, f, ensure_ascii=False, indent=2)
-                
-                # Comme l'argument --input-file a été supprimé du script, nous utilisons une variable d'environnement
-                os.environ['TOPIC_MODELING_SOURCE_FILE'] = str(temp_articles_path)
-                
-                print(f"Articles filtrés par cluster {cluster_id}: {len(filtered_articles)} articles")
-
-            script_path = project_root / 'src' / 'scripts' / 'run_topic_modeling.py'
-            try:
-                # Afficher la commande qui va être exécutée
-                print(f"Exécution de la commande: {sys.executable} {script_path} {' '.join(arg_list)}")
-                
-                # Utiliser subprocess.run pour afficher les logs directement dans le terminal
-                print("\n===== DÉBUT DE L'ANALYSE TOPIC MODELING =====\n")
-                
-                # Exécuter le processus avec stdout et stderr non redirigés
-                # Cela permettra d'afficher les logs directement dans le terminal
-                process = subprocess.Popen(
-                    [sys.executable, str(script_path), *arg_list],
-                    # Ne pas rediriger stdout et stderr pour qu'ils s'affichent directement
-                )
-                
-                # Stocker les lignes pour l'interface web (vide pour l'instant)
-                stdout_lines = []
-                stderr_lines = []
-                
-                # Attendre la fin du processus
-                return_code = process.wait()
-                
-                print("\n===== FIN DE L'ANALYSE TOPIC MODELING =====\n")
-                
-                # Vérifier si le processus s'est terminé avec succès
-                if return_code != 0:
-                    raise subprocess.CalledProcessError(return_code, [sys.executable, str(script_path), *arg_list])
-                
-                status = dbc.Alert("Topic modeling terminé avec succès !", color="success")
-            except subprocess.CalledProcessError as e:
-                print("===== [run_topic_modeling.py ERROR] =====")
-                print(f"Erreur lors de l'exécution (code {e.returncode})")
-                status = dbc.Alert(f"Erreur lors de l'exécution (code {e.returncode})", color="danger")
-        
-        # Utiliser le fichier de résultats sélectionné s'il existe
-        if selected_results_file and os.path.exists(selected_results_file):
-            print(f"Chargement des statistiques depuis le fichier sélectionné: {selected_results_file}")
-            with open(selected_results_file, encoding='utf-8') as f:
+            with open(advanced_topic_path, 'r', encoding='utf-8') as f:
                 stats = json.load(f)
-            stats_content = render_advanced_topic_stats(stats)
-        else:
-            # Si aucun fichier n'est sélectionné ou s'il n'existe pas, récupérer la liste des fichiers disponibles
-            result_files = get_topic_modeling_results()
-            if result_files and result_files[0]['value']:
-                # Nettoyer le chemin du fichier (supprimer le paramètre de cache-busting)
-                default_file = result_files[0]['value']
-                if "?cache=" in default_file:
-                    default_file = default_file.split("?cache=")[0]
-                    
-                if os.path.exists(default_file):
-                    print(f"Chargement des statistiques depuis le fichier par défaut: {default_file}")
-                    with open(default_file, encoding='utf-8') as f:
-                        stats = json.load(f)
-                    stats_content = render_advanced_topic_stats(stats)
-                else:
-                    stats_content = dbc.Alert(f"Fichier de statistiques avancées introuvable: {default_file}", color="warning")
-            else:
-                stats_content = dbc.Alert("Aucun fichier de résultats disponible.", color="warning")
-        
-        return status, stats_content
-    
-    # Callback pour exécuter le filtrage des publicités
-    @app.callback(
-        Output("ad-filter-status", "children"),
-        Output("ad-filter-results", "children"),
-        Input("btn-run-ad-filter", "n_clicks"),
-        State("ad-filter-topic-id", "value"),
-        State("ad-filter-min-value", "value"),
-        State("ad-filter-output-path", "value"),
-        State("ad-filter-dry-run", "value"),
-        prevent_initial_call=True
-    )
-    def run_ad_filter(n_clicks, topic_id, min_value, output_path, dry_run):
-        if not n_clicks or not topic_id:
-            return dash.no_update, dash.no_update
-        
-        # Récupérer les chemins des fichiers nécessaires
-        project_root, config, _ = get_config_and_paths()
-        results_dir = project_root / config['data']['results_dir']
-        doc_topic_matrix_path = results_dir / 'doc_topic_matrix.json'
-        
-        # Vérifier si un fichier source personnalisé est spécifié via une variable d'environnement
-        custom_source_file = os.environ.get('TOPIC_MODELING_SOURCE_FILE')
-        if custom_source_file and os.path.exists(custom_source_file):
-            articles_path = custom_source_file
-            print(f"Utilisation du fichier source personnalisé pour le filtrage: {articles_path}")
-        else:
-            # Utiliser le chemin par défaut
-            articles_path = project_root / config['data']['processed_dir'] / 'articles.json'
-        
-        # Vérifier si les fichiers nécessaires existent
-        if not doc_topic_matrix_path.exists():
-            return dbc.Alert("Fichier doc_topic_matrix.json introuvable. Exécutez d'abord le topic modeling.", color="danger"), None
-        
-        if not os.path.exists(articles_path):
-            return dbc.Alert(f"Fichier d'articles introuvable: {articles_path}", color="danger"), None
-        
-        # Préparer les arguments pour le script
-        script_path = project_root / 'src' / 'scripts' / 'filter_ads_from_topic.py'
-        
-        args = [
-            sys.executable,
-            str(script_path),
-            "--articles", str(articles_path),
-            "--doc-topic-matrix", str(doc_topic_matrix_path),
-            "--topic-id", str(topic_id),
-            "--min-topic-value", str(min_value)
-        ]
-        
-        if output_path:
-            args.extend(["--output", output_path])
-        
-        if dry_run:
-            args.append("--dry-run")
-        
-        # Afficher la commande qui va être exécutée
-        cmd_str = " ".join(args)
-        print(f"Exécution de la commande: {cmd_str}")
-        
-        try:
-            # Exécuter le script
-            print("\n===== DÉBUT DU FILTRAGE DES PUBLICITÉS =====\n")
+
+            num_topics = len(stats.get('topic_distribution', []))
+            if num_topics == 0:
+                return [{"label": "Aucun topic disponible", "value": ""}]
+
+            topic_names = {}
+            if 'topic_names_llm' in stats:
+                llm_names = stats['topic_names_llm']
+                if isinstance(llm_names, str):
+                    llm_names = ast.literal_eval(llm_names)
+                if isinstance(llm_names, dict):
+                    for topic_id, data in llm_names.items():
+                        topic_num = int(re.search(r'\d+', topic_id).group())
+                        title = data.get('title', f"Topic {topic_num}") if isinstance(data, dict) else data[0]
+                        topic_names[topic_num] = title
             
-            # Capturer la sortie pour l'afficher dans l'interface
-            process = subprocess.run(args, check=True, text=True, capture_output=True)
-            
-            stdout = process.stdout
-            stderr = process.stderr
-            
-            print("\n===== FIN DU FILTRAGE DES PUBLICITÉS =====\n")
-            
-            # Préparer l'affichage des résultats
-            results_components = []
-            
-            # Essayer de charger le fichier de statistiques généré
-            stats_path = None
-            if not dry_run and not output_path:
-                # Chercher le fichier de statistiques généré automatiquement
-                stats_files = list(results_dir.glob(f"filter_stats_topic{topic_id}.json"))
-                if stats_files:
-                    stats_path = stats_files[0]
-            elif not dry_run and output_path:
-                # Construire le chemin du fichier de statistiques basé sur le chemin de sortie
-                output_dir = os.path.dirname(output_path)
-                stats_path = os.path.join(output_dir, f"filter_stats_topic{topic_id}.json")
-                if not os.path.exists(stats_path):
-                    stats_path = None
-            
-            # Afficher les statistiques si disponibles
-            if stats_path and os.path.exists(stats_path):
-                try:
-                    with open(stats_path, 'r', encoding='utf-8') as f:
-                        stats = json.load(f)
-                    
-                    # Créer un tableau de statistiques
-                    stats_table = dbc.Table([
-                        html.Thead(html.Tr([
-                            html.Th("Statistique"),
-                            html.Th("Valeur")
-                        ])),
-                        html.Tbody([
-                            html.Tr([html.Td("Topic analysé"), html.Td(stats.get("topic_id", ""))]),
-                            html.Tr([html.Td("Valeur minimale du topic"), html.Td(stats.get("min_topic_value", ""))]),
-                            html.Tr([html.Td("Nombre total d'articles"), html.Td(stats.get("total_articles", ""))]),
-                            html.Tr([html.Td("Articles dans le topic"), html.Td(stats.get("topic_articles", ""))]),
-                            html.Tr([html.Td("Publicités détectées"), html.Td(stats.get("ads_detected", ""))]),
-                            html.Tr([html.Td("Articles non-publicités"), html.Td(stats.get("non_ads", ""))]),
-                            html.Tr([html.Td("Pourcentage de publicités"), html.Td(f"{stats.get('ads_percentage', '')}%")])
-                        ])
-                    ], bordered=True, hover=True, striped=True, className="mb-4")
-                    
-                    results_components.append(html.H5("Résultats du filtrage", className="mt-4 mb-3"))
-                    results_components.append(stats_table)
-                    
-                    # Ajouter un lien vers le fichier filtré si disponible
-                    if not dry_run and "output_path" in stats:
-                        output_file = stats["output_path"]
-                        results_components.append(html.Div([
-                            html.P(["Fichier filtré: ", html.Code(output_file)]),
-                            dbc.Button("Ouvrir le dossier", id="btn-open-filtered-folder", color="secondary", className="mt-2 mb-4"),
-                            dcc.Store(id="filtered-file-path", data={"path": output_file})
-                        ]))
-                except Exception as e:
-                    print(f"Erreur lors du chargement des statistiques: {e}")
-            
-            # Afficher la sortie du script
-            results_components.append(html.H5("Logs d'exécution", className="mt-4 mb-3"))
-            results_components.append(html.Pre(stdout, className="bg-light p-3 mb-4", style={"maxHeight": "300px", "overflow": "auto"}))
-            
-            if stderr.strip():
-                results_components.append(html.H5("Erreurs", className="mt-4 mb-3"))
-                results_components.append(html.Pre(stderr, className="bg-danger text-white p-3", style={"maxHeight": "200px", "overflow": "auto"}))
-            
-            return dbc.Alert("Filtrage des publicités terminé avec succès !", color="success"), html.Div(results_components)
-        
-        except subprocess.CalledProcessError as e:
-            print(f"Erreur lors de l'exécution du script (code {e.returncode})")
-            print(f"Sortie standard: {e.stdout}")
-            print(f"Erreur standard: {e.stderr}")
-            
-            return dbc.Alert(f"Erreur lors de l'exécution du script (code {e.returncode})", color="danger"), html.Div([
-                html.H5("Erreur d'exécution", className="mt-4 mb-3"),
-                html.Pre(e.stderr, className="bg-danger text-white p-3", style={"maxHeight": "300px", "overflow": "auto"}),
-                html.H5("Sortie standard", className="mt-4 mb-3"),
-                html.Pre(e.stdout, className="bg-light p-3", style={"maxHeight": "300px", "overflow": "auto"})
-            ])
-        
+            topic_keywords = {}
+            if 'weighted_words' in stats:
+                for topic_id, words_data in stats['weighted_words'].items():
+                    topic_num = int(topic_id)
+                    keywords = [word[0] for word in words_data[:5]]
+                    topic_keywords[topic_num] = ", ".join(keywords)
+
+            for i in range(num_topics):
+                name = topic_names.get(i, f"Topic {i}")
+                keywords_str = topic_keywords.get(i, "")
+                label = f"{name}"
+                if keywords_str:
+                    label += f" - ({keywords_str})"
+                
+                topic_options.append({
+                    "label": label,
+                    "value": str(i)
+                })
+
+            print(f"Chargé {num_topics} topics pour le filtrage des publicités")
+            return topic_options
+
         except Exception as e:
-            print(f"Erreur lors de l'exécution du script: {str(e)}")
-            return dbc.Alert(f"Erreur lors de l'exécution du script: {str(e)}", color="danger"), None
-    
-    # Callback pour charger l'explorateur d'articles quand on change d'onglet ou qu'on sélectionne un fichier de résultats
-    @app.callback(
-        Output("article-browser-content", "children"),
-        Input("topic-modeling-tabs", "active_tab"),
-        Input("topic-modeling-results-dropdown", "value"),
-        prevent_initial_call=True
-    )
-    def update_article_browser_tab(active_tab, selected_file):
-        if active_tab != "article-browser-tab":
-            return None
-            
-        # Si un fichier de résultats est sélectionné, l'utiliser pour charger les données correspondantes
-        if selected_file:
-            # Nettoyer le chemin du fichier (supprimer le paramètre de cache-busting)
-            if "?cache=" in selected_file:
-                selected_file = selected_file.split("?cache=")[0]
-                
-            # Extraire l'UUID du fichier pour trouver le fichier doc_topic_matrix correspondant
-            import re
-            import os
-            
-            # Pattern pour extraire l'UUID du nom de fichier (supporte à la fois les formats avec timestamp et UUID)
-            uuid_pattern = r'advanced_topic_analysis_([a-f0-9\-]+|\d+)\.json'
-            match = re.search(uuid_pattern, os.path.basename(selected_file))
-            
-            if match and match.group(1):
-                # Extraire l'identifiant (UUID ou timestamp)
-                file_id = match.group(1)
-                project_root, config, _ = get_config_and_paths()
-                results_dir = project_root / config['data']['results_dir']
-                doc_topic_matrix_path = results_dir / f'doc_topic_matrix_{file_id}.json'
-                
-                print(f"Recherche du fichier doc_topic_matrix correspondant: {doc_topic_matrix_path}")
-                
-                if os.path.exists(doc_topic_matrix_path):
-                    print(f"Utilisation du fichier doc_topic_matrix spécifique: {doc_topic_matrix_path}")
-                    return load_article_browser(doc_topic_matrix_path)
-                else:
-                    print(f"Fichier doc_topic_matrix spécifique non trouvé, utilisation du fichier par défaut")
-        
-        # Si aucun fichier spécifique n'est trouvé, utiliser le fichier par défaut
-        return load_article_browser()
-    
-    # Callback pour mettre à jour la table des articles en fonction des options de tri et de filtrage
-    @app.callback(
-        Output("article-browser-table-container", "children"),
-        Input("article-sort-dropdown", "value"),
-        Input("sort-descending-checkbox", "value"),
-        Input("dominant-topic-filter", "value"),
-        State("article-browser-data", "data"),
-        prevent_initial_call=True
-    )
-    def update_article_table(sort_by, sort_desc, topic_filter, table_data):
-        if not table_data:
-            return html.Div("Aucune donnée disponible", className="alert alert-warning")
-        
-        # Filtrer par topic dominant si nécessaire
-        if topic_filter != 'all':
-            filtered_data = [row for row in table_data if row['dominant_topic'] == int(topic_filter)]
-        else:
-            filtered_data = table_data
-        
-        # Trier les données
-        if sort_by.startswith('topic_'):
-            # Extraire l'index du topic pour le tri
-            topic_idx = int(sort_by.split('_')[1])
-            sorted_data = sorted(filtered_data, 
-                                key=lambda x: x['topic_distribution'][topic_idx], 
-                                reverse=sort_desc)
-        else:
-            # Tri par d'autres colonnes
-            sorted_data = sorted(filtered_data, 
-                                key=lambda x: x.get(sort_by, ''), 
-                                reverse=sort_desc)
-        
-        # Limiter à 1000 articles pour éviter de surcharger l'interface
-        if len(sorted_data) > 1000:
-            sorted_data = sorted_data[:1000]
-            warning = html.Div("Affichage limité aux 1000 premiers articles", 
-                            className="alert alert-warning mb-3")
-        else:
-            warning = None
-        
-        # Créer le tableau
-        table_header = [
-            html.Thead(html.Tr([
-                html.Th("ID Article"),
-                html.Th("Titre"),
-                html.Th("Date"),
-                html.Th("Journal"),
-                html.Th("Topic dominant"),
-                html.Th("Distribution des topics")
-            ]))
-        ]
-        
-        rows = []
-        for article in sorted_data:
-            # Créer une représentation visuelle de la distribution des topics
-            topic_bars = []
-            for i, value in enumerate(article['topic_distribution']):
-                # Calculer la largeur de la barre en fonction de la valeur (max 100%)
-                width = min(value * 100, 100)
-                topic_bars.append(
-                    html.Div(
-                        html.Div(
-                            f"{value:.3f}",
-                            className="text-white text-center small",
-                            style={"overflow": "hidden", "textOverflow": "ellipsis"}
-                        ),
-                        className=f"bg-primary",
-                        style={
-                            "width": f"{width}%",
-                            "minWidth": "30px" if width > 5 else "0",
-                            "height": "20px",
-                            "display": "inline-block",
-                            "marginRight": "2px"
-                        },
-                        title=f"Topic {i}: {value:.3f}"
-                    )
-                )
-            
-            # Créer la ligne du tableau
-            row = html.Tr([
-                html.Td(article['doc_id']),
-                html.Td(
-                    html.A(
-                        article['title'] or "Sans titre",
-                        id={"type": "article-title-link", "index": article['doc_id']},
-                        href="#",
-                        className="text-primary"
-                    )
-                ),
-                html.Td(article['date']),
-                html.Td(article['newspaper']),
-                html.Td(f"{article['dominant_topic_name']} ({article['dominant_topic_value']:.3f})"),
-                html.Td(html.Div(topic_bars, style={"whiteSpace": "nowrap"}))
-            ])
-            rows.append(row)
-        
-        table_body = [html.Tbody(rows)]
-        table = dbc.Table(table_header + table_body, striped=True, bordered=True, hover=True, responsive=True)
-        
-        # Retourner le tableau avec éventuellement un avertissement
-        if warning:
-            return html.Div([warning, table])
-        else:
-            return table
-    
-    # Callback pour afficher les détails d'un article dans un modal
-    @app.callback(
-        Output("article-detail-modal", "is_open"),
-        Output("article-detail-body", "children"),
-        Input({"type": "article-title-link", "index": ALL}, "n_clicks"),
-        State({"type": "article-title-link", "index": ALL}, "id"),
-        prevent_initial_call=True
-    )
-    def show_article_details(n_clicks, ids):
-        # Vérifier si un lien a été cliqué
-        if not any(n_clicks) or not ctx.triggered:
-            return False, None
-        
-        # Trouver l'article qui a été cliqué
-        clicked_index = ctx.triggered_id["index"]
-        
-        # Charger les articles depuis le fichier JSON
-        project_root = pathlib.Path(__file__).resolve().parents[2]
-        articles_path = project_root / 'data' / 'processed' / 'articles.json'
-        
-        if not articles_path.exists():
-            return True, html.Div("Fichier d'articles introuvable", className="alert alert-danger")
-        
-        try:
-            with open(articles_path, 'r', encoding='utf-8') as f:
-                articles = json.load(f)
-            
-            # Rechercher l'article par son ID
-            article = None
-            for a in articles:
-                # Comparer les ID sous forme de chaînes pour gérer les cas où l'un est un entier
-                if str(a.get('id', '')) == str(clicked_index) or str(a.get('doc_id', '')) == str(clicked_index):
-                    article = a
-                    break
-            
-            if not article:
-                return True, html.Div(f"Article avec ID {clicked_index} introuvable", className="alert alert-warning")
-            
-            # Préparer le contenu du modal
-            content = [
-                html.H4(article.get('title', 'Sans titre')),
-                html.Hr(),
-                dbc.Row([
-                    dbc.Col([
-                        html.Strong("Date: "),
-                        html.Span(article.get('date', 'Non spécifiée'))
-                    ], width=4),
-                    dbc.Col([
-                        html.Strong("Journal: "),
-                        html.Span(article.get('newspaper', 'Non spécifié'))
-                    ], width=4),
-                    dbc.Col([
-                        html.Strong("Canton: "),
-                        html.Span(article.get('canton', 'Non spécifié'))
-                    ], width=4)
-                ], className="mb-3"),
-                html.H5("Contenu:"),
-                html.Div(
-                    html.Pre(
-                        article.get('content', article.get('original_content', 'Contenu non disponible')),
-                        style={"whiteSpace": "pre-wrap", "maxHeight": "400px", "overflowY": "auto"}
-                    ),
-                    className="border p-3 bg-light"
-                )
-            ]
-            
-            return True, content
-            
-        except Exception as e:
-            print(f"Erreur lors du chargement des articles: {e}")
-            return True, html.Div(f"Erreur lors du chargement des articles: {str(e)}", className="alert alert-danger")
-    
-    # Callback pour fermer le modal des détails d'article
-    @app.callback(
-        Output("article-detail-modal", "is_open", allow_duplicate=True),
-        Input("close-article-modal", "n_clicks"),
-        prevent_initial_call=True
-    )
-    def close_article_modal(n_clicks):
-        if n_clicks:
-            return False
-        return dash.no_update
-    
-    # Les callbacks pour les filtres ont été supprimés
+            print(f"Erreur lors du chargement des options de topic pour le filtre pub: {e}")
+            return [{"label": "Erreur de chargement", "value": ""}]
+
 
 # Helper to render advanced stats (adapt to your JSON structure)
-def render_advanced_topic_stats(stats):
+def render_advanced_topic_stats_from_json(json_file_path):
+    if not json_file_path or not os.path.exists(json_file_path):
+        return html.Div("Fichier de résultats non trouvé.", className="alert alert-warning")
+    try:
+        with open(json_file_path, encoding='utf-8') as f:
+            stats = json.load(f)
+    except Exception as e:
+        return html.Div(f"Erreur de lecture du JSON : {e}", className="alert alert-danger")
+    
     import plotly.express as px
     import plotly.graph_objects as go
     import pandas as pd
@@ -1421,6 +983,7 @@ def render_advanced_topic_stats(stats):
             children.append(dbc.Alert(f"Score de cohérence : {score:.3f}", color="info", className="mb-3"))
         else:
             children.append(dbc.Alert("Score de cohérence : N/A", color="info", className="mb-3"))
+            
     # 2. Récupérer les noms LLM s'ils existent
     topic_names_llm = None
     if stats.get('topic_names_llm'):
@@ -1429,16 +992,24 @@ def render_advanced_topic_stats(stats):
             topic_names_llm = stats['topic_names_llm']
         else:
             try:
-                import ast
                 topic_names_llm = ast.literal_eval(stats['topic_names_llm'])
             except Exception:
                 topic_names_llm = None
+
+    def get_topic_label(topic_id, default_prefix="Topic"):
+        if topic_names_llm:
+            # Check if data is a dict with title or a list/tuple
+            topic_data = topic_names_llm.get(f'topic_{topic_id}')
+            if isinstance(topic_data, dict):
+                return topic_data.get('title', f"{default_prefix} {topic_id}")
+            elif isinstance(topic_data, (list, tuple)) and topic_data:
+                return topic_data[0]
+        return f"{default_prefix} {topic_id}"
+
     # 2. Répartition des topics
     if 'topic_distribution' in stats:
         dist = stats['topic_distribution']
-        topics = [str(i) for i in range(len(dist))]
-        if topic_names_llm:
-            topics = [topic_names_llm.get(f'topic_{i}', f"Topic {i}") for i in range(len(dist))]
+        topics = [get_topic_label(i) for i in range(len(dist))]
         df_dist = pd.DataFrame({
             'Topic': topics,
             'Proportion': dist
@@ -1446,15 +1017,17 @@ def render_advanced_topic_stats(stats):
         children.append(dcc.Graph(
             figure=px.bar(df_dist, x='Topic', y='Proportion', title='Distribution des topics (proportion)', text_auto='.2f')
         ))
+        
     # Vérifier si topic_article_counts existe
     if 'topic_article_counts' in stats:
         counts = stats['topic_article_counts']
-        topics = list(counts.keys())
-        if topic_names_llm:
-            topics = [topic_names_llm.get(f'topic_{i}', f"Topic {i}") for i in range(len(topics))]
+        topic_ids = sorted([int(k) for k in counts.keys()])
+        topics = [get_topic_label(i) for i in topic_ids]
+        articles = [counts[str(i)] for i in topic_ids]
+
         df_counts = pd.DataFrame({
             'Topic': topics,
-            'Articles': list(counts.values())
+            'Articles': articles
         })
         children.append(dcc.Graph(
             figure=px.bar(df_counts, x='Topic', y='Articles', title="Nombre d'articles par topic", text_auto=True)
@@ -1462,84 +1035,50 @@ def render_advanced_topic_stats(stats):
     # Alternative: utiliser doc_topic_distribution pour calculer le nombre d'articles par topic
     elif 'doc_topic_distribution' in stats:
         try:
-            # Récupérer la distribution doc-topic
             doc_topic_dist = stats['doc_topic_distribution']
-            # Compter le nombre d'articles par topic dominant
             topic_counts = {}
-            for doc_id, topic_dist in doc_topic_dist.items():
-                # Trouver le topic dominant pour ce document
-                dominant_topic = max(range(len(topic_dist)), key=lambda i: topic_dist[i])
-                # Incrémenter le compteur pour ce topic
-                topic_counts[str(dominant_topic)] = topic_counts.get(str(dominant_topic), 0) + 1
+            for doc_id, topic_dist_list in doc_topic_dist.items():
+                if not topic_dist_list: continue
+                dominant_topic = max(range(len(topic_dist_list)), key=lambda i: topic_dist_list[i])
+                topic_counts[dominant_topic] = topic_counts.get(dominant_topic, 0) + 1
             
-            # Créer un DataFrame pour la visualisation
-            topic_ids = sorted([int(t) for t in topic_counts.keys()])
-            topics = []
-            counts = []
-            for topic_id in topic_ids:
-                topic_key = str(topic_id)
-                if topic_names_llm:
-                    topic_label = topic_names_llm.get(f'topic_{topic_id}', f"Topic {topic_id}")
-                else:
-                    topic_label = f"Topic {topic_id}"
-                topics.append(topic_label)
-                counts.append(topic_counts.get(topic_key, 0))
-            
-            df_counts = pd.DataFrame({
-                'Topic': topics,
-                'Articles': counts
-            })
-            children.append(dcc.Graph(
-                figure=px.bar(df_counts, x='Topic', y='Articles', title="Nombre d'articles par topic", text_auto=True)
-            ))
+            if topic_counts:
+                topic_ids = sorted(topic_counts.keys())
+                topics = [get_topic_label(i) for i in topic_ids]
+                counts = [topic_counts[i] for i in topic_ids]
+                
+                df_counts = pd.DataFrame({'Topic': topics, 'Articles': counts})
+                children.append(dcc.Graph(
+                    figure=px.bar(df_counts, x='Topic', y='Articles', title="Nombre d'articles par topic (dominant)", text_auto=True)
+                ))
         except Exception as e:
-            # En cas d'erreur, ajouter un message d'erreur au lieu de faire planter l'application
             children.append(html.Div(f"Erreur lors de la génération du graphique 'Nombre d'articles par topic': {str(e)}", 
                                     className="alert alert-danger"))
-    # Autre alternative: utiliser la distribution des topics si disponible
-    elif 'topic_distribution' in stats and len(dist) > 0:
-        try:
-            # Estimer le nombre d'articles par topic à partir de la distribution
-            # Supposons que nous connaissons le nombre total d'articles
-            total_docs = stats.get('total_docs', 1000)  # Valeur par défaut si non disponible
-            
-            topics = [str(i) for i in range(len(dist))]
-            if topic_names_llm:
-                topics = [topic_names_llm.get(f'topic_{i}', f"Topic {i}") for i in range(len(dist))]
-            
-            # Calculer le nombre d'articles par topic en fonction de la distribution
-            article_counts = [int(p * total_docs) for p in dist]
-            
-            df_counts = pd.DataFrame({
-                'Topic': topics,
-                'Articles': article_counts
-            })
-            children.append(dcc.Graph(
-                figure=px.bar(df_counts, x='Topic', y='Articles', title="Nombre d'articles par topic (estimé)", text_auto=True)
-            ))
-        except Exception as e:
-            children.append(html.Div(f"Erreur lors de l'estimation du nombre d'articles par topic: {str(e)}", 
-                                    className="alert alert-danger"))
+
     # 3. Top mots par topic
     if 'weighted_words' in stats:
         children.append(html.H5("Top mots par topic", className="mt-4"))
         for topic, words in stats['weighted_words'].items():
             words_df = pd.DataFrame(words, columns=['Mot', 'Poids'])
-            topic_label = topic_names_llm.get(f'topic_{topic}', f"Topic {topic}") if topic_names_llm else f"Topic {topic}"
-            fig = px.bar(words_df, x='Poids', y='Mot', orientation='h', title=topic_label, text_auto='.3f')
-            fig.update_layout(height=350, margin=dict(l=80, r=20, t=40, b=40))
+            topic_label = get_topic_label(topic)
+            fig = px.bar(words_df.head(10), x='Poids', y='Mot', orientation='h', title=topic_label, text_auto='.3f')
+            fig.update_layout(height=350, margin=dict(l=120, r=20, t=40, b=40), yaxis={'categoryorder':'total ascending'})
             children.append(dcc.Graph(figure=fig))
+            
     # 4. Documents représentatifs
     if 'representative_docs' in stats:
         children.append(html.H5("Documents représentatifs par topic", className="mt-4"))
         for topic, doc_ids in stats['representative_docs'].items():
-            topic_label = topic_names_llm.get(f'topic_{topic}', f"Topic {topic}") if topic_names_llm else f"Topic {topic}"
+            topic_label = get_topic_label(topic)
             children.append(html.P(f"{topic_label} : {', '.join(str(i) for i in doc_ids)}", className="mb-2"))
+            
     # 5. Noms LLM
     if stats.get('llm_name'):
         children.append(html.P(f"LLM utilisé : {stats['llm_name']}", className="text-muted"))
-    if stats.get('topic_names_llm'):
-        children.append(html.P(f"Noms de topics LLM : {stats['topic_names_llm']}", className="text-muted"))
+    if topic_names_llm:
+         children.append(render_topic_naming_results(topic_names_llm))
+
     return html.Div(children)
+
 
 # To be called in app.py: from src.webapp.topic_modeling_viz import register_topic_modeling_callbacks, get_topic_modeling_layout
