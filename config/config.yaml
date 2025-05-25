@@ -21,6 +21,10 @@ analysis:
     min_df: 5
     n_clusters: 5
     num_topics: 6
+    topic_range_min: 2
+    topic_range_max: 50
+    topic_range_step: 2
+    coherence_improvement_threshold: 0.05  # 5% improvement threshold for elbow detection
     preprocessing:
       allowed_pos:
       - NOUN
@@ -63,7 +67,7 @@ llm:
     model: mistral-small
     provider: mistral
   openai:
-    api_key: ${OPENAI_API_KEY}
+    api_key: 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
     endpoint: https://api.openai.com/v1/chat/completions
     language: fr
     model: gpt-4o

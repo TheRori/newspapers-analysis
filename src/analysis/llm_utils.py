@@ -27,10 +27,17 @@ class LLMClient:
             # Vérifier que l'endpoint est défini
             if not self.endpoint:
                 raise ValueError(f"Endpoint manquant pour le provider {self.provider} dans la configuration")
+                
+            # Remplacer les variables d'environnement dans la clé API si nécessaire
+            if self.api_key and "${" in self.api_key:
+                logger.warning("La clé API contient une référence à une variable d'environnement. Utilisation de la clé directe.")
+                # Si nous utilisons OpenAI, utiliser la clé directe de l'env file
+                if self.provider == "openai":
+                    self.api_key = "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"
         else:
             # Ancienne structure de configuration (pour rétrocompatibilité)
             self.provider = config.get("provider", "mistral")
-            self.api_key = config.get("api_key") or os.environ.get("MISTRAL_API_KEY")
+            self.api_key = config.get("api_key")
             self.model = config.get("model", "mistral-small")
             self.endpoint = config.get("endpoint")
             self.language = config.get("language", "fr")
@@ -38,6 +45,10 @@ class LLMClient:
             # Vérifier que l'endpoint est défini
             if not self.endpoint:
                 raise ValueError(f"Endpoint manquant pour le provider {self.provider} dans la configuration")
+            
+            # Si nous utilisons OpenAI, utiliser la clé directe de l'env file
+            if self.provider == "openai" and (not self.api_key or "${" in self.api_key):
+                self.api_key = "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"
         
         # Vérifier que nous avons une clé API
         if not self.api_key:

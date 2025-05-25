@@ -48,18 +48,31 @@ class TopicModeler:
         self.spacy_preprocessor = SpacyPreprocessor(preproc_config)
         logger.info("SpacyPreprocessor initialized. It will be used as needed by the selected algorithm.")
 
-    def fit_transform(self, documents: List[Dict[str, Any]], preprocessed_data: Optional[Dict] = None) -> Dict[str, Any]:
-        self.doc_ids = [doc.get('id', f"doc_{i}") for i, doc in enumerate(documents)]
-        logger.info(f"Starting topic modeling for {len(documents)} documents using '{self.algorithm}'.")
-        raw_texts = [doc.get('content', doc.get('text', doc.get('cleaned_text', ''))) for doc in documents]
+    def fit_transform(self, documents, preprocessed_data: Optional[Dict] = None) -> Dict[str, Any]:
+        # Handle case where documents is a list of tokens (for Gensim) or a list of dictionaries (for other algorithms)
+        if documents and isinstance(documents[0], list):
+            # For Gensim: documents is a list of token lists
+            self.doc_ids = [f"doc_{i}" for i in range(len(documents))]
+            logger.info(f"Starting topic modeling for {len(documents)} tokenized documents using '{self.algorithm}'.")
+            raw_texts = None  # Not needed for pre-tokenized input
+        else:
+            # For other algorithms: documents is a list of dictionaries
+            self.doc_ids = [doc.get('id', f"doc_{i}") for i, doc in enumerate(documents)]
+            logger.info(f"Starting topic modeling for {len(documents)} documents using '{self.algorithm}'.")
+            raw_texts = [doc.get('content', doc.get('text', doc.get('cleaned_text', ''))) for doc in documents]
 
         if self.algorithm in ['lda', 'nmf']:
             doc_topic_matrix = self._fit_transform_sklearn(raw_texts)
             top_terms = self._get_top_terms_sklearn()
         elif self.algorithm in ['gensim_lda', 'hdp']:
-            if not preprocessed_data or 'tokenized_texts' not in preprocessed_data:
+            # For Gensim, documents should already be tokenized lists
+            if isinstance(documents[0], list):
+                tokenized_texts = documents
+            elif preprocessed_data and 'tokenized_texts' in preprocessed_data:
+                tokenized_texts = preprocessed_data['tokenized_texts']
+            else:
                 raise ValueError("Gensim models require preprocessed and tokenized text.")
-            tokenized_texts = preprocessed_data['tokenized_texts']
+                
             self.gensim_dictionary = Dictionary(tokenized_texts)
             self.gensim_corpus = [self.gensim_dictionary.doc2bow(text) for text in tokenized_texts]
             doc_topic_matrix = self._fit_transform_gensim(tokenized_texts)
@@ -96,12 +109,108 @@ class TopicModeler:
         return self.model.fit_transform(dtm)
 
     def _fit_transform_gensim(self, tokenized_texts: List[List[str]]) -> np.ndarray:
+        # Handle 'auto' value for num_topics
+        if isinstance(self.num_topics, str) and self.num_topics.lower() == 'auto':
+            logger.info("Auto topic detection requested for Gensim LDA. Searching for optimal number of topics...")
+            # Search for optimal number of topics using coherence scores
+            best_num_topics, best_coherence = self._find_optimal_num_topics(tokenized_texts)
+            logger.info(f"Auto topic detection complete. Optimal number of topics: {best_num_topics} (coherence: {best_coherence:.4f})")
+            actual_num_topics = best_num_topics
+            # Update num_topics to the optimal value found
+            self.num_topics = best_num_topics
+        else:
+            actual_num_topics = int(self.num_topics)
+            
         if self.algorithm == 'hdp':
             self.model = HdpModel(self.gensim_corpus, id2word=self.gensim_dictionary)
             self.num_topics = len(self.model.show_topics(formatted=False))
         else:
-            self.model = LdaMulticore(self.gensim_corpus, num_topics=self.num_topics, id2word=self.gensim_dictionary, passes=10, workers=self.workers, random_state=42)
+            logger.info(f"Training LDA model with {actual_num_topics} topics")
+            self.model = LdaMulticore(self.gensim_corpus, num_topics=actual_num_topics, id2word=self.gensim_dictionary, 
+                                     passes=10, workers=self.workers, random_state=42)
+                
         return gensim.matutils.corpus2dense(self.model[self.gensim_corpus], num_terms=self.num_topics).T
+        
+    def _find_optimal_num_topics(self, tokenized_texts: List[List[str]]) -> Tuple[int, float]:
+        """Find the optimal number of topics by evaluating coherence scores."""
+        coherence_scores = []
+        
+        # Get topic range parameters from config
+        topic_min = self.config.get('topic_range_min', 2)
+        topic_max = self.config.get('topic_range_max', 20)
+        topic_step = self.config.get('topic_range_step', 2)
+        
+        # Create the range of topics to test
+        topic_range = range(topic_min, topic_max + 1, topic_step)
+        
+        print_important(f"SEARCHING FOR OPTIMAL NUMBER OF TOPICS\nTesting {len(topic_range)} different values: {list(topic_range)}\nRange: min={topic_min}, max={topic_max}, step={topic_step}")
+        
+        for num_topics in topic_range:
+            logger.info(f"Testing model with {num_topics} topics...")
+            model = LdaModel(self.gensim_corpus, num_topics=num_topics, id2word=self.gensim_dictionary, passes=2, random_state=42)
+            
+            # Calculate coherence score
+            coherence_model = CoherenceModel(model=model, texts=tokenized_texts, dictionary=self.gensim_dictionary, coherence='c_v')
+            coherence_score = coherence_model.get_coherence()
+            coherence_scores.append(coherence_score)
+            
+            logger.info(f"Topics: {num_topics}, Coherence: {coherence_score:.4f}")
+        
+        # Find the elbow point (where coherence score starts to decrease significantly)
+        # First, find the maximum coherence score as a reference
+        max_index = coherence_scores.index(max(coherence_scores))
+        max_coherence = coherence_scores[max_index]
+        max_num_topics = topic_range[max_index]
+        
+        # Then, find the elbow point - the point where adding more topics doesn't improve coherence much
+        # We'll use a simple approach: find where the rate of improvement drops below a threshold
+        elbow_index = 0
+        elbow_found = False
+        improvement_threshold = self.config.get('coherence_improvement_threshold', 0.05)  # 5% improvement threshold
+        
+        # Start by assuming the first point is the best
+        best_index = 0
+        best_coherence = coherence_scores[0]
+        best_num_topics = topic_range[0]
+        
+        # Look for significant improvements in coherence
+        for i in range(1, len(coherence_scores)):
+            # Calculate improvement over previous point
+            improvement = coherence_scores[i] - coherence_scores[i-1]
+            improvement_percent = improvement / abs(coherence_scores[i-1]) if coherence_scores[i-1] != 0 else 0
+            
+            # If we see a significant improvement, update the best point
+            if improvement_percent > improvement_threshold:
+                best_index = i
+                best_coherence = coherence_scores[i]
+                best_num_topics = topic_range[i]
+            # If improvement is minimal or negative, we may have found the elbow
+            elif not elbow_found and i > 1 and i > best_index:
+                elbow_index = i - 1  # The previous point was the elbow
+                elbow_found = True
+        
+        # If we didn't find a clear elbow, use the point with maximum coherence
+        if not elbow_found:
+            logger.info("No clear elbow point found. Using the maximum coherence score.")
+            best_index = max_index
+            best_coherence = max_coherence
+            best_num_topics = max_num_topics
+        
+        # Log all coherence scores for reference
+        for i, (num_topics, score) in enumerate(zip(topic_range, coherence_scores)):
+            status = ""
+            if i == max_index:
+                status = " (MAX)"
+            if i == best_index:
+                status = " (BEST)"
+            if elbow_found and i == elbow_index:
+                status += " (ELBOW)"
+            logger.info(f"Topics: {num_topics}, Coherence: {score:.4f}{status}")
+        
+        selection_method = "elbow point" if elbow_found else "maximum coherence"
+        print_important(f"OPTIMAL NUMBER OF TOPICS: {best_num_topics}\nCoherence score: {best_coherence:.4f}\nSelection method: {selection_method}")
+        
+        return best_num_topics, best_coherence
 
     def _fit_transform_bertopic(self, texts: List[str]) -> np.ndarray:
         bertopic_config = self.config.get('bertopic', {})
@@ -172,6 +281,73 @@ class TopicModeler:
 
     # --- AJOUT DES MÉTHODES D'ANALYSE AVANCÉE POUR BERTOPIC ---
 
+    def get_topic_coherence(self, texts: List[List[str]], coherence_type: str = "c_v") -> float:
+        """Calculate the coherence score of the fitted model (works for any algorithm)."""
+        if self.model is None: raise ValueError("Model has not been fit yet")
+        
+        if self.algorithm == 'bertopic':
+            return self.get_bertopic_coherence(texts, coherence_type)
+        elif self.algorithm in ['gensim_lda', 'hdp']:
+            # For Gensim models
+            if not hasattr(self, 'gensim_dictionary'):
+                raise ValueError("Gensim dictionary not found. Model may not be properly initialized.")
+                
+            cm = CoherenceModel(model=self.model, texts=texts, dictionary=self.gensim_dictionary, coherence=coherence_type)
+            return cm.get_coherence()
+        else:
+            # For sklearn models
+            raise NotImplementedError(f"Coherence calculation not implemented for {self.algorithm}")
+    
+    def get_topic_distribution(self) -> List[float]:
+        """Get the global distribution of topics in the corpus (works for any algorithm)."""
+        if self.model is None: raise ValueError("Model has not been fit yet")
+        
+        if self.algorithm == 'bertopic':
+            return self.get_bertopic_topic_distribution()
+        elif self.algorithm in ['gensim_lda', 'hdp']:
+            # For Gensim models
+            if not hasattr(self, 'gensim_corpus') or not hasattr(self, 'model'):
+                raise ValueError("Gensim corpus or model not found. Model may not be properly initialized.")
+                
+            # Get topic distribution across all documents
+            topic_counts = [0] * self.num_topics
+            for doc_bow in self.gensim_corpus:
+                doc_topics = self.model.get_document_topics(doc_bow)
+                for topic_id, prob in doc_topics:
+                    if topic_id < self.num_topics:  # Ensure we don't go out of bounds
+                        topic_counts[topic_id] += prob
+            
+            # Normalize to get distribution
+            total = sum(topic_counts)
+            if total > 0:
+                return [count / total for count in topic_counts]
+            return topic_counts
+        else:
+            # For sklearn models
+            raise NotImplementedError(f"Topic distribution calculation not implemented for {self.algorithm}")
+    
+    def get_topic_word_weights(self, n_terms: int = 10) -> Dict[str, List[Tuple[str, float]]]:
+        """Get the top weighted words for each topic (works for any algorithm)."""
+        if self.model is None: raise ValueError("Model has not been fit yet")
+        
+        if self.algorithm == 'bertopic':
+            return self.get_bertopic_word_weights(n_terms)
+        elif self.algorithm in ['gensim_lda', 'hdp']:
+            # For Gensim models
+            if not hasattr(self, 'gensim_dictionary') or not hasattr(self, 'model'):
+                raise ValueError("Gensim dictionary or model not found. Model may not be properly initialized.")
+                
+            weighted_words = {}
+            for topic_id in range(self.num_topics):
+                # Get topic terms with weights
+                topic_terms = self.model.show_topic(topic_id, n_terms)
+                weighted_words[str(topic_id)] = topic_terms
+            
+            return weighted_words
+        else:
+            # For sklearn models
+            raise NotImplementedError(f"Word weights calculation not implemented for {self.algorithm}")
+    
     def get_bertopic_coherence(self, texts: List[List[str]], coherence_type: str = "c_v") -> float:
         """Calculate the coherence score of the fitted BERTopic model."""
         if self.model is None: raise ValueError("Model has not been fit yet")

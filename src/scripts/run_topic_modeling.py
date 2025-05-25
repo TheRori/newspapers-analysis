@@ -31,24 +31,25 @@ def get_parser():
     parser.add_argument('--cache-file', type=str, help='Path to a specific cache file to use or create.')
     parser.add_argument('--engine', choices=['gensim', 'bertopic'], default='bertopic', help='Topic modeling engine.')
     parser.add_argument('--algorithm', type=str, default=None, help='Algorithm (e.g., gensim_lda, bertopic). Overrides engine default.')
-    parser.add_argument('--num-topics', type=str, default='auto', help='Number of topics. Use "auto" for BERTopic.')
-    parser.add_argument('--workers', type=int, default=-1, help='Number of CPU workers for modeling.')
+    parser.add_argument('--num-topics', type=str, default='auto', help='Number of topics. Use "auto" to find optimal number of topics (works with both BERTopic and Gensim).')
+    parser.add_argument('--workers', type=int, default=2, help='Number of CPU workers for modeling.')
+    parser.add_argument('--force-reprocess', action='store_true', help='Force reprocessing of data, ignoring existing cache.')
     return parser
 
 # --- LOGIQUE DE CACHE CORRIGÉE ---
-def load_or_preprocess_data(config: dict, articles: list, cache_file: Path) -> dict:
+def load_or_preprocess_data(config: dict, articles: list, cache_file: Path, force_reprocess: bool = False) -> dict:
     """
-    Loads preprocessed (tokenized) data from cache if it exists.
+    Loads preprocessed (tokenized) data from cache if it exists and not forced to reprocess.
     Otherwise, runs SpaCy preprocessing using the robust 'process_documents' method
     and saves the result to the cache.
     """
-    if cache_file.exists():
+    if not force_reprocess and cache_file.exists():
         logger.info(f"Loading preprocessed data from cache: {cache_file}")
         with open(cache_file, 'rb') as f:
             return pickle.load(f)
 
     # --- CORRECTION MAJEURE : Utilisation de la méthode de batch 'process_documents' ---
-    logger.info(f"Cache not found. Preprocessing {len(articles)} documents with SpaCy...")
+    logger.info(f"Cache not found or reprocessing forced. Preprocessing {len(articles)} documents with SpaCy...")
     preproc_config = config.get('analysis', {}).get('topic_modeling', {}).get('preprocessing', {})
     spacy_preprocessor = SpacyPreprocessor(preproc_config)
     
@@ -184,32 +185,57 @@ def main():
 
     # --- 3. Modeling Workflow ---
     modeler = TopicModeler(topic_config)
-    preprocessed_data = None
     
-    # --- CORRECTION : La logique de cache est maintenant en dehors du 'if/else' de l'engine ---
-    is_cache_used = False
-    if args.cache_file and Path(args.cache_file).exists():
-        logger.info(f"Cache file provided: {args.cache_file}. Loading data from cache.")
-        preprocessed_data = load_or_preprocess_data(config, articles, Path(args.cache_file))
-        is_cache_used = True
-        # Ajout d'un flag pour informer le modeler
-        modeler.using_cache = True
+    # Determine cache file path
+    if args.cache_file:
+        cache_file_path = Path(args.cache_file)
+    else:
+        # Generate a default cache file name based on source and preprocessing config to ensure specificity
+        preproc_config_dict = topic_config.get('preprocessing', {})
+        # Ensure canonical representation for hashing by sorting keys in the JSON string
+        preproc_settings_str = json.dumps(preproc_config_dict, sort_keys=True)
+        combined_hash_str = str(articles_path) + preproc_settings_str
+        source_hash = hashlib.md5(combined_hash_str.encode()).hexdigest()[:8]
+        
+        engine_slug = "spacy_tokens" # Generic slug as SpaCy preprocessing is common for tokenization
+        cache_file_path = cache_dir / f"preprocessed_{engine_slug}_{source_hash}.pkl"
 
-    # Si le moteur est Gensim et qu'aucun cache n'a été fourni, on lance le prétraitement
-    elif topic_config['algorithm'] in ['gensim_lda', 'hdp'] and not is_cache_used:
-        source_hash = hashlib.md5(str(articles_path).encode()).hexdigest()[:8]
-        cache_file = cache_dir / f"preprocessed_gensim_{source_hash}.pkl"
-        preprocessed_data = load_or_preprocess_data(config, articles, cache_file)
+    logger.info(f"Using cache file path: {cache_file_path}")
+    if args.force_reprocess:
+        logger.info("Forcing reprocessing of data.")
+    else:
+        logger.info(f"Attempting to load from cache. Use --force-reprocess to override if needed.")
 
-    # Pour BERTopic, si aucun cache n'est utilisé, on ne fait rien ici. 
-    # Le prétraitement se fera en interne.
+    preprocessed_data = load_or_preprocess_data(
+        config, 
+        articles, 
+        cache_file_path, 
+        force_reprocess=args.force_reprocess
+    )
     
-    # Lancer l'entraînement
+    modeler.using_cache = (not args.force_reprocess and cache_file_path.exists() and preprocessed_data is not None)
+
+    if preprocessed_data and 'tokenized_texts' in preprocessed_data and preprocessed_data['tokenized_texts']:
+        logger.info("Using preprocessed tokenized texts for modeling.")
+        if topic_config['algorithm'] in ['gensim_lda', 'hdp']:
+            modeler.fit_transform(preprocessed_data['tokenized_texts'])
+        elif topic_config['algorithm'] == 'bertopic':
+            logger.info("Passing raw texts to BERTopic model for optimal embedding. SpaCy preprocessed_data is available if needed elsewhere.")
+            texts_for_model = [doc.get('content', doc.get('text', '')) for doc in articles]
+            modeler.fit_transform(texts_for_model, documents=articles) # Pass original articles for metadata
+    elif topic_config['algorithm'] == 'bertopic': 
+        logger.info("Passing raw texts to BERTopic model (e.g., no suitable tokenized_texts from cache or BERTopic preference).")
+        texts_for_model = [doc.get('content', doc.get('text', '')) for doc in articles]
+        modeler.fit_transform(texts_for_model, documents=articles)
+    else: 
+        logger.error(f"Failed to obtain or prepare data for {topic_config['algorithm']}. Check preprocessing and caching logic.")
+        if topic_config['algorithm'] in ['gensim_lda', 'hdp']:
+             logger.error("Gensim models require 'tokenized_texts'. Ensure preprocessing runs or a valid cache is available/generated.")
+        sys.exit(1)
+    
     results = modeler.fit_transform(articles, preprocessed_data=preprocessed_data)
 
-    # ... (le reste de la fonction main est identique)
-    # --- 4. Save Core Results ---
-    run_id = str(uuid.uuid4())[:8]
+    run_id = f"{topic_config['algorithm']}_{time.strftime('%Y%m%d-%H%M%S')}_{uuid.uuid4().hex[:8]}"
     
     top_words_path = results_dir / 'top_words'
     top_words_path.mkdir(parents=True, exist_ok=True)

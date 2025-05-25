@@ -37,17 +37,17 @@ def parse_args():
     parser.add_argument("--source-file", type=str, required=True,
                         help="Fichier source contenant les articles (JSON)")
     
-    parser.add_argument("--doc-topic-matrix", type=str, default="data/results/doc_topic_matrix.json",
-                        help="Fichier contenant la matrice document-topic (JSON). Par défaut: data/results/doc_topic_matrix.json")
+    parser.add_argument("--doc-topic-dir", type=str, default="data/results/doc_topic_matrix",
+                        help="Répertoire contenant les fichiers de matrice document-topic. Par défaut: data/results/doc_topic_matrix")
+    
+    parser.add_argument("--advanced-analysis-dir", type=str, default="data/results/advanced_analysis",
+                        help="Répertoire contenant les fichiers d'analyse avancée. Par défaut: data/results/advanced_analysis")
     
     parser.add_argument("--method", type=str, choices=["articles", "keywords"], default="articles",
                         help="Méthode de génération des noms: 'articles' (utilise les articles représentatifs) ou 'keywords' (utilise les mots-clés)")
     
     parser.add_argument("--output-file", type=str, default="data/results/topic_names_llm.json",
                         help="Fichier de sortie pour les noms de topics générés. Par défaut: data/results/topic_names_llm.json")
-    
-    parser.add_argument("--top-words-file", type=str, default="data/results/advanced_topic/advanced_topic_analysis.json",
-                        help="Fichier contenant les mots-clés des topics. Requis si method=keywords. Par défaut: data/results/advanced_topic/advanced_topic_analysis.json")
     
     parser.add_argument("--config", type=str, default="config/config.yaml",
                         help="Fichier de configuration (YAML)")
@@ -378,6 +378,118 @@ def get_topic_names_from_keywords(
     
     return topic_names
 
+def find_latest_file(directory, pattern):
+    """Find the latest file in a directory matching a pattern."""
+    directory = Path(directory)
+    if not directory.exists() or not directory.is_dir():
+        return None
+    
+    matching_files = list(directory.glob(pattern))
+    if not matching_files:
+        return None
+    
+    # Sort by modification time, newest first
+    matching_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    return matching_files[0]
+
+def is_gensim_file(file_path):
+    """Check if a file is related to a Gensim model."""
+    return "gensim" in file_path.name.lower()
+
+def extract_representative_docs_from_matrix(doc_topic_matrix, articles, num_per_topic=3):
+    """Extract representative documents for each topic from a doc-topic matrix."""
+    # Create a mapping from article IDs to articles with multiple ID formats
+    article_id_map = {}
+    for article in articles:
+        if isinstance(article, dict):
+            # Try different ID fields that might be present
+            article_id = article.get('id', None)
+            base_id = article.get('base_id', None)
+            doc_id = article.get('doc_id', None)
+            
+            # Store the article under all its possible IDs
+            for id_val in [article_id, base_id, doc_id]:
+                if id_val is not None:
+                    # Convert ID to string to ensure consistent comparison
+                    article_id_map[str(id_val)] = article
+    
+    logger.info(f"Mapped {len(article_id_map)} unique article IDs from {len(articles)} articles")
+    
+    # Extract doc_topics from the matrix
+    doc_topics = {}
+    if isinstance(doc_topic_matrix, dict) and 'doc_topics' in doc_topic_matrix:
+        doc_topics = doc_topic_matrix['doc_topics']
+    
+    logger.info(f"Found {len(doc_topics)} documents in the topic matrix")
+    
+    # Organize articles by topic
+    topics_to_articles = {}
+    matched_articles = 0
+    
+    for doc_id, doc_info in doc_topics.items():
+        if isinstance(doc_info, dict) and 'topic_distribution' in doc_info and 'dominant_topic' in doc_info:
+            topic_id = str(doc_info['dominant_topic'])
+            topic_score = max(doc_info['topic_distribution'])
+            
+            if topic_id not in topics_to_articles:
+                topics_to_articles[topic_id] = []
+            
+            # Try to find the article in our mapping
+            article = None
+            article_id_str = str(doc_id)
+            
+            # Direct match
+            if article_id_str in article_id_map:
+                article = article_id_map[article_id_str]
+            else:
+                # Try matching by substring (some IDs might be partial)
+                for mapped_id, mapped_article in article_id_map.items():
+                    if article_id_str in mapped_id or mapped_id in article_id_str:
+                        article = mapped_article
+                        break
+            
+            if article:
+                matched_articles += 1
+                # Get the article content, preferring 'content' field
+                article_text = None
+                if 'content' in article:
+                    article_text = article['content']
+                elif 'text' in article:
+                    article_text = article['text']
+                elif 'cleaned_text' in article:
+                    article_text = article['cleaned_text']
+                elif 'original_content' in article:
+                    article_text = article['original_content']
+                
+                if article_text:
+                    # Truncate very long articles for logging purposes
+                    display_text = article_text
+                    if len(display_text) > 1000:
+                        display_text = display_text[:1000] + "..."
+                    
+                    topics_to_articles[topic_id].append((article_text, topic_score, doc_id, display_text))
+    
+    logger.info(f"Successfully matched {matched_articles} articles from the topic matrix to the source file")
+    
+    # Sort articles by topic score and take the top N for each topic
+    representative_docs = {}
+    for topic_id, articles_with_scores in topics_to_articles.items():
+        articles_with_scores.sort(key=lambda x: x[1], reverse=True)
+        # Only take the full article text for the representative docs
+        representative_docs[topic_id] = [article for article, _, _, _ in articles_with_scores[:num_per_topic]]
+        
+        if representative_docs[topic_id]:
+            logger.info(f"Topic #{topic_id} - Trouvé {len(representative_docs[topic_id])} articles pour la clé exacte '{topic_id}'")
+            logger.info(f"Topic #{topic_id} - {len(representative_docs[topic_id])} articles représentatifs trouvés")
+            
+            # Log sample articles (using the truncated display text)
+            for i, (_, _, _, display_text) in enumerate(articles_with_scores[:num_per_topic]):
+                logger.info(f"Topic #{topic_id} - Article {i}: {display_text[:100]}...")
+        else:
+            logger.warning(f"Topic #{topic_id} - Aucun article représentatif trouvé")
+    
+    return representative_docs
+
 def main():
     """Point d'entrée principal du script."""
     start_time = time.time()
@@ -389,34 +501,38 @@ def main():
     project_root = Path(__file__).resolve().parent.parent.parent
     source_file = Path(args.source_file)
     
-    if not args.doc_topic_matrix:
-        doc_topic_matrix_file = project_root / "data" / "results" / "doc_topic_matrix.json"
-    else:
-        doc_topic_matrix_file = Path(args.doc_topic_matrix)
+    # Directories for results
+    advanced_analysis_dir = Path(args.advanced_analysis_dir)
+    doc_topic_matrix_dir = Path(args.doc_topic_dir)
+    
+    # Make sure the directories exist
+    if not advanced_analysis_dir.exists() or not advanced_analysis_dir.is_dir():
+        logger.warning(f"Le répertoire d'analyse avancée {advanced_analysis_dir} n'existe pas ou n'est pas un répertoire")
+        advanced_analysis_dir = project_root / "data" / "results" / "advanced_analysis"
+        logger.info(f"Utilisation du répertoire par défaut: {advanced_analysis_dir}")
+    
+    if not doc_topic_matrix_dir.exists() or not doc_topic_matrix_dir.is_dir():
+        logger.warning(f"Le répertoire de matrices document-topic {doc_topic_matrix_dir} n'existe pas ou n'est pas un répertoire")
+        doc_topic_matrix_dir = project_root / "data" / "results" / "doc_topic_matrix"
+        logger.info(f"Utilisation du répertoire par défaut: {doc_topic_matrix_dir}")
+    
+    # Find the latest files in each directory
+    latest_advanced_file = find_latest_file(advanced_analysis_dir, "*.json")
+    latest_matrix_file = find_latest_file(doc_topic_matrix_dir, "*.json")
+    
+    logger.info(f"Fichier d'analyse avancée le plus récent: {latest_advanced_file}")
+    logger.info(f"Fichier de matrice document-topic le plus récent: {latest_matrix_file}")
     
     if not args.output_file:
         output_file = project_root / "data" / "results" / "topic_names_llm.json"
     else:
         output_file = Path(args.output_file)
     
-    if args.method == "keywords" and not args.top_words_file:
-        top_words_file = project_root / "data" / "results" / "topic_words.json"
-    else:
-        top_words_file = Path(args.top_words_file) if args.top_words_file else None
-    
     config_file = project_root / args.config
     
     # Vérifier que les fichiers existent
     if not source_file.exists():
         logger.error(f"Le fichier source {source_file} n'existe pas")
-        sys.exit(1)
-    
-    if not doc_topic_matrix_file.exists() and args.method == "articles":
-        logger.error(f"Le fichier de matrice document-topic {doc_topic_matrix_file} n'existe pas")
-        sys.exit(1)
-    
-    if args.method == "keywords" and (not top_words_file or not top_words_file.exists()):
-        logger.error(f"Le fichier de mots-clés {top_words_file} n'existe pas")
         sys.exit(1)
     
     if not config_file.exists():
@@ -439,25 +555,46 @@ def main():
     
     # Générer les noms de topics
     if args.method == "articles":
-        # Vérifier d'abord si le fichier d'analyse avancée contient des articles représentatifs
-        logger.info(f"Vérification du fichier d'analyse avancée pour des articles représentatifs")
-        advanced_analysis = load_file(str(top_words_file))
+        logger.info("Méthode de génération des noms: articles représentatifs")
         
-        if isinstance(advanced_analysis, dict) and 'representative_docs' in advanced_analysis:
-            logger.info("Articles représentatifs trouvés dans le fichier d'analyse avancée")
-            representative_docs = advanced_analysis['representative_docs']
+        # Vérifier si c'est un modèle Gensim en regardant le nom du fichier d'analyse avancée
+        is_gensim_model = latest_advanced_file and is_gensim_file(latest_advanced_file)
+        logger.info(f"Modèle Gensim détecté: {is_gensim_model}")
+        
+        representative_docs = None
+        
+        # Si nous avons un fichier d'analyse avancée, essayons de l'utiliser
+        if latest_advanced_file:
+            logger.info(f"Analyse du fichier d'analyse avancée: {latest_advanced_file}")
+            advanced_analysis = load_file(str(latest_advanced_file))
             
-            logger.info(f"Génération des noms de topics à partir des articles représentatifs pré-calculés")
-            topic_names_and_summaries = get_topic_names_from_representative_docs(
-                representative_docs,
-                llm_client,
-                num_articles=args.num_articles
-            )
-        else:
+            # Vérifier si le fichier contient des articles représentatifs (pour BERTopic)
+            if isinstance(advanced_analysis, dict) and 'representative_docs' in advanced_analysis and not is_gensim_model:
+                logger.info("Articles représentatifs trouvés dans le fichier d'analyse avancée (BERTopic)")
+                representative_docs = advanced_analysis['representative_docs']
+        
+        # Pour les modèles Gensim, nous devons extraire les articles représentatifs à partir de la matrice document-topic
+        if is_gensim_model and latest_matrix_file:
+            logger.info(f"Modèle Gensim: utilisation de la matrice document-topic pour trouver les articles représentatifs")
+            logger.info(f"Chargement de la matrice document-topic depuis {latest_matrix_file}")
+            
+            doc_topic_data = load_file(str(latest_matrix_file))
+            
+            # Extraire les articles représentatifs à partir de la matrice document-topic
+            logger.info("Extraction des articles représentatifs à partir de la matrice document-topic")
+            representative_docs = extract_representative_docs_from_matrix(doc_topic_data, articles, num_per_topic=3)
+        
+        # Si nous n'avons toujours pas d'articles représentatifs, utiliser la méthode traditionnelle
+        if representative_docs is None:
             # Utiliser la méthode traditionnelle avec la matrice document-topic
-            logger.info("Aucun article représentatif trouvé dans le fichier d'analyse avancée, utilisation de la matrice document-topic")
-            logger.info(f"Chargement de la matrice document-topic depuis {doc_topic_matrix_file}")
-            doc_topic_data = load_file(str(doc_topic_matrix_file))
+            logger.info("Aucun article représentatif trouvé, utilisation de la méthode traditionnelle")
+            
+            if not latest_matrix_file:
+                logger.error("Aucun fichier de matrice document-topic trouvé")
+                sys.exit(1)
+            
+            logger.info(f"Chargement de la matrice document-topic depuis {latest_matrix_file}")
+            doc_topic_data = load_file(str(latest_matrix_file))
             
             # Extraire la liste doc_topic_matrix du dictionnaire si nécessaire
             if isinstance(doc_topic_data, dict) and 'doc_topic_matrix' in doc_topic_data:
@@ -474,6 +611,14 @@ def main():
                 num_articles=args.num_articles,
                 threshold=args.threshold
             )
+        else:
+            # Utiliser les articles représentatifs que nous avons trouvés
+            logger.info(f"Génération des noms de topics à partir des articles représentatifs")
+            topic_names_and_summaries = get_topic_names_from_representative_docs(
+                representative_docs,
+                llm_client,
+                num_articles=args.num_articles
+            )
         
         # Préparer les résultats
         results = {
@@ -486,28 +631,66 @@ def main():
         }
     
     else:  # method == "keywords"
-        logger.info(f"Chargement des mots-clés depuis {top_words_file}")
-        advanced_analysis = load_file(str(top_words_file))
+        logger.info("Méthode de génération des noms: mots-clés")
+        
+        # Vérifier si nous avons un fichier d'analyse avancée
+        if not latest_advanced_file:
+            logger.error("Aucun fichier d'analyse avancée trouvé")
+            sys.exit(1)
+            
+        logger.info(f"Chargement des mots-clés depuis {latest_advanced_file}")
+        advanced_analysis = load_file(str(latest_advanced_file))
         
         # Vérifier si nous avons besoin de charger la matrice document-topic pour obtenir les IDs de topics
         if 'weighted_words' not in advanced_analysis:
             logger.warning("La clé 'weighted_words' n'a pas été trouvée dans le fichier d'analyse avancée")
-            logger.info(f"Chargement de la matrice document-topic depuis {doc_topic_matrix_file} pour obtenir les IDs de topics")
-            doc_topic_data = load_file(str(doc_topic_matrix_file))
             
-            # Extraire la liste doc_topic_matrix du dictionnaire si nécessaire
-            if isinstance(doc_topic_data, dict) and 'doc_topic_matrix' in doc_topic_data:
-                logger.info("Extraction de la matrice document-topic du dictionnaire")
-                doc_topic_matrix = doc_topic_data['doc_topic_matrix']
-            else:
-                doc_topic_matrix = doc_topic_data
+            # Vérifier si nous avons un fichier de matrice document-topic
+            if not latest_matrix_file:
+                logger.error("Aucun fichier de matrice document-topic trouvé")
+                sys.exit(1)
+                
+            logger.info(f"Chargement de la matrice document-topic depuis {latest_matrix_file} pour obtenir les IDs de topics")
+            doc_topic_data = load_file(str(latest_matrix_file))
             
-            # Extraire les IDs de topics à partir de la matrice document-topic
-            if doc_topic_matrix and isinstance(doc_topic_matrix, list) and len(doc_topic_matrix) > 0:
-                first_doc = doc_topic_matrix[0]
-                if 'topic_distribution' in first_doc:
+            # Extraire les informations de topics
+            if isinstance(doc_topic_data, dict):
+                if 'doc_topics' in doc_topic_data:
+                    # Format Gensim
+                    logger.info("Format de matrice document-topic Gensim détecté")
+                    doc_topics = doc_topic_data['doc_topics']
+                    if doc_topics and len(doc_topics) > 0:
+                        # Prendre le premier document pour déterminer le nombre de topics
+                        first_doc_id = list(doc_topics.keys())[0]
+                        first_doc = doc_topics[first_doc_id]
+                        if 'topic_distribution' in first_doc:
+                            num_topics = len(first_doc['topic_distribution'])
+                            logger.info(f"Trouvé {num_topics} topics dans la matrice document-topic Gensim")
+                            
+                            # Créer un dictionnaire de mots-clés vide pour chaque topic
+                            advanced_analysis['weighted_words'] = {}
+                            for i in range(num_topics):
+                                advanced_analysis['weighted_words'][str(i)] = [f"topic_{i}", f"mot_clé_{i}", f"terme_{i}", f"concept_{i}", f"sujet_{i}"]
+                elif 'doc_topic_matrix' in doc_topic_data:
+                    # Format traditionnel
+                    logger.info("Format de matrice document-topic traditionnel détecté")
+                    doc_topic_matrix = doc_topic_data['doc_topic_matrix']
+                    if isinstance(doc_topic_matrix, list) and len(doc_topic_matrix) > 0:
+                        first_doc = doc_topic_matrix[0]
+                        if isinstance(first_doc, dict) and 'topic_distribution' in first_doc:
+                            num_topics = len(first_doc['topic_distribution'])
+                            logger.info(f"Trouvé {num_topics} topics dans la matrice document-topic")
+                            
+                            # Créer un dictionnaire de mots-clés vide pour chaque topic
+                            advanced_analysis['weighted_words'] = {}
+                            for i in range(num_topics):
+                                advanced_analysis['weighted_words'][str(i)] = [f"topic_{i}", f"mot_clé_{i}", f"terme_{i}", f"concept_{i}", f"sujet_{i}"]
+            elif isinstance(doc_topic_data, list) and len(doc_topic_data) > 0:
+                # Format liste simple
+                first_doc = doc_topic_data[0]
+                if isinstance(first_doc, dict) and 'topic_distribution' in first_doc:
                     num_topics = len(first_doc['topic_distribution'])
-                    logger.info(f"Trouvé {num_topics} topics dans la matrice document-topic")
+                    logger.info(f"Trouvé {num_topics} topics dans la matrice document-topic (format liste)")
                     
                     # Créer un dictionnaire de mots-clés vide pour chaque topic
                     advanced_analysis['weighted_words'] = {}
