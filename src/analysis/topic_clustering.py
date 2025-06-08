@@ -56,7 +56,8 @@ def cluster_documents_from_json(json_path: str, n_clusters: int = 6, random_stat
 
 
 def find_optimal_clusters(doc_topic_matrix: List[List[float]], k_min: int = 2, k_max: int = 15, 
-                         method: str = 'silhouette', random_state: int = 42) -> Tuple[int, np.ndarray, KMeans]:
+                         method: str = 'silhouette', random_state: int = 42, 
+                         force_k: Optional[int] = None) -> Tuple[int, np.ndarray, KMeans]:
     """
     Automatically find the optimal number of clusters using various metrics.
     
@@ -66,6 +67,7 @@ def find_optimal_clusters(doc_topic_matrix: List[List[float]], k_min: int = 2, k
         k_max: Maximum number of clusters to try
         method: Method to use for determining optimal clusters ('silhouette', 'calinski_harabasz', 'davies_bouldin', or 'all')
         random_state: Random seed
+        force_k: If provided, skip optimization and use this value for k
         
     Returns:
         optimal_n: Optimal number of clusters
@@ -74,16 +76,38 @@ def find_optimal_clusters(doc_topic_matrix: List[List[float]], k_min: int = 2, k
     """
     X = np.array(doc_topic_matrix)
     
+    # If force_k is provided, skip optimization and use this value
+    if force_k is not None:
+        logger.info(f"Using forced k value: {force_k} (skipping optimization)")
+        print(f"[CLUSTERING] Using forced number of clusters: {force_k}")
+        final_kmeans = KMeans(n_clusters=force_k, random_state=random_state)
+        final_clusters = final_kmeans.fit_predict(X)
+        return force_k, final_clusters, final_kmeans
+    
     # Ensure we have enough samples
-    if len(X) < k_max:
-        logger.warning(f"Only {len(X)} samples available, reducing k_max from {k_max} to {len(X) - 1}")
-        k_max = max(k_min, min(k_max, len(X) - 1))
+    n_samples = len(X)
+    if n_samples < 2:
+        logger.warning(f"Only {n_samples} samples available, cannot perform clustering")
+        # Return a single cluster for all samples as fallback
+        return 1, np.zeros(n_samples, dtype=int), None
+        
+    if n_samples < k_max:
+        logger.warning(f"Only {n_samples} samples available, reducing k_max from {k_max} to {max(2, n_samples - 1)}")
+        k_max = max(k_min, min(k_max, n_samples - 1))
+    
+    # Ensure k_min is valid
+    k_min = max(2, k_min)  # At least 2 clusters needed for most metrics
+    
+    # If k_min > k_max after adjustments, set them equal
+    if k_min > k_max:
+        logger.warning(f"k_min ({k_min}) > k_max ({k_max}), setting k_min = k_max = {k_max}")
+        k_min = k_max
     
     # Initialize scores
     silhouette_scores = []
     ch_scores = []
     db_scores = []
-    k_values = range(k_min, k_max + 1)
+    k_values = list(range(k_min, k_max + 1))
     
     # Calculate scores for each k
     for k in k_values:
@@ -115,29 +139,75 @@ def find_optimal_clusters(doc_topic_matrix: List[List[float]], k_min: int = 2, k
     
     # Determine optimal k based on the chosen method
     optimal_k = k_min
-    if method == 'silhouette' or (method == 'all' and silhouette_scores):
+    
+    # Handle empty score lists
+    if not k_values:
+        logger.warning("No valid k values to evaluate")
+        print("[CLUSTERING] WARNING: No valid k values to evaluate, using default k=2")
+        optimal_k = 2  # Default to 2 clusters as fallback
+    elif method == 'silhouette' and silhouette_scores:
         # Higher silhouette score is better
         optimal_k = k_values[np.argmax(silhouette_scores)]
-        logger.info(f"Optimal k based on silhouette score: {optimal_k}")
-    elif method == 'calinski_harabasz' or (method == 'all' and not silhouette_scores and ch_scores):
+        best_score = max(silhouette_scores)
+        logger.info(f"Optimal k based on silhouette score: {optimal_k} (score: {best_score:.4f})")
+        print(f"[CLUSTERING] Optimal k based on silhouette score: {optimal_k} (score: {best_score:.4f})")
+        print(f"[CLUSTERING] All silhouette scores: {', '.join([f'k={k}:{s:.4f}' for k, s in zip(k_values, silhouette_scores)])}")
+    elif method == 'calinski_harabasz' and ch_scores:
         # Higher Calinski-Harabasz score is better
         optimal_k = k_values[np.argmax(ch_scores)]
-        logger.info(f"Optimal k based on Calinski-Harabasz score: {optimal_k}")
-    elif method == 'davies_bouldin' or (method == 'all' and not silhouette_scores and not ch_scores and db_scores):
+        best_score = max(ch_scores)
+        logger.info(f"Optimal k based on Calinski-Harabasz score: {optimal_k} (score: {best_score:.4f})")
+        print(f"[CLUSTERING] Optimal k based on Calinski-Harabasz score: {optimal_k} (score: {best_score:.4f})")
+        print(f"[CLUSTERING] All Calinski-Harabasz scores: {', '.join([f'k={k}:{s:.4f}' for k, s in zip(k_values, ch_scores)])}")
+    elif method == 'davies_bouldin' and db_scores:
         # Lower Davies-Bouldin score is better
         optimal_k = k_values[np.argmin(db_scores)]
-        logger.info(f"Optimal k based on Davies-Bouldin score: {optimal_k}")
+        best_score = min(db_scores)
+        logger.info(f"Optimal k based on Davies-Bouldin score: {optimal_k} (score: {best_score:.4f})")
+        print(f"[CLUSTERING] Optimal k based on Davies-Bouldin score: {optimal_k} (score: {best_score:.4f})")
+        print(f"[CLUSTERING] All Davies-Bouldin scores: {', '.join([f'k={k}:{s:.4f}' for k, s in zip(k_values, db_scores)])}")
+    elif method == 'all':
+        # Try each metric in order of preference
+        if silhouette_scores:
+            optimal_k = k_values[np.argmax(silhouette_scores)]
+            best_score = max(silhouette_scores)
+            logger.info(f"Optimal k based on silhouette score: {optimal_k} (score: {best_score:.4f})")
+            print(f"[CLUSTERING] Optimal k based on silhouette score: {optimal_k} (score: {best_score:.4f})")
+            print(f"[CLUSTERING] All silhouette scores: {', '.join([f'k={k}:{s:.4f}' for k, s in zip(k_values, silhouette_scores)])}")
+        elif ch_scores:
+            optimal_k = k_values[np.argmax(ch_scores)]
+            best_score = max(ch_scores)
+            logger.info(f"Optimal k based on Calinski-Harabasz score: {optimal_k} (score: {best_score:.4f})")
+            print(f"[CLUSTERING] Optimal k based on Calinski-Harabasz score: {optimal_k} (score: {best_score:.4f})")
+            print(f"[CLUSTERING] All Calinski-Harabasz scores: {', '.join([f'k={k}:{s:.4f}' for k, s in zip(k_values, ch_scores)])}")
+        elif db_scores:
+            optimal_k = k_values[np.argmin(db_scores)]
+            best_score = min(db_scores)
+            logger.info(f"Optimal k based on Davies-Bouldin score: {optimal_k} (score: {best_score:.4f})")
+            print(f"[CLUSTERING] Optimal k based on Davies-Bouldin score: {optimal_k} (score: {best_score:.4f})")
+            print(f"[CLUSTERING] All Davies-Bouldin scores: {', '.join([f'k={k}:{s:.4f}' for k, s in zip(k_values, db_scores)])}")
+        else:
+            logger.warning("No valid scores calculated, using default k_min")
+            print("[CLUSTERING] WARNING: No valid scores calculated, using default k_min")
     
     # Run clustering with the optimal k
     logger.info(f"Running final clustering with optimal k={optimal_k}")
+    print(f"[CLUSTERING] Running final clustering with optimal k={optimal_k}")
     final_kmeans = KMeans(n_clusters=optimal_k, random_state=random_state)
     final_clusters = final_kmeans.fit_predict(X)
+    
+    # Log cluster sizes
+    unique_clusters, cluster_counts = np.unique(final_clusters, return_counts=True)
+    cluster_sizes = {int(cluster): int(count) for cluster, count in zip(unique_clusters, cluster_counts)}
+    print(f"[CLUSTERING] Final cluster sizes: {cluster_sizes}")
+    logger.info(f"Final cluster sizes: {cluster_sizes}")
     
     return optimal_k, final_clusters, final_kmeans
 
 
 def cluster_documents_auto(doc_topic_matrix: List[List[float]], k_min: int = 2, k_max: int = 15, 
-                          method: str = 'silhouette', random_state: int = 42) -> Tuple[int, np.ndarray, KMeans]:
+                          method: str = 'silhouette', random_state: int = 42, 
+                          force_k: Optional[int] = None) -> Tuple[int, np.ndarray, KMeans]:
     """
     Convenience function to automatically cluster documents with optimal number of clusters.
     
@@ -147,13 +217,14 @@ def cluster_documents_auto(doc_topic_matrix: List[List[float]], k_min: int = 2, 
         k_max: Maximum number of clusters to try
         method: Method to use for determining optimal clusters
         random_state: Random seed
+        force_k: If provided, skip optimization and use this value for k
         
     Returns:
         optimal_n: Optimal number of clusters
         clusters: np.ndarray of cluster labels
         model: fitted KMeans instance
     """
-    return find_optimal_clusters(doc_topic_matrix, k_min, k_max, method, random_state)
+    return find_optimal_clusters(doc_topic_matrix, k_min, k_max, method, random_state, force_k)
 
 
 def visualize_cluster_metrics(doc_topic_matrix: List[List[float]], k_min: int = 2, k_max: int = 15, 

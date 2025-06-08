@@ -3,6 +3,7 @@ Dash page for Topic Clustering visualization, inspired by topic_modeling_viz.py.
 """
 import json
 import os
+import re
 import argparse
 import sys
 from dash import dcc, html, Input, Output, State, dash_table, callback_context, no_update, ALL
@@ -13,52 +14,121 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 from pathlib import Path
-import yaml
 import pathlib
+import yaml
 import threading
 import time
 import subprocess
+from src.webapp.topic_modeling_viz import get_topic_name
 
 # Helper to load clustering results (assume similar structure to topic modeling)
 def load_clustering_stats(path):
-    if not os.path.exists(path):
-        return None
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
+    """
+    Load clustering statistics from a JSON file.
     
-    # Traitement des données pour la visualisation
-    stats = {}
-    
-    # Conserver les données brutes pour l'explorateur d'articles
-    stats['doc_ids'] = data.get('doc_ids', [])
-    stats['labels'] = data.get('labels', [])
-    
-    # 1. Informations de base
-    stats['n_clusters'] = len(set(data.get('labels', [])))
-    
-    # 2. Distribution des clusters
-    if 'labels' in data:
-        labels = data['labels']
-        cluster_counts = {}
-        for label in labels:
-            if label not in cluster_counts:
-                cluster_counts[label] = 0
-            cluster_counts[label] += 1
+    Args:
+        path (str): Path to the clustering results JSON file
         
-        # Calculer les proportions
-        total = len(labels)
-        cluster_distribution = [cluster_counts.get(i, 0) / total for i in range(stats['n_clusters'])]
-        stats['cluster_distribution'] = cluster_distribution
-        stats['cluster_sizes'] = cluster_counts
+    Returns:
+        dict: Processed clustering statistics or None if an error occurred
+    """
+    print(f"[DEBUG] Début de load_clustering_stats avec path={path}")
     
-    # 3. Documents représentatifs par cluster
-    if 'labels' in data and 'doc_ids' in data:
+    if not os.path.exists(path):
+        print(f"Erreur: Le fichier {path} n'existe pas")
+        return None
+    
+    # Nous n'utilisons plus les liens symboliques, mais nous gardons cette partie pour la compatibilité
+    # avec les anciens fichiers qui pourraient être des liens symboliques
+    try:
+        if os.path.islink(path):
+            print(f"Le fichier {path} est un lien symbolique, nous allons essayer de le résoudre")
+            # Nous allons plutôt chercher le fichier directement
+            if 'kauto' in path:
+                # Chercher le fichier de clustering optimal
+                optimal_path = find_best_cluster_file(os.path.dirname(path))
+                if optimal_path:
+                    print(f"Utilisation du fichier de clustering optimal: {optimal_path}")
+                    path = optimal_path
+                else:
+                    print(f"Aucun fichier de clustering optimal trouvé, utilisation du fichier original")
+    except Exception as e:
+        print(f"Erreur lors de la résolution du fichier de clustering: {e}")
+    
+    try:
+        print(f"[DEBUG] Ouverture du fichier {path}")
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        
+        print(f"[DEBUG] Fichier chargé, type de données: {type(data)}")
+        
+        # Vérifier que le format est correct
+        if not isinstance(data, dict):
+            print(f"Erreur: Le fichier {path} n'est pas au format attendu (dict), type actuel: {type(data)}")
+            print(f"[DEBUG] Contenu du fichier (premiers 100 caractères): {str(data)[:100]}...")
+            return None
+            
+        # Vérifier que les clés nécessaires sont présentes
+        print(f"[DEBUG] Clés présentes dans le fichier: {list(data.keys())}")
+        required_keys = ['doc_ids', 'labels']
+        for key in required_keys:
+            if key not in data:
+                print(f"Erreur: La clé '{key}' est manquante dans le fichier {path}")
+                return None
+        
+        # Extraire les données
         doc_ids = data['doc_ids']
         labels = data['labels']
+        
+        print(f"[DEBUG] doc_ids: type={type(doc_ids)}, len={len(doc_ids)}")
+        print(f"[DEBUG] labels: type={type(labels)}, len={len(labels)}")
+        
+        # Vérifier que les données sont cohérentes
+        if len(doc_ids) != len(labels):
+            print(f"Erreur: Le nombre de documents ({len(doc_ids)}) ne correspond pas au nombre de labels ({len(labels)})")
+            return None
+            
+        # Calculer les statistiques de clustering
+        unique_labels = set(labels)
+        n_clusters = len(unique_labels)
+        print(f"[DEBUG] Nombre de clusters uniques: {n_clusters}")
+        
+        # Calculer la taille de chaque cluster
+        cluster_sizes = {}
+        for label in labels:
+            if label not in cluster_sizes:
+                cluster_sizes[label] = 0
+            cluster_sizes[label] += 1
+            
+        # Trier les clusters par taille
+        sorted_clusters = sorted(cluster_sizes.items(), key=lambda x: x[1], reverse=True)
+        print(f"[DEBUG] Tailles des clusters: {cluster_sizes}")
+        
+        # Préparer les statistiques
+        stats = {
+            'n_clusters': n_clusters,
+            'n_documents': len(doc_ids),
+            'cluster_sizes': cluster_sizes,
+            'sorted_clusters': sorted_clusters,
+            'doc_ids': doc_ids,
+            'labels': labels
+        }
+        
+        # Ajouter les centres de clusters s'ils sont disponibles
+        if 'cluster_centers' in data:
+            stats['cluster_centers'] = data['cluster_centers']
+            print(f"[DEBUG] Centres de clusters ajoutés: {len(data['cluster_centers'])}")
+            
+        # Ajouter les embeddings s'ils sont disponibles
+        if 'embeddings' in data:
+            stats['embeddings'] = data['embeddings']
+            print(f"[DEBUG] Embeddings ajoutés: {len(data['embeddings'])}")
+            
+        # 3. Documents représentatifs par cluster
         representative_docs = {}
         
         # Pour chaque cluster, prendre les 3 premiers documents
-        for cluster in range(stats['n_clusters']):
+        for cluster in range(n_clusters):
             cluster_docs = [doc_id for doc_id, label in zip(doc_ids, labels) if label == cluster]
             representative_docs[str(cluster)] = cluster_docs[:3]  # Prendre les 3 premiers
         
@@ -107,42 +177,97 @@ def load_clustering_stats(path):
             stats['temporal_info'] = temporal_info
         if journal_info:
             stats['journal_info'] = journal_info
-    
-    # 5. Centres des clusters (si disponibles)
-    if 'cluster_centers' in data:
-        stats['cluster_centers'] = data['cluster_centers']
         
-        # Générer des "top words" fictifs pour chaque cluster basés sur les centres
-        # (dans un vrai cas, il faudrait utiliser les vrais mots)
-        top_words = {}
-        for i, center in enumerate(data['cluster_centers']):
-            # Prendre les 10 dimensions les plus importantes
-            top_indices = sorted(range(len(center)), key=lambda i: center[i], reverse=True)[:10]
-            words = [("Topic_" + str(idx), center[idx]) for idx in top_indices]
-            top_words[str(i)] = words
-        
-        stats['top_words'] = top_words
-    
-    # 6. Essayer de charger les statistiques avancées du topic modeling
-    try:
-        project_root = Path(__file__).resolve().parents[2]
-        advanced_topic_path = project_root / 'data' / 'results' / 'advanced_topic' / 'advanced_topic_analysis.json'
-        if os.path.exists(advanced_topic_path):
-            with open(advanced_topic_path, encoding="utf-8") as f:
-                advanced_stats = json.load(f)
+        # 5. Centres des clusters (si disponibles)
+        if 'cluster_centers' in data:
+            stats['cluster_centers'] = data['cluster_centers']
             
-            # Fusionner les informations pertinentes
-            if 'topic_names_llm' in advanced_stats:
-                stats['topic_names_llm'] = advanced_stats['topic_names_llm']
-            if 'coherence_score' in advanced_stats:
-                stats['coherence_score'] = advanced_stats['coherence_score']
+            # Générer des "top words" fictifs pour chaque cluster basés sur les centres
+            # (dans un vrai cas, il faudrait utiliser les vrais mots)
+            top_words = {}
+            for i, center in enumerate(data['cluster_centers']):
+                # Prendre les 10 dimensions les plus importantes
+                top_indices = sorted(range(len(center)), key=lambda i: center[i], reverse=True)[:10]
+                words = [("Topic_" + str(idx), center[idx]) for idx in top_indices]
+                top_words[str(i)] = words
+            
+            stats['top_words'] = top_words
+        
+        # 6. Essayer de charger les statistiques avancées du topic modeling
+        try:
+            project_root = Path(__file__).resolve().parents[2]
+            advanced_topic_path = project_root / 'data' / 'results' / 'advanced_topic' / 'advanced_topic_analysis.json'
+            if os.path.exists(advanced_topic_path):
+                with open(advanced_topic_path, encoding="utf-8") as f:
+                    advanced_stats = json.load(f)
+                
+                # Fusionner les informations pertinentes
+                if 'topic_names_llm' in advanced_stats:
+                    stats['topic_names_llm'] = advanced_stats['topic_names_llm']
+                if 'coherence_score' in advanced_stats:
+                    stats['coherence_score'] = advanced_stats['coherence_score']
+        except Exception as e:
+            print(f"Erreur lors du chargement des stats avancées: {e}")
+        
+        return stats
+        
+    except json.JSONDecodeError as e:
+        print(f"Erreur: Le fichier {path} n'est pas un JSON valide: {e}")
+        return None
     except Exception as e:
-        print(f"Erreur lors du chargement des stats avancées: {e}")
+        import traceback
+        print(f"Exception lors du chargement des stats de clustering: {str(e)}")
+        print(f"[DEBUG] Traceback complet:")
+        traceback.print_exc()
+        return None
+
+# Helper to find the best cluster file in a directory
+def find_best_cluster_file(directory):
+    """
+    Find the best cluster file in a directory.
+    The best file is the most recent one with a valid k number in the filename.
     
-    return stats
+    Args:
+        directory (str): Directory to search in
+        
+    Returns:
+        str: Path to the best cluster file, or None if no valid file is found
+    """
+    if not os.path.exists(directory):
+        print(f"Le répertoire {directory} n'existe pas")
+        return None
+        
+    # Chercher tous les fichiers de clustering
+    cluster_files = []
+    for filename in os.listdir(directory):
+        if filename.startswith('doc_clusters_k') and filename.endswith('.json'):
+            # Extraire le numéro de cluster du nom de fichier
+            try:
+                # Format attendu: doc_clusters_k{number}.json ou doc_clusters_k{number}_filter.json
+                k_str = filename.replace('doc_clusters_k', '').split('_')[0].split('.')[0]
+                if k_str.isdigit():
+                    k = int(k_str)
+                    file_path = os.path.join(directory, filename)
+                    cluster_files.append((file_path, k, os.path.getmtime(file_path)))
+            except (ValueError, IndexError):
+                pass
+    
+    if not cluster_files:
+        print(f"Aucun fichier de clustering valide trouvé dans {directory}")
+        return None
+        
+    # Trier par date de modification (plus récent d'abord)
+    cluster_files.sort(key=lambda x: x[2], reverse=True)
+    
+    # Retourner le chemin du fichier le plus récent
+    best_file = cluster_files[0][0]
+    print(f"Meilleur fichier de clustering trouvé: {best_file} (k={cluster_files[0][1]})")
+    return best_file
 
 # Helper to render clustering stats
 def render_clustering_stats(stats):
+    print(f"[DEBUG] render_clustering_stats called with stats type: {type(stats)}")
+    print(f"[DEBUG] Stats keys: {list(stats.keys()) if stats else 'None'}")
     children = []
     # 1. Score de clustering (silhouette, etc.)
     if 'silhouette_score' in stats:
@@ -164,16 +289,47 @@ def render_clustering_stats(stats):
     
     # Visualisation temporelle des clusters (année/mois) - PRIORITAIRE
     if 'temporal_info' in stats:
-        # Créer un DataFrame pour la visualisation temporelle
-        temporal_df = pd.DataFrame([
-            {
-                'Cluster': f"Cluster {cluster}",
-                'Année': info['year'],
-                'Mois': info['month'],
-                'Taille': stats.get('cluster_sizes', {}).get(int(cluster), 10)
-            }
-            for cluster, info in stats['temporal_info'].items()
-        ])
+        print(f"[DEBUG] temporal_info found in stats: {len(stats['temporal_info'])} clusters")
+        
+        # Debug cluster_sizes
+        print(f"[DEBUG] cluster_sizes type: {type(stats.get('cluster_sizes'))}")
+        print(f"[DEBUG] cluster_sizes content: {stats.get('cluster_sizes')}")
+        
+        # Créer un DataFrame pour la visualisation temporelle avec gestion d'erreurs
+        temporal_data = []
+        for cluster, info in stats['temporal_info'].items():
+            print(f"[DEBUG] Processing cluster {cluster}, info: {info}")
+            try:
+                # Convert cluster to int safely
+                try:
+                    cluster_int = int(cluster)
+                    print(f"[DEBUG] Converted cluster {cluster} to int: {cluster_int}")
+                except (ValueError, TypeError) as e:
+                    print(f"[DEBUG] Could not convert cluster {cluster} to int: {e}")
+                    cluster_int = 0
+                
+                # Get cluster size safely
+                cluster_sizes = stats.get('cluster_sizes', {})
+                if cluster_sizes is None:
+                    print(f"[DEBUG] cluster_sizes is None!")
+                    cluster_size = 10  # Default value
+                else:
+                    cluster_size = cluster_sizes.get(cluster_int, 10)
+                    print(f"[DEBUG] Got cluster size for {cluster_int}: {cluster_size}")
+                
+                temporal_data.append({
+                    'Cluster': f"Cluster {cluster}",
+                    'Année': info['year'],
+                    'Mois': info['month'],
+                    'Taille': cluster_size
+                })
+            except Exception as e:
+                import traceback
+                print(f"[DEBUG] Error processing cluster {cluster}: {e}")
+                traceback.print_exc()
+        
+        print(f"[DEBUG] Created temporal_data with {len(temporal_data)} entries")
+        temporal_df = pd.DataFrame(temporal_data)
         
         # Visualisation temporelle avec noms de topics
         time_fig = px.scatter(temporal_df, x='Année', y='Mois', 
@@ -215,27 +371,56 @@ def render_clustering_stats(stats):
             children.append(dcc.Graph(figure=journal_fig, id='cluster-journal-plot'))
     
     # Visualisation radar des clusters avec noms de topics
-    if 'cluster_centers' in stats and len(stats['cluster_centers'][0]) <= 10 and 'topic_names_llm' in stats:
-        centers = stats['cluster_centers']
-        # Prendre les 6-10 premières dimensions pour le radar
-        dims = min(10, len(centers[0]))
+    print(f"[DEBUG] Checking radar chart conditions: cluster_centers in stats: {'cluster_centers' in stats}")
+    if 'cluster_centers' in stats:
+        print(f"[DEBUG] cluster_centers type: {type(stats['cluster_centers'])}")
+        print(f"[DEBUG] cluster_centers length: {len(stats['cluster_centers'])}")
+        if len(stats['cluster_centers']) > 0:
+            print(f"[DEBUG] First center length: {len(stats['cluster_centers'][0])}")
+        print(f"[DEBUG] topic_names_llm in stats: {'topic_names_llm' in stats}")
         
-        # Utiliser les noms de topics LLM pour les axes du radar
-        categories = []
-        for i in range(dims):
-            if f"topic_{i}" in stats['topic_names_llm']:
-                categories.append(stats['topic_names_llm'][f"topic_{i}"])
-            else:
-                categories.append(f"Topic {i}")
-        
-        fig = go.Figure()
-        for i, center in enumerate(centers):
-            fig.add_trace(go.Scatterpolar(
-                r=center[:dims],
-                theta=categories,
-                fill='toself',
-                name=f'Cluster {i}'
-            ))
+    if 'cluster_centers' in stats and len(stats['cluster_centers']) > 0 and len(stats['cluster_centers'][0]) <= 10 and 'topic_names_llm' in stats:
+        try:
+            print(f"[DEBUG] Starting radar chart visualization")
+            centers = stats['cluster_centers']
+            # Prendre les 6-10 premières dimensions pour le radar
+            dims = min(10, len(centers[0]))
+            print(f"[DEBUG] Using {dims} dimensions for radar chart")
+            
+            # Debug topic_names_llm
+            print(f"[DEBUG] topic_names_llm type: {type(stats['topic_names_llm'])}")
+            print(f"[DEBUG] topic_names_llm keys: {list(stats['topic_names_llm'].keys()) if isinstance(stats['topic_names_llm'], dict) else 'Not a dict'}")
+            
+            # Utiliser les noms de topics LLM pour les axes du radar
+            categories = []
+            for i in range(dims):
+                topic_key = f"topic_{i}"
+                print(f"[DEBUG] Checking for {topic_key} in topic_names_llm")
+                if isinstance(stats['topic_names_llm'], dict) and topic_key in stats['topic_names_llm']:
+                    categories.append(stats['topic_names_llm'][topic_key])
+                    print(f"[DEBUG] Added topic name: {stats['topic_names_llm'][topic_key]}")
+                else:
+                    categories.append(f"Topic {i}")
+                    print(f"[DEBUG] Added default topic name: Topic {i}")
+            
+            print(f"[DEBUG] Created {len(categories)} categories for radar chart")
+            
+            fig = go.Figure()
+            for i, center in enumerate(centers):
+                print(f"[DEBUG] Adding trace for cluster {i}")
+                fig.add_trace(go.Scatterpolar(
+                    r=center[:dims],
+                    theta=categories,
+                    fill='toself',
+                    name=f'Cluster {i}'
+                ))
+                print(f"[DEBUG] Added trace for cluster {i}")
+        except Exception as e:
+            import traceback
+            print(f"[DEBUG] Error creating radar chart: {e}")
+            traceback.print_exc()
+            # Skip radar chart if there's an error
+            return children
         
         fig.update_layout(
             polar=dict(
@@ -249,22 +434,46 @@ def render_clustering_stats(stats):
         children.append(dcc.Graph(figure=fig, id='cluster-radar-plot'))
     
     # 3. Poids des topics dans chaque cluster (heatmap)
+    print(f"[DEBUG] Checking heatmap conditions: cluster_centers in stats: {'cluster_centers' in stats}, topic_names_llm in stats: {'topic_names_llm' in stats}")
     if 'cluster_centers' in stats and 'topic_names_llm' in stats:
-        centers = stats['cluster_centers']
-        # Créer une heatmap pour visualiser le poids de chaque topic dans les clusters
-        heatmap_data = []
-        # Déterminer le nombre total de topics
-        num_topics = max([len(center) for center in centers])
-        
-        for i, center in enumerate(centers):
-            # Utiliser tous les topics disponibles au lieu de limiter à 10
-            for j, weight in enumerate(center):
-                topic_name = stats['topic_names_llm'].get(f"topic_{j}", f"Topic {j}")
-                heatmap_data.append({
-                    'Cluster': f"Cluster {i}",
-                    'Topic': topic_name,
-                    'Poids': weight
-                })
+        try:
+            print(f"[DEBUG] Starting heatmap visualization")
+            centers = stats['cluster_centers']
+            print(f"[DEBUG] cluster_centers type: {type(centers)}, length: {len(centers)}")
+            print(f"[DEBUG] topic_names_llm type: {type(stats['topic_names_llm'])}")
+            
+            # Créer une heatmap pour visualiser le poids de chaque topic dans les clusters
+            heatmap_data = []
+            # Déterminer le nombre total de topics
+            num_topics = max([len(center) for center in centers])
+            print(f"[DEBUG] Number of topics detected: {num_topics}")
+            
+            for i, center in enumerate(centers):
+                print(f"[DEBUG] Processing cluster {i}, center length: {len(center)}")
+                # Utiliser tous les topics disponibles au lieu de limiter à 10
+                for j, weight in enumerate(center):
+                    # Ensure we're using the exact topic number as in the topic modeling results
+                    # In the cluster centers, the index j directly corresponds to topic j
+                    topic_id = j
+                    print(f"[DEBUG] Processing topic ID: {topic_id}")
+                    
+                    # Use get_topic_name function to get real topic names
+                    # We pass the exact topic number to ensure correct matching
+                    topic_name = get_topic_name(topic_id, default=f"Topic {topic_id}")
+                    print(f"[DEBUG] Got topic name: {topic_name} for topic {topic_id}")
+                    
+                    heatmap_data.append({
+                        'Cluster': f"Cluster {i}",
+                        'Topic': topic_name,
+                        'Poids': weight
+                    })
+            print(f"[DEBUG] Created heatmap_data with {len(heatmap_data)} entries")
+        except Exception as e:
+            import traceback
+            print(f"[DEBUG] Error creating heatmap: {e}")
+            traceback.print_exc()
+            # Skip heatmap if there's an error
+            return children
         
         if heatmap_data:
             heatmap_df = pd.DataFrame(heatmap_data)
@@ -273,7 +482,48 @@ def render_clustering_stats(stats):
                 title="Poids des topics dans chaque cluster",
                 color_continuous_scale='Viridis'
             )
-            heatmap_fig.update_layout(height=500)
+            
+            # Calculate appropriate height based on number of topics
+            num_topics = len(heatmap_df['Topic'].unique())
+            # Ensure minimum height of 600px and add 30px per topic
+            dynamic_height = max(600, 400 + num_topics * 30)
+            
+            # Sort topics by their numerical ID to ensure correct order
+            def extract_topic_number(topic_name):
+                # Extract the number from topic names like "Topic 40" or custom names with numbers
+                match = re.search(r'\d+', topic_name)
+                if match:
+                    return int(match.group())
+                return 0  # Default for topics without numbers
+            
+            # Get unique topics and sort them by their numerical ID
+            unique_topics = heatmap_df['Topic'].unique()
+            # Create a dictionary mapping topic names to their original indices
+            topic_indices = {}
+            for i, topic in enumerate(unique_topics):
+                # Try to extract the original topic number
+                match = re.search(r'Topic (\d+)', topic)
+                if match:
+                    topic_indices[topic] = int(match.group(1))
+                else:
+                    topic_indices[topic] = i
+            
+            # Sort topics by their numerical index
+            sorted_topics = sorted(unique_topics, key=lambda x: topic_indices.get(x, 0))
+            
+            # Update layout to ensure all topic labels are visible and in correct order
+            heatmap_fig.update_layout(
+                height=dynamic_height,
+                margin=dict(l=250, r=50, t=50, b=100),  # Increase left margin for topic names
+                yaxis=dict(
+                    tickmode='array',
+                    tickvals=list(range(len(sorted_topics))),
+                    ticktext=sorted_topics,
+                    tickfont=dict(size=10),  # Adjust font size as needed
+                    title_font=dict(size=12)
+                )
+            )
+            
             children.append(dcc.Graph(figure=heatmap_fig, id='cluster-heatmap-plot'))
     
     # Store pour stocker les données des clusters
@@ -430,10 +680,10 @@ def get_article_browser_layout(cluster_data=None):
 def get_parser():
     parser = argparse.ArgumentParser(description="Clustering de documents à partir d'une matrice doc-topic.")
     parser.add_argument('--input', type=str, required=True, help='Chemin du fichier JSON doc_topic_matrix ou advanced_topic_analysis')
-    parser.add_argument('--n-clusters', type=int, default=6, help='Nombre de clusters KMeans')
-    parser.add_argument('--auto-clusters', action='store_true', help='Déterminer automatiquement le nombre optimal de clusters')
+    parser.add_argument('--n-clusters', type=str, default='6', help='Nombre de clusters KMeans ou "auto" pour détermination automatique')
     parser.add_argument('--k-min', type=int, default=2, help='Nombre minimum de clusters à tester (défaut: 2)')
     parser.add_argument('--k-max', type=int, default=15, help='Nombre maximum de clusters à tester (défaut: 15)')
+    parser.add_argument('--force-k', action='store_true', help='Forcer le nombre de clusters spécifié par --n-clusters plutôt que de déterminer automatiquement le nombre optimal')
     parser.add_argument('--metric', type=str, choices=['silhouette', 'calinski_harabasz', 'davies_bouldin', 'all'], 
                         default='silhouette', help='Métrique à utiliser pour déterminer le nombre optimal de clusters')
     parser.add_argument('--visualize', action='store_true', help='Visualiser les métriques pour différents nombres de clusters')
@@ -482,8 +732,30 @@ def generate_dash_controls_for_clustering(args_list):
         default = arg['default']
         required = arg['required']
         typ = arg['type']
+        
+        # Special handling for n-clusters parameter
+        if name == 'n_clusters':
+            # Create a dropdown with numeric options and 'auto' option
+            control = dcc.Dropdown(
+                id=f'input-{name}',
+                options=[
+                    {'label': 'Auto (détection automatique)', 'value': 'auto'},
+                    {'label': '2 clusters', 'value': '2'},
+                    {'label': '3 clusters', 'value': '3'},
+                    {'label': '4 clusters', 'value': '4'},
+                    {'label': '5 clusters', 'value': '5'},
+                    {'label': '6 clusters', 'value': '6'},
+                    {'label': '8 clusters', 'value': '8'},
+                    {'label': '10 clusters', 'value': '10'},
+                    {'label': '12 clusters', 'value': '12'},
+                    {'label': '15 clusters', 'value': '15'},
+                    {'label': '20 clusters', 'value': '20'},
+                ],
+                value=default,
+                clearable=False
+            )
         # String, int, bool
-        if typ == 'int':
+        elif typ == 'int':
             control = dbc.Input(id=f'input-{name}', type='number', value=default, placeholder=label, required=required, min=1)
         elif typ == 'bool':
             control = dbc.Checkbox(id=f'input-{name}', value=default, className='ms-2')
@@ -526,6 +798,7 @@ def get_clustering_layout():
                             dbc.CardHeader(html.H3("Paramètres du Clustering", className="mb-0")),
                             dbc.CardBody([
                                 html.P("Configurez les paramètres du clustering ci-dessous, puis cliquez sur 'Lancer'.", className="text-muted mb-3"),
+                                html.P("Pour détecter automatiquement le nombre optimal de clusters, sélectionnez 'Auto' dans le menu déroulant.", className="text-info mb-3"),
                                 html.Div(generate_dash_controls_for_clustering(args_list), id="clustering-controls"),
                                 dbc.Button("Lancer le Clustering", id="btn-run-clustering", color="primary", className="mt-3"),
                                 dbc.Button("Voir la Carte des Clusters", id="btn-view-cluster-map", color="success", className="mt-3 ms-3"),
@@ -640,7 +913,12 @@ def register_clustering_callbacks(app):
                 
                 # Récupérer le chemin de sortie du script de clustering
                 output_arg = arg_values.get('output')
-                n_clusters = arg_values.get('n_clusters', 5)
+                n_clusters = arg_values.get('n_clusters', '6')
+                
+                # Handle 'auto' value for n_clusters
+                if n_clusters == 'auto':
+                    # When using auto, we'll need to find the actual number of clusters from the output files
+                    print("Using automatic cluster detection (--n-clusters=auto)")
                 
                 if output_arg:
                     # Si un chemin de sortie est spécifié explicitement
@@ -650,18 +928,60 @@ def register_clustering_callbacks(app):
                         output_path = output_arg
                 else:
                     # Utiliser le chemin par défaut du script de clustering
-                    output_path = os.path.join(project_root, 'data', 'results', 'clusters', f'doc_clusters_k{n_clusters}.json')
+                    clusters_dir = os.path.join(project_root, 'data', 'results', 'clusters')
+                    
+                    if n_clusters == 'auto':
+                        # For auto clustering, we need to find the most recent cluster file
+                        if os.path.exists(clusters_dir):
+                            # First try to find a specific auto file
+                            auto_file = os.path.join(clusters_dir, 'doc_clusters_kauto.json')
+                            if os.path.exists(auto_file):
+                                output_path = auto_file
+                                print(f"Auto clustering: Using dedicated auto file: {output_path}")
+                            else:
+                                # Otherwise look for any cluster file
+                                cluster_files = [f for f in os.listdir(clusters_dir) if f.startswith('doc_clusters_k')]
+                                if cluster_files:
+                                    # Sort by modification time (most recent first)
+                                    cluster_files.sort(key=lambda x: os.path.getmtime(os.path.join(clusters_dir, x)), reverse=True)
+                                    output_path = os.path.join(clusters_dir, cluster_files[0])
+                                    print(f"Auto clustering: Using most recent cluster file: {output_path}")
+                                else:
+                                    # Fallback if no files found
+                                    output_path = os.path.join(clusters_dir, 'doc_clusters_kauto.json')
+                        else:
+                            output_path = os.path.join(clusters_dir, 'doc_clusters_kauto.json')
+                    else:
+                        # For specific number of clusters
+                        output_path = os.path.join(clusters_dir, f'doc_clusters_k{n_clusters}.json')
                 
                 print(f"Recherche du fichier de résultats: {output_path}")
                 if os.path.exists(output_path):
                     print(f"Fichier trouvé, chargement des stats...")
-                    stats = load_clustering_stats(output_path)
-                    if stats:
-                        result_holder['output'] = render_clustering_stats(stats)
-                        result_holder['data'] = stats
-                        result_holder['tab'] = "tab-params"
-                    else:
-                        result_holder['output'] = dbc.Alert("Fichier de clustering trouvé mais impossible de charger les données.", color="warning")
+                    try:
+                        # Essayer de charger le fichier directement
+                        stats = load_clustering_stats(output_path)
+                        
+                        # Si le chargement a échoué et que c'est un mode auto, chercher le meilleur fichier de clustering
+                        if stats is None and n_clusters == 'auto':
+                            # Chercher le fichier de clustering optimal
+                            clusters_dir = os.path.dirname(output_path)
+                            best_file = find_best_cluster_file(clusters_dir)
+                            if best_file:
+                                print(f"Tentative de chargement du meilleur fichier de clustering: {best_file}")
+                                stats = load_clustering_stats(best_file)
+                        
+                        if stats:
+                            result_holder['output'] = render_clustering_stats(stats)
+                            result_holder['data'] = stats
+                            result_holder['tab'] = "tab-params"
+                        else:
+                            result_holder['output'] = dbc.Alert("Fichier de clustering trouvé mais impossible de charger les données.", color="warning")
+                            result_holder['data'] = None
+                            result_holder['tab'] = "tab-params"
+                    except Exception as e:
+                        print(f"Exception lors du chargement des stats de clustering: {e}")
+                        result_holder['output'] = dbc.Alert(f"Erreur lors du chargement des données de clustering: {str(e)}", color="danger")
                         result_holder['data'] = None
                         result_holder['tab'] = "tab-params"
                 else:
