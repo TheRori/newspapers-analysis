@@ -17,8 +17,24 @@ from dash import dcc, html, Input, Output, State, ctx
 import dash_bootstrap_components as dbc
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import pandas as pd
 import numpy as np
+
+# Configuration globale pour les graphiques Plotly avec thème sombre
+pio.templates.default = "plotly_dark"
+# Configuration personnalisée pour les graphiques
+plotly_config = {
+    'layout': {
+        'paper_bgcolor': '#222',
+        'plot_bgcolor': '#222',
+        'font': {'color': '#fff'},
+        'xaxis': {'gridcolor': '#444', 'zerolinecolor': '#444'},
+        'yaxis': {'gridcolor': '#444', 'zerolinecolor': '#444'}
+    }
+}
+# Appliquer la configuration à tous les graphiques
+pio.templates['plotly_dark'].layout.update(plotly_config['layout'])
 
 from src.visualization.visualizer import Visualizer
 from src.utils.config_loader import load_config
@@ -32,6 +48,7 @@ from src.webapp.integrated_analysis_viz import get_integrated_analysis_layout, r
 from src.webapp.term_tracking_viz import get_term_tracking_layout, register_term_tracking_callbacks
 from src.webapp.export_manager_viz import get_export_manager_layout, register_export_manager_callbacks
 from src.webapp.source_manager_viz import get_source_manager_layout, register_source_manager_callbacks
+from src.webapp.article_library_viz import get_article_library_layout, register_article_library_callbacks
 
 # Configuration de la journalisation
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -42,6 +59,15 @@ logger.info("Chargement du fichier de configuration...")
 config_path = str(project_root / "config" / "config.yaml")
 config = load_config(config_path)
 logger.info(f"Configuration chargée : {config_path}")
+
+# --- Génération et chargement du CSV biblio enrichi ---
+from src.webapp.data_provider import DashDataProvider
+provider = DashDataProvider()
+provider.export_biblio_csv()  # Met à jour/exporte le CSV à chaque démarrage
+biblio_csv_path = project_root / "data" / "biblio_enriched.csv"
+logger.info(f"Chargement du CSV biblio enrichi : {biblio_csv_path}")
+biblio_df = pd.read_csv(biblio_csv_path)
+
 
 # Initialize the Dash app with a Bootstrap theme
 logger.info("Initialisation de l'application Dash...")
@@ -87,13 +113,18 @@ logger.info("Callbacks export_manager enregistrés.")
 register_source_manager_callbacks(app)
 logger.info("Callbacks source_manager enregistrés.")
 
+# Register callbacks for article library (bibliothèque enrichie)
+register_article_library_callbacks(app)
+
 # Define the app layout
 logger.info("Définition du layout Dash...")
 app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             html.H1("Newspaper Articles Analysis Dashboard", className="text-center mb-4"),
+            html.Hr(),
             html.Div([
+                dbc.Button("Bibliothèque d'articles", id="btn-article-library", color="dark", className="me-2", n_clicks=0),
                 dbc.Button("Gestion Source", id="btn-source-manager", color="primary", className="me-2", n_clicks=0),
                 dbc.Button("Lexical Analysis", id="btn-lexical", color="primary", className="me-2", n_clicks=0),
                 dbc.Button("Topic Modeling", id="btn-topic", color="secondary", className="me-2", n_clicks=0),
@@ -117,46 +148,53 @@ app.layout = dbc.Container([
 logger.info("Layout Dash défini.")
 
 @app.callback(
-    dash.dependencies.Output("page-content", "children"),
-    [dash.dependencies.Input("btn-source-manager", "n_clicks"),
-     dash.dependencies.Input("btn-lexical", "n_clicks"),
-     dash.dependencies.Input("btn-topic", "n_clicks"),
-     dash.dependencies.Input("btn-clustering", "n_clicks"),
-     dash.dependencies.Input("btn-cluster-map", "n_clicks"),
-     dash.dependencies.Input("btn-sentiment", "n_clicks"),
-     dash.dependencies.Input("btn-entity", "n_clicks"),
-     dash.dependencies.Input("btn-integrated", "n_clicks"),
-     dash.dependencies.Input("btn-term-tracking", "n_clicks"),
-     dash.dependencies.Input("btn-export-manager", "n_clicks")],
+    Output("page-content", "children"),
+    Input("btn-article-library", "n_clicks"),
+    Input("btn-source-manager", "n_clicks"),
+    Input("btn-lexical", "n_clicks"),
+    Input("btn-topic", "n_clicks"),
+    Input("btn-clustering", "n_clicks"),
+    Input("btn-cluster-map", "n_clicks"),
+    Input("btn-sentiment", "n_clicks"),
+    Input("btn-entity", "n_clicks"),
+    Input("btn-integrated", "n_clicks"),
+    Input("btn-term-tracking", "n_clicks"),
+    Input("btn-export-manager", "n_clicks"),
+    prevent_initial_call=True
 )
-def display_page(btn_source_manager, btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_sentiment, btn_entity, btn_integrated, btn_term_tracking, btn_export_manager):
+def display_page(btn_article_library, btn_source_manager, btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_sentiment, btn_entity, btn_integrated, btn_term_tracking, btn_export_manager):
     ctx = dash.callback_context
     if not ctx.triggered:
         button_id = "btn-source-manager"
     else:
-        button_id = ctx.triggered[0]["prop_id"].split(".")[0]
-    if button_id == "btn-source-manager":
-        return get_source_manager_layout()
-    elif button_id == "btn-lexical":
-        return get_lexical_analysis_layout()
-    elif button_id == "btn-topic":
-        return get_topic_modeling_layout()
-    elif button_id == "btn-clustering":
-        return get_clustering_layout()
-    elif button_id == "btn-cluster-map":
-        return get_cluster_map_layout()
-    elif button_id == "btn-sentiment":
-        return get_sentiment_analysis_layout()
-    elif button_id == "btn-entity":
-        return get_entity_recognition_layout()
-    elif button_id == "btn-integrated":
-        return get_integrated_analysis_layout()
-    elif button_id == "btn-term-tracking":
-        return get_term_tracking_layout()
-    elif button_id == "btn-export-manager":
-        return get_export_manager_layout()
-    else:
-        return get_source_manager_layout()
+        # Determine which button was clicked
+        ctx_msg = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else ''
+
+        if ctx_msg == "btn-article-library":
+            return get_article_library_layout()
+        elif ctx_msg == "btn-source-manager":
+            return get_source_manager_layout()
+        elif ctx_msg == "btn-lexical":
+            return get_lexical_analysis_layout()
+        elif ctx_msg == "btn-topic":
+            return get_topic_modeling_layout()
+        elif ctx_msg == "btn-clustering":
+            return get_clustering_layout()
+        elif ctx_msg == "btn-cluster-map":
+            return get_cluster_map_layout()
+        elif ctx_msg == "btn-sentiment":
+            return get_sentiment_analysis_layout()
+        elif ctx_msg == "btn-entity":
+            return get_entity_recognition_layout()
+        elif ctx_msg == "btn-integrated":
+            return get_integrated_analysis_layout()
+        elif ctx_msg == "btn-term-tracking":
+            return get_term_tracking_layout()
+        elif ctx_msg == "btn-export-manager":
+            return get_export_manager_layout()
+        else:
+            # Default page
+            return get_source_manager_layout()
 
 # Callback to update data selection controls based on analysis type
 @app.callback(

@@ -38,7 +38,7 @@ def get_cluster_files():
         print(f"Répertoire de clusters non trouvé: {clusters_dir}")
     
     # Vérifier aussi le répertoire des résultats de topic modeling
-    topic_dir = project_root / 'data' / 'results' / 'topic_modeling'
+    topic_dir = project_root / 'data' / 'results' / 'doc_topic_matrix'
     if topic_dir.exists():
         print(f"Recherche de fichiers de clusters dans {topic_dir}")
         # Chercher les fichiers JSON qui contiennent "cluster" dans leur nom

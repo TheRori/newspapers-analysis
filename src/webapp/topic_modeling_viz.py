@@ -1033,6 +1033,132 @@ def register_topic_modeling_callbacks(app):
 	register_topic_filter_callbacks(app, id_prefix="topic-filter")
 	parser_args = get_topic_modeling_args()
 
+	# Callback pour lancer le topic modeling
+	@app.callback(
+		Output("topic-modeling-run-status", "children"),
+		Output("topic-modeling-results-dropdown", "options"),
+		Input("btn-run-topic-modeling", "n_clicks"),
+		State("arg-input-file", "value"),
+		State("cache-file-select", "value"),
+		# Récupérer tous les arguments du formulaire
+		*[State(f"arg-{arg['name']}", "value") for arg in parser_args],
+		prevent_initial_call=True
+	)
+	def run_topic_modeling(n_clicks, input_file, cache_file, *args_values):
+		if not n_clicks:
+			return dash.no_update, dash.no_update
+
+		try:
+			# Récupérer les chemins nécessaires
+			project_root, config, advanced_analysis_dir, doc_topic_dir, _ = get_config_and_paths()
+			results_dir = project_root / config['data']['results_dir']
+
+			# Construire la commande
+			script_path = project_root / "src" / "scripts" / "run_topic_modeling.py"
+
+			# Utiliser sys.executable pour s'assurer d'utiliser le bon interpréteur Python
+			python_executable = sys.executable
+
+			# Construire les arguments de la commande
+			cmd_args = [python_executable, str(script_path)]
+
+			# Ajouter les arguments du formulaire
+			for i, arg in enumerate(parser_args):
+				value = args_values[i]
+				if value is None or value == "":
+					continue
+
+				# Pour les arguments booléens, leur présence suffit
+				if arg['type'] == 'bool':
+					if value:
+						cmd_args.append(arg['flags'][0])
+				else:
+					cmd_args.append(arg['flags'][0])
+					cmd_args.append(str(value))
+
+			# Ajouter le fichier d'entrée s'il est spécifié
+			if input_file:
+				cmd_args.extend(["--input-file", input_file])
+
+			# Ajouter le fichier de cache s'il est spécifié
+			if cache_file:
+				cmd_args.extend(["--cache-file", cache_file])
+
+			# Ajouter le fichier de configuration
+			cmd_args.extend(["--config", str(project_root / "config" / "config.yaml")])
+
+			# Créer un message de statut
+			status = dbc.Alert(
+				[
+					html.P("Lancement du script de topic modeling...", className="mb-0"),
+					html.P(f"Commande exécutée: {' '.join(cmd_args)}", className="mb-0 small")
+				],
+				color="info"
+			)
+
+			# Logger le début du processus de topic modeling
+			topic_modeling_logger.info("==== DÉBUT DU PROCESSUS DE TOPIC MODELING ====")
+			topic_modeling_logger.info(f"Commande exécutée: {' '.join(cmd_args)}")
+
+			# Exécuter le processus avec redirection vers des pipes pour logger la sortie
+			process = subprocess.Popen(
+				cmd_args,
+				stdout=subprocess.PIPE,
+				stderr=subprocess.PIPE,
+				text=True,
+				bufsize=1,
+				universal_newlines=True,
+				encoding='utf-8' # Ensure correct encoding
+			)
+
+			# Utiliser communicate() pour obtenir stdout et stderr, évite les blocages
+			stdout, stderr = process.communicate()
+			
+			topic_modeling_logger.info("==== STDOUT DU SCRIPT ====")
+			topic_modeling_logger.info(stdout)
+			if stderr:
+				topic_modeling_logger.error("==== STDERR DU SCRIPT ====")
+				topic_modeling_logger.error(stderr)
+			
+			topic_modeling_logger.info("==== FIN DU PROCESSUS DE TOPIC MODELING ====")
+
+			# Vérifier si le processus s'est terminé avec succès
+			if process.returncode == 0:
+				success_message = dbc.Alert(
+					[
+						html.P("Le topic modeling s'est terminé avec succès!", className="mb-0"),
+						html.P("Les résultats sont disponibles dans le menu déroulant ci-dessous.", className="mb-0")
+					],
+					color="success"
+				)
+
+				# Mettre à jour les options du dropdown
+				options = get_topic_modeling_results()
+				
+				return success_message, options
+
+			else:
+				error_message = f"Le script de topic modeling a échoué avec le code de retour {process.returncode}."
+				topic_modeling_logger.error(error_message)
+				topic_modeling_logger.error(f"Stderr: {stderr}")
+
+				error_div = html.Div([
+					dbc.Alert(error_message, color="danger"),
+					html.H5("Logs d'erreur:", className="mt-3"),
+					html.Pre(stderr, style={
+						"height": "300px",
+						"overflow-y": "auto",
+						"background-color": "#f8f9fa",
+						"padding": "10px",
+						"border-radius": "5px"
+					})
+				])
+				return error_div, dash.no_update
+
+		except Exception as e:
+			topic_modeling_logger.error(f"Erreur lors du lancement du topic modeling: {str(e)}")
+			return dbc.Alert(f"Erreur lors du lancement du topic modeling: {str(e)}", color="danger"), dash.no_update
+
 	# Callback pour afficher les résultats de topic modeling lorsqu'un fichier est sélectionné
 	@app.callback(
 		Output("advanced-topic-stats-content", "children"),
@@ -1053,7 +1179,7 @@ def register_topic_modeling_callbacks(app):
 			print(f"Fichier après suppression du cache: {selected_file}")
 
 		print(f"Appel de render_advanced_topic_stats_from_json avec {selected_file}")
-		result = render_advanced_topic_stats_from_json(selected_file)
+		return render_advanced_topic_stats_from_json(selected_file)
 		print("\n==== FIN DEBUG update_advanced_topic_stats ====\n\n")
 		return result
 

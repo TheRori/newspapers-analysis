@@ -92,6 +92,82 @@ def get_cluster_files():
     
     return options
 
+def get_sentiment_files():
+    """
+    Récupère les fichiers de sentiment disponibles.
+    
+    Returns:
+        Liste de dictionnaires avec label et value pour chaque fichier
+    """
+    project_root = Path(__file__).resolve().parents[2]
+    
+    # Chercher les fichiers de sentiment dans le répertoire des résultats
+    sentiment_files = []
+    
+    # Vérifier le répertoire des résultats de sentiment
+    sentiment_dir = project_root / 'data' / 'results' / 'sentiment_analysis'
+    if sentiment_dir.exists():
+        print(f"Recherche de fichiers de sentiment dans {sentiment_dir}")
+        # Chercher les fichiers JSON
+        sentiment_files_found = list(sentiment_dir.glob('*.json'))
+        print(f"Trouvé {len(sentiment_files_found)} fichiers de sentiment: {[f.name for f in sentiment_files_found]}")
+        sentiment_files.extend(sentiment_files_found)
+    else:
+        print(f"Répertoire de sentiment non trouvé: {sentiment_dir}")
+    
+    # Trier par date de modification (le plus récent en premier)
+    sentiment_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+    
+    # Convertir en options pour le dropdown
+    options = []
+    for file_path in sentiment_files:
+        # Créer un label plus lisible
+        label = f"{file_path.name} ({file_path.parent.name})"
+        options.append({
+            "label": label,
+            "value": str(file_path)
+        })
+    
+    return options
+
+def get_entity_files():
+    """
+    Récupère les fichiers d'entités disponibles dans le dossier entity_recognition.
+    
+    Returns:
+        Liste de dictionnaires avec label et value pour chaque fichier
+    """
+    project_root = Path(__file__).resolve().parents[2]
+    
+    # Chercher les fichiers d'entités dans le répertoire des résultats
+    entity_files = []
+    
+    # Vérifier le répertoire des résultats d'entités
+    entity_dir = project_root / 'data' / 'results' / 'entity_recognition'
+    if entity_dir.exists():
+        print(f"Recherche de fichiers d'entités dans {entity_dir}")
+        # Chercher les fichiers JSON
+        entity_files_found = list(entity_dir.glob('*.json'))
+        print(f"Trouvé {len(entity_files_found)} fichiers d'entités: {[f.name for f in entity_files_found]}")
+        entity_files.extend(entity_files_found)
+    else:
+        print(f"Répertoire d'entités non trouvé: {entity_dir}")
+    
+    # Trier par date de modification (le plus récent en premier)
+    entity_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+    
+    # Convertir en options pour le dropdown
+    options = []
+    for file_path in entity_files:
+        # Créer un label plus lisible
+        label = f"{file_path.name} ({file_path.parent.name})"
+        options.append({
+            "label": label,
+            "value": str(file_path)
+        })
+    
+    return options
+
 def get_cluster_ids(cluster_file):
     """
     Récupère les IDs de clusters disponibles dans un fichier de clusters.
@@ -212,6 +288,77 @@ def get_processed_json_files():
             "label": label,
             "value": str(file_path)
         })
+    
+    return options
+
+def get_topic_matrix_files(project_root=None):
+    """
+    Liste les fichiers JSON dans le dossier data/results/doc_topic_matrix, triés par date de modification décroissante.
+    
+    Args:
+        project_root (Path, optional): Chemin racine du projet. Si None, il sera déterminé automatiquement.
+        
+    Returns:
+        list: Liste de dictionnaires contenant les options pour le dropdown (label et value)
+    """
+    if project_root is None:
+        project_root = Path(__file__).parent.parent.parent
+    
+    # Chemin vers le dossier contenant les matrices de topics
+    matrix_dir = project_root / "data" / "results" / "doc_topic_matrix"
+    
+    # Vérifier si le dossier existe
+    if not matrix_dir.exists():
+        print(f"Le dossier {matrix_dir} n'existe pas.")
+        return []
+    
+    # Lister tous les fichiers JSON dans le dossier
+    json_files = list(matrix_dir.glob("*.json"))
+    
+    # Trier par date de modification décroissante
+    json_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    
+    # Créer les options pour le dropdown
+    options = []
+    for file in json_files:
+        # Utiliser le nom du fichier comme label et le chemin complet comme valeur
+        options.append({"label": file.name, "value": str(file)})
+    
+    return options
+
+
+def get_clusters_files(project_root=None):
+    """
+    Liste les fichiers JSON dans le dossier data/results/clusters, triés par date de modification décroissante.
+    
+    Args:
+        project_root (Path, optional): Chemin racine du projet. Si None, il sera déterminé automatiquement.
+        
+    Returns:
+        list: Liste de dictionnaires contenant les options pour le dropdown (label et value)
+    """
+    if project_root is None:
+        project_root = Path(__file__).parent.parent.parent
+    
+    # Chemin vers le dossier contenant les fichiers de clusters
+    clusters_dir = project_root / "data" / "results" / "clusters"
+    
+    # Vérifier si le dossier existe
+    if not clusters_dir.exists():
+        print(f"Le dossier {clusters_dir} n'existe pas.")
+        return []
+    
+    # Lister tous les fichiers JSON dans le dossier
+    json_files = list(clusters_dir.glob("*.json"))
+    
+    # Trier par date de modification décroissante
+    json_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    
+    # Créer les options pour le dropdown
+    options = []
+    for file in json_files:
+        # Utiliser le nom du fichier comme label et le chemin complet comme valeur
+        options.append({"label": file.name, "value": str(file)})
     
     return options
 

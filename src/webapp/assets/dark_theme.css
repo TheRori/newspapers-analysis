@@ -1,0 +1,110 @@
+/* Thème sombre global pour l'application Dash */
+
+/* Style général du corps de la page */
+body {
+    background-color: #121212;
+    color: #f8f9fa;
+}
+
+/* Style des conteneurs */
+.dash-container, .dash-spreadsheet, .dash-spreadsheet-container {
+    background-color: #121212 !important;
+}
+
+/* Style des graphiques Plotly */
+.js-plotly-plot .plotly {
+    background-color: #222 !important;
+}
+
+/* Style des graphiques Plotly - textes et axes */
+.js-plotly-plot .plotly .main-svg text {
+    fill: #f8f9fa !important;
+}
+
+/* Style des graphiques Plotly - grille */
+.js-plotly-plot .plotly .main-svg .gridlayer path {
+    stroke: #444 !important;
+}
+
+/* Style des graphiques Plotly - axes */
+.js-plotly-plot .plotly .main-svg .axislayer path {
+    stroke: #666 !important;
+}
+
+/* Style des inputs */
+.dash-input, .dash-input-container, input {
+    background-color: #333 !important;
+    color: #f8f9fa !important;
+    border: 1px solid #444 !important;
+}
+
+/* Style des dropdowns */
+.Select-control, .Select-menu-outer {
+    background-color: #333 !important;
+    color: #f8f9fa !important;
+    border: 1px solid #444 !important;
+}
+
+.Select-value-label, .Select-option {
+    color: #f8f9fa !important;
+}
+
+.Select-value, .Select-placeholder {
+    background-color: #333 !important;
+    color: #f8f9fa !important;
+}
+
+.Select-menu-outer, .Select-option {
+    background-color: #333 !important;
+}
+
+.Select-option:hover {
+    background-color: #444 !important;
+}
+
+/* Style des tableaux */
+table {
+    background-color: #222 !important;
+    color: #f8f9fa !important;
+    border-color: #444 !important;
+}
+
+th, td {
+    background-color: #222 !important;
+    color: #f8f9fa !important;
+    border-color: #444 !important;
+}
+
+/* Style des éléments de pagination */
+.page-link {
+    background-color: #333 !important;
+    color: #f8f9fa !important;
+    border-color: #444 !important;
+}
+
+.page-item.active .page-link {
+    background-color: #007bff !important;
+    border-color: #007bff !important;
+}
+
+/* Style des cartes */
+.card {
+    background-color: #222 !important;
+    border-color: #444 !important;
+}
+
+.card-header {
+    background-color: #333 !important;
+    border-color: #444 !important;
+}
+
+/* Style des modales */
+.modal-content {
+    background-color: #222 !important;
+    border-color: #444 !important;
+}
+
+.modal-header, .modal-footer {
+    background-color: #333 !important;
+    border-color: #444 !important;
+}
