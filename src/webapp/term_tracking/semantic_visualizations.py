@@ -7,9 +7,171 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import networkx as nx
 from dash import html, dcc, dash_table
 from pathlib import Path
 from src.webapp.term_tracking.utils import clean_file_path
+
+
+def create_advanced_network_graph(df: pd.DataFrame, period: str, similarity_threshold: float = 0.5):
+    """
+    Creates an advanced semantic network visualization for a given period using
+    a force-directed layout from networkx.
+
+    Args:
+        df: DataFrame containing the similar terms data.
+            Expected columns: 'term', 'period', 'similar_word', 'similarity'.
+        period: The specific period to visualize.
+        similarity_threshold: Minimum similarity score to create edges between similar words.
+
+    Returns:
+        A Plotly Figure object representing the network graph.
+    """
+    print(f"DEBUG - create_advanced_network_graph called with period={period}")
+    print(f"DEBUG - DataFrame shape: {df.shape}, columns: {df.columns.tolist()}")
+    print(f"DEBUG - Unique periods in DataFrame: {df['period'].unique().tolist()}")
+    
+    # Filter data for the selected period
+    period_df = df[df['period'] == period].copy()
+    print(f"DEBUG - Filtered DataFrame for period {period}: {len(period_df)} rows")
+
+    if period_df.empty:
+        print(f"DEBUG - No data available for period {period}")
+        fig = go.Figure()
+        fig.update_layout(
+            title=f"Aucune donnée disponible pour la période : {period}",
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        )
+        return fig
+
+    # 1. Build the graph with networkx
+    G = nx.Graph()
+    
+    # First, add all nodes and primary edges
+    for _, row in period_df.iterrows():
+        # Add an edge between the primary term and its similar word
+        # The 'weight' attribute is the similarity score, which spring_layout can use
+        G.add_edge(
+            row['term'],
+            row['similar_word'],
+            weight=row['similarity']
+        )
+    
+    # 2. Add edges between similar words themselves
+    # Get all unique words (both primary terms and similar words)
+    all_words = set(period_df['term'].unique()) | set(period_df['similar_word'].unique())
+    
+    # Create a dictionary to store the words most similar to each term
+    term_similar_words = {}
+    for term in period_df['term'].unique():
+        term_similar_words[term] = set(period_df[period_df['term'] == term]['similar_word'])
+    
+    # For each pair of similar words, check if they share a primary term
+    # or if they appear together in similar words lists
+    edges_added = set()  # To avoid duplicate edges
+    
+    # Method 1: Connect words that are similar to the same primary term
+    for term, similar_words in term_similar_words.items():
+        # Create edges between words that are similar to the same term
+        similar_words_list = list(similar_words)
+        for i in range(len(similar_words_list)):
+            for j in range(i+1, len(similar_words_list)):
+                word1, word2 = similar_words_list[i], similar_words_list[j]
+                edge_key = tuple(sorted([word1, word2]))
+                
+                if edge_key not in edges_added:
+                    # Get similarity scores for both words to the primary term
+                    sim1 = period_df[(period_df['term'] == term) & (period_df['similar_word'] == word1)]['similarity'].values[0]
+                    sim2 = period_df[(period_df['term'] == term) & (period_df['similar_word'] == word2)]['similarity'].values[0]
+                    
+                    # Calculate a derived similarity between the two similar words
+                    # Words that are both highly similar to the same term are likely similar to each other
+                    derived_similarity = (sim1 + sim2) / 2
+                    
+                    if derived_similarity >= similarity_threshold:
+                        G.add_edge(word1, word2, weight=derived_similarity)
+                        edges_added.add(edge_key)
+
+    # 2. Calculate node positions using a physics-based layout
+    # The spring_layout algorithm positions nodes using a force-directed model.
+    # 'k' controls the optimal distance between nodes.
+    # 'weight' tells the layout to make nodes with higher similarity closer.
+    # 'seed' ensures the layout is reproducible.
+    try:
+        pos = nx.spring_layout(G, k=0.6, iterations=70, weight='weight', seed=42)
+    except Exception:
+        # Fallback for small or disconnected graphs that might cause errors
+        pos = nx.spring_layout(G, k=0.6, iterations=70, seed=42)
+
+    # 3. Create the Plotly Edge Trace
+    edge_x, edge_y = [], []
+    for edge in G.edges():
+        x0, y0 = pos[edge[0]]
+        x1, y1 = pos[edge[1]]
+        edge_x.extend([x0, x1, None])
+        edge_y.extend([y0, y1, None])
+
+    edge_trace = go.Scatter(
+        x=edge_x, y=edge_y,
+        line=dict(width=0.7, color='#888'),
+        hoverinfo='none',
+        mode='lines')
+
+    # 4. Create the Plotly Node Trace
+    node_x, node_y, node_text, node_color, node_size = [], [], [], [], []
+    primary_terms = set(period_df['term'].unique())
+
+    for node in G.nodes():
+        x, y = pos[node]
+        node_x.append(x)
+        node_y.append(y)
+        node_text.append(node)
+
+        # Customize node appearance based on type (primary term or similar word)
+        if node in primary_terms:
+            node_color.append('crimson') # Use a distinct color for primary terms
+            # Make primary term size dependent on its number of connections (degree)
+            node_size.append(15 + G.degree(node) * 2.5)
+        else:
+            node_color.append('royalblue')
+            node_size.append(10)
+
+    node_trace = go.Scatter(
+        x=node_x, y=node_y,
+        mode='markers+text',  # Ajout de 'text' pour afficher les étiquettes
+        hoverinfo='text',
+        text=node_text,  # Afficher le texte des nœuds
+        textposition="bottom center",
+        marker=dict(
+            color=node_color,
+            size=node_size,
+            line_width=1.5,
+            line_color='white'
+        )
+    )
+    # Set hover text for nodes
+    node_trace.hovertext = [f"<b>{text}</b><br>Connections: {G.degree(text)}<br>Cliquez pour voir les articles" for text in node_text]
+
+    # 5. Combine traces and style the final figure
+    fig = go.Figure(data=[edge_trace, node_trace],
+                 layout=go.Layout(
+                    title=dict(
+                        text=f"Réseau sémantique pour la période : {period}",
+                        font=dict(size=16)
+                    ),
+                    showlegend=False,
+                    hovermode='closest',
+                    margin=dict(b=20, l=5, r=5, t=40),
+                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                    plot_bgcolor="rgba(240, 240, 240, 0.95)",
+                    clickmode="event+select"  # Activer les événements de clic
+                    )
+                )
+
+    return fig
+
 
 def create_semantic_drift_visualizations(results_file, viz_type="line"):
     """
@@ -299,126 +461,25 @@ def create_similar_terms_visualizations(results_file, viz_type="table"):
             ])
             
         elif viz_type == "network":
-            # Créer une visualisation en réseau montrant les relations entre les termes
+            # --- START: MODIFIED BLOCK ---
+            print(f"DEBUG - Creating network visualization from file: {results_file}")
             
             # Obtenir les périodes uniques
             periods = sorted(df['period'].unique())
+            print(f"DEBUG - Unique periods found: {periods}")
             
             # Fonction pour créer un graphique en réseau pour une période spécifique
-            def create_period_network(period):
-                # Filtrer les données pour la période sélectionnée
-                period_df = df[df['period'] == period]
-                
-                # Obtenir les termes uniques pour cette période
-                period_terms = period_df['term'].unique()
-                
-                # Filtrer pour les 5 mots les plus similaires pour une meilleure visualisation
-                top_words = period_df[period_df['rank'] <= 5].copy()
-                
-                # Créer le graphique en réseau
-                fig = go.Figure()
-                
-                # Calculer les positions pour les termes principaux (dans un cercle)
-                radius = 3
-                term_positions = {}
-                
-                for i, term in enumerate(period_terms):
-                    angle = 2 * np.pi * i / len(period_terms)
-                    x = radius * np.cos(angle)
-                    y = radius * np.sin(angle)
-                    term_positions[term] = (x, y)
-                    
-                    # Ajouter un nœud pour le terme principal
-                    fig.add_trace(go.Scatter(
-                        x=[x],
-                        y=[y],
-                        mode="markers+text",
-                        marker=dict(size=25, color="red"),
-                        text=[term],
-                        name=term,
-                        textposition="middle center",
-                        textfont=dict(color="white", size=12),
-                        hoverinfo="text",
-                        hovertext=f"<b>{term}</b><br>Cliquez pour voir les articles",
-                        showlegend=False
-                    ))
-                
-                # Ajouter des nœuds et des arêtes pour les mots similaires
-                for term in period_terms:
-                    term_x, term_y = term_positions[term]
-                    term_similar = top_words[top_words['term'] == term]
-                    
-                    for _, row in term_similar.iterrows():
-                        # Calculer la position (dans un cercle autour du terme principal)
-                        angle = (row['rank'] - 1) * (2 * np.pi / 5)
-                        distance = 1.5  # Distance du terme principal
-                        x = term_x + distance * np.cos(angle)
-                        y = term_y + distance * np.sin(angle)
-                        
-                        # Taille et opacité basées sur la similarité
-                        node_size = 15 + (row['similarity'] * 10)
-                        
-                        # Ajouter un nœud pour le mot similaire
-                        fig.add_trace(go.Scatter(
-                            x=[x],
-                            y=[y],
-                            mode="markers+text",
-                            marker=dict(
-                                size=node_size, 
-                                color="blue",
-                                opacity=0.7 + (row['similarity'] * 0.3)
-                            ),
-                            text=[row['similar_word']],
-                            name=f"{row['similar_word']} ({row['similarity']:.2f})",
-                            textposition="bottom center",
-                            hoverinfo="text",
-                            hovertext=f"<b>{row['similar_word']}</b><br>Similarité: {row['similarity']:.3f}<br>Cliquez pour voir les articles",
-                            showlegend=False
-                        ))
-                        
-                        # Ajouter une arête avec une largeur basée sur la similarité
-                        fig.add_trace(go.Scatter(
-                            x=[term_x, x],
-                            y=[term_y, y],
-                            mode="lines",
-                            line=dict(
-                                width=row['similarity'] * 5, 
-                                color="rgba(100, 100, 100, 0.6)"
-                            ),
-                            hoverinfo="text",
-                            hovertext=f"Similarité: {row['similarity']:.3f}",
-                            showlegend=False
-                        ))
-                
-                # Améliorer la mise en page
-                fig.update_layout(
-                    title=f"Réseau de termes similaires - Période: {period}",
-                    xaxis=dict(
-                        showgrid=False, 
-                        zeroline=False, 
-                        showticklabels=False,
-                        range=[-5, 5]
-                    ),
-                    yaxis=dict(
-                        showgrid=False, 
-                        zeroline=False, 
-                        showticklabels=False,
-                        range=[-5, 5],
-                        scaleanchor="x",
-                        scaleratio=1
-                    ),
-                    hovermode="closest",
-                    plot_bgcolor="rgba(240, 240, 240, 0.8)",
-                    clickmode="event+select"  # Activer les événements de clic
-                )
-                
-                return fig
-            
-            # Créer le graphique initial avec la période la plus récente
-            initial_period = periods[-1]
-            initial_graph = create_period_network(initial_period)
-            
-            # Créer le sélecteur de période
+            def create_network_for_period(period_to_show):
+                print(f"DEBUG - Creating network for period: {period_to_show}")
+                # Appeler la nouvelle fonction de graphique avancé
+                return create_advanced_network_graph(df, period_to_show)
+
+            # Create the graph for the most recent period initially
+            initial_period = periods[-1] if periods else None
+            print(f"DEBUG - Initial period selected: {initial_period}")
+            initial_graph = create_network_for_period(initial_period) if initial_period else go.Figure()
+
+            # Create a dropdown to select the period
             period_selector = html.Div([
                 html.Label("Sélectionner une période:"),
                 dcc.Dropdown(
@@ -429,20 +490,22 @@ def create_similar_terms_visualizations(results_file, viz_type="table"):
                     style={"width": "100%", "marginBottom": "15px"}
                 )
             ])
-            
-            # Retourner la mise en page avec le sélecteur de période et le graphique
+
+            # Return the layout with the selector and the graph
             return html.Div([
-                html.H5("Réseau de termes similaires"),
-                html.P("Ce graphique montre les relations entre les termes analysés et leurs mots les plus proches vectoriellement. Les termes principaux sont en rouge, et les mots similaires en bleu. Cliquez sur un terme pour voir les articles correspondants."),
+                html.H5("Réseau de termes similaires (Layout dynamique)"),
+                html.P("Ce graphique montre les relations sémantiques. Les termes sont positionnés selon la force de leurs liens. Les termes principaux sont en rouge. Cliquez sur un terme pour voir les articles correspondants."),
                 period_selector,
                 dcc.Graph(
-                    id="similar-terms-network-graph",
+                    id="similar-terms-network-graph", # Keep the ID for the callback
                     figure=initial_graph,
-                    config={"displayModeBar": True, "scrollZoom": True}
+                    config={"displayModeBar": True, "scrollZoom": True},
+                    style={"height": "70vh"} # Give it more vertical space
                 ),
                 # Ajouter un div pour afficher les articles
                 html.Div(id="similar-terms-articles-container", style={"marginTop": "20px"})
             ])
+            # --- END: MODIFIED BLOCK ---
         
         else:
             return html.Div([

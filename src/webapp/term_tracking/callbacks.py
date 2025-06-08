@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import os
+import pathlib
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
@@ -27,7 +28,8 @@ from src.utils.export_utils import save_analysis
 from src.webapp.term_tracking.visualizations import create_term_tracking_visualizations, create_filtered_term_tracking_visualizations
 from src.webapp.term_tracking.semantic_visualizations import (
     create_semantic_drift_visualizations,
-    create_similar_terms_visualizations
+    create_similar_terms_visualizations,
+    create_advanced_network_graph
 )
 from src.webapp.topic_filter_component import (
     register_topic_filter_callbacks,
@@ -195,6 +197,9 @@ def register_term_tracking_callbacks(app):
         toast_id="term-tracking-export-feedback"
     )
     
+    # Note: Le callback pour mettre à jour le graphique du réseau sémantique a été déplacé
+    # dans term_tracking_viz.py pour éviter les conflits de callbacks
+    
     # Enregistrer les callbacks du composant de filtrage par topic/cluster
     register_topic_filter_callbacks(app, id_prefix="term-tracking-topic-filter")
     
@@ -237,6 +242,20 @@ def register_term_tracking_callbacks(app):
         else:
             return {"display": "none"}
     
+    # Callback pour afficher/masquer le champ de saisie des termes similaires
+    @app.callback(
+        Output("term-tracking-similar-terms-container", "style"),
+        Input("term-tracking-similar-terms-checkbox", "value")
+    )
+    def toggle_similar_terms_input(similar_terms_enabled):
+        """
+        Affiche ou masque le champ de saisie des termes similaires en fonction de la sélection.
+        """
+        if similar_terms_enabled:
+            return {"display": "block"}
+        else:
+            return {"display": "none"}
+    
     # Callback pour lancer l'analyse de suivi de termes
     @app.callback(
         Output("term-tracking-run-output", "children"),
@@ -262,13 +281,16 @@ def register_term_tracking_callbacks(app):
             State("term-tracking-window-input", "value"),
             State("term-tracking-min-count-input", "value"),
             State("term-tracking-filter-redundant-input", "value"),
+            State("term-tracking-similar-terms-checkbox", "value"),
+            State("term-tracking-similar-terms-input", "value"),
         ],
         prevent_initial_call=True
     )
     def launch_term_tracking_analysis(n_clicks, terms_file, analysis_name, current_options, 
                                      cluster_file, cluster_id, source_file,
                                      semantic_drift, period_type, custom_periods,
-                                     vector_size, window, min_count, filter_redundant):
+                                     vector_size, window, min_count, filter_redundant, 
+                                     similar_terms_enabled, similar_terms):
         """
         Lance l'analyse de suivi de termes avec les paramètres spécifiés.
         """
@@ -327,7 +349,21 @@ def register_term_tracking_callbacks(app):
                 else:
                     args.append("--no-filter-redundant")
             
+            # Ajouter l'option de termes similaires si activée et spécifiée
+            if similar_terms_enabled and similar_terms and similar_terms.strip():
+                args.extend(["--similar-terms", similar_terms.strip()])
+                print(f"Recherche de termes similaires pour: {similar_terms}")
+            
             print(f"Analyse de drift sémantique activée avec les paramètres: période={period_type}, taille_vecteur={vector_size}, fenêtre={window}, min_count={min_count}, filtrage_redondances={filter_redundant}")
+            if similar_terms_enabled:
+                if similar_terms and similar_terms.strip():
+                    print(f"Recherche de termes similaires pour: {similar_terms}")
+                else:
+                    print("Option de termes similaires activée mais aucun terme spécifié.")
+            else:
+                print("Option de recherche de termes similaires désactivée.")
+
+        
         
         # Ajouter les arguments de filtrage par cluster si nécessaire
         filtered_articles = set()
@@ -733,48 +769,150 @@ def register_term_tracking_callbacks(app):
             save_button
         ])
     
-    def update_similar_terms_visualizations(results_file, viz_type):
-        """
-        Met à jour les visualisations de termes similaires en fonction des sélections de l'utilisateur.
-        """
-        if not results_file:
-            return html.Div("Aucun fichier de résultats sélectionné.")
-        
-        return create_similar_terms_visualizations(results_file, viz_type)
+    # Note: Le callback pour mettre à jour le graphique en réseau des termes similaires
+    # a été déplacé dans term_tracking_viz.py pour éviter les conflits de callbacks
     
-    # Callback pour mettre à jour le graphique en réseau des termes similaires en fonction de la période sélectionnée
+    # Callback pour afficher les articles correspondant au terme sélectionné dans le graphique
+    # Nouveau callback pour la modale des articles similaires
     @app.callback(
-        Output("similar-terms-network-graph", "figure"),
+        Output("similar-terms-articles-modal-body", "children"),
+        Output("similar-terms-articles-modal", "is_open"),
+        Output("stored-articles-similar-terms", "data"),
         [
-            Input("similar-terms-period-selector", "value"),
-            Input("similar-terms-results-dropdown", "value")
-        ]
+            Input("similar-terms-network-graph", "clickData"),
+            Input("close-similar-terms-articles-modal", "n_clicks")
+        ],
+        [
+            State("similar-terms-results-dropdown", "value"),
+            State("similar-terms-period-selector", "value")
+        ],
+        prevent_initial_call=True
     )
-    def update_similar_terms_network(selected_period, results_file):
+    def handle_similar_terms_articles_modal(click_data, close_clicks, results_file, period):
+        from dash import callback_context, no_update
+        from src.webapp.term_tracking.utils import highlight_term_in_text
+        ctx = callback_context
+        # Si fermeture demandée
+        if ctx.triggered and ctx.triggered[0]["prop_id"].startswith("close-similar-terms-articles-modal"):
+            return no_update, False, no_update
+        # Si le graphe n'est pas affiché (pas dans le layout)
+        if click_data is None:
+            return no_update, False, no_update
+        # Sinon, comportement normal (affichage articles)
         """
-        Met à jour le graphique en réseau des termes similaires en fonction de la période sélectionnée.
+        Affiche les articles contenant le terme sélectionné dans le graphique des termes similaires.
         """
-        from src.webapp.term_tracking.semantic_visualizations import create_similar_terms_visualizations
+        if not click_data or not results_file or not period:
+            return html.Div("Cliquez sur un terme dans le graphique pour voir les articles correspondants."), False, []
         
-        if not results_file or not selected_period:
-            return {}
-        
-        # Créer les visualisations pour récupérer le graphique en réseau
-        visualizations = create_similar_terms_visualizations(results_file, "network")
-        
-        # Extraire le graphique du résultat
-        graph = None
-        for child in visualizations.children:
-            if hasattr(child, 'id') and child.id == "similar-terms-network-graph":
-                graph = child
-                break
-        
-        if graph is None or not hasattr(graph, 'figure'):
-            return {}
-        
-        return graph.figure
+        try:
+            # Extraire le terme sélectionné - récupérer le texte complet, pas juste le premier caractère
+            selected_term = click_data["points"][0]["text"]
+            # Si c'est une liste, prendre le premier élément
+            if isinstance(selected_term, list):
+                selected_term = selected_term[0]
+                
+            print(f"DEBUG: Terme sélectionné: '{selected_term}'", flush=True)
+            
+            # Charger la configuration
+            config = load_config()
+            project_root = pathlib.Path(__file__).resolve().parents[3]
+            
+            # Charger les articles (de la même façon que dans handle_articles_modal)
+            articles_path = project_root / config['data']['processed_dir'] / "articles.json"
+            with open(articles_path, 'r', encoding='utf-8') as f:
+                articles = json.load(f)
+            
+            # Filtrer les articles contenant le terme sélectionné
+            filtered_articles = get_articles_by_filter(
+                articles=articles,
+                filter_type="terme",
+                filter_value=selected_term,
+                term=selected_term
+            )
+            
+            print(f"DEBUG: {len(filtered_articles)} articles filtrés pour le terme '{selected_term}'", flush=True)
+            
+            # Limiter le nombre d'articles affichés
+            max_articles = 20
+            show_limit_message = False
+            if len(filtered_articles) > max_articles:
+                filtered_articles = filtered_articles[:max_articles]
+                show_limit_message = True
+            
+            if not filtered_articles:
+                return html.Div([
+                    html.H4(f"Articles contenant le terme '{selected_term}' dans la période {period}"),
+                    html.P("Aucun article correspondant n'a été trouvé.")
+                ]), True, []
+            
+            # Générer le contenu
+            article_cards = []
+            stored_articles = []  # Pour stocker les articles pour le modal complet
+            
+            for i, article in enumerate(filtered_articles):
+                article_id = article.get('id', article.get('base_id', 'Inconnu'))
+                title = article.get('title', 'Sans titre')
+                date = article_id.split('_')[1] if '_' in article_id else 'Date inconnue'
+                journal = article_id.split('_')[2] if len(article_id.split('_')) > 2 else 'Journal inconnu'
+                text = article.get('content') or article.get('original_content') or article.get('text', '')
+                url = article.get('url', '')
+                
+                # Stocker l'article pour le modal complet
+                stored_articles.append(article)
+
+            # On stockera le terme filtré avec les articles
+
+                
+                # Créer un extrait du texte avec le terme mis en évidence
+                excerpt = extract_excerpt(text, selected_term) if selected_term else text[:300] + "..."
+                # Surligner le terme dans l'extrait
+                excerpt = highlight_term_in_text(excerpt, selected_term)
+                
+                # Créer un lien vers l'article original si disponible
+                article_link = None
+                if url:
+                    article_link = html.A("Voir l'article original", href=url, target="_blank", className="btn btn-sm btn-primary mt-2 mb-2")
+                
+                card = dbc.Card([
+                    dbc.CardHeader([
+                        html.H5(title, className="card-title"),
+                        html.H6(f"{date} - {journal}", className="card-subtitle text-muted")
+                    ]),
+                    dbc.CardBody([
+                        html.P(dcc.Markdown(excerpt), className="card-text"),
+                        html.Div([
+                            dbc.Button(
+                                "Afficher l'article complet", 
+                                id={'type': 'show-full-article', 'index': i},
+                                color="link", 
+                                className="mt-2"
+                            ),
+                            article_link if article_link else html.Div(),
+                        ], className="d-flex justify-content-between")
+                    ])
+                ], className="mb-3")
+                article_cards.append(card)
+            
+            limit_message = html.Div([
+                html.Hr(),
+                html.P(f"Affichage limité aux {max_articles} premiers articles.", className="text-muted")
+            ]) if show_limit_message else html.Div()
+            
+            print("DEBUG: Modal prêt à s'afficher pour les termes similaires", flush=True)
+            
+            return html.Div([
+                html.H4(f"Articles contenant le terme '{selected_term}' dans la période {period}"),
+                html.P(f"Nombre d'articles trouvés: {len(filtered_articles)}{' (limité à 20)' if show_limit_message else ''}"),
+                html.Hr(),
+                html.Div(article_cards),
+                limit_message
+            ]), True, {"articles": stored_articles, "filtered_term": selected_term}
+                
+        except Exception as e:
+            print(f"Erreur lors de l'affichage des articles: {str(e)}")
+            return html.Div(f"Une erreur s'est produite lors de la recherche des articles: {str(e)}", className="text-danger"), False, []
     
-    # Callback pour afficher les articles lorsqu'on clique sur un graphique (pattern-matching sur tous les graphes)
     @app.callback(
         Output("articles-modal-body", "children"),
         Output("articles-modal", "is_open"),
@@ -907,7 +1045,7 @@ def register_term_tracking_callbacks(app):
                 title = article.get('title', 'Sans titre')
                 date = article_id.split('_')[1] if '_' in article_id else 'Date inconnue'
                 journal = article_id.split('_')[2] if len(article_id.split('_')) > 2 else 'Journal inconnu'
-                text = article.get('text', article.get('content', ''))
+                text = article.get('content') or article.get('original_content') or article.get('text', '')
                 url = article.get('url', '')
                 
                 # Stocker l'article pour le modal complet
@@ -948,8 +1086,8 @@ def register_term_tracking_callbacks(app):
                 ], className="mb-3")
                 article_cards.append(card)
             
-            # Stocker les articles dans un composant Store pour les récupérer dans le callback du modal complet
-            store = dcc.Store(id="stored-articles", data=stored_articles)
+            # Créer un composant Store pour stocker les articles pour le modal
+            store = dcc.Store(id="stored-articles-temp", data=stored_articles)
             
             limit_message = html.Div([
                 html.Hr(),
@@ -1013,6 +1151,8 @@ def register_term_tracking_callbacks(app):
         
         return highlighted_excerpt
 
+    # Cette fonction a été déplacée dans stores.py
+    
     # Callback pour afficher l'article complet dans un modal séparé
     @app.callback(
         Output("full-article-modal-body", "children"),
@@ -1022,64 +1162,103 @@ def register_term_tracking_callbacks(app):
             Input("close-full-article-modal", "n_clicks"),
         ],
         [
-            State("stored-articles", "data")
+            State("stored-articles-term-tracking", "data"),
+            State("stored-articles-similar-terms", "data"),
+            State("stored-articles-semantic-drift", "data")
         ],
         prevent_initial_call=True
     )
-    def handle_full_article_modal(show_clicks, close_clicks, stored_articles):
+    def handle_full_article_modal(show_clicks, close_clicks, term_tracking_articles, similar_terms_articles, semantic_drift_articles):
         """
         Affiche le contenu complet d'un article dans un modal séparé.
         """
+        # Utiliser le premier store non vide
+        stored_articles = None
+        # On récupère articles + terme filtré si possible
+        filtered_term = None
+        if similar_terms_articles and isinstance(similar_terms_articles, dict) and "articles" in similar_terms_articles:
+            stored_articles = similar_terms_articles["articles"]
+            filtered_term = similar_terms_articles.get("filtered_term")
+            print(f"DEBUG: Utilisation du store similar-terms (dict) avec terme filtré: '{filtered_term}'", flush=True)
+        elif term_tracking_articles:
+            stored_articles = term_tracking_articles
+            print("DEBUG: Utilisation du store term-tracking", flush=True)
+        elif semantic_drift_articles:
+            stored_articles = semantic_drift_articles
+            print("DEBUG: Utilisation du store semantic-drift", flush=True)
+        else:
+            stored_articles = None
+        
+        if not stored_articles:
+            print("ERREUR: Aucun store d'articles n'est disponible", flush=True)
+            return html.Div("Erreur: Impossible de trouver les données de l'article."), False
         if not ctx.triggered:
             return "", False
             
-        trigger = ctx.triggered[0]
-        prop_id = trigger['prop_id']
+        print(f"DEBUG MODAL: stored_articles = {stored_articles}")
+
+        # Récupérer l'index du bouton cliqué
+        triggered_id = ctx.triggered_id
+        article_index = None
+        if isinstance(triggered_id, dict) and triggered_id.get("type") == "show-full-article":
+            article_index = triggered_id.get("index")
+        else:
+            # fallback : ancienne logique
+            for i, n in enumerate(show_clicks):
+                if n and n > 0:
+                    article_index = i
+                    break
+        if article_index is None or article_index >= len(stored_articles):
+            return html.Div("Erreur: Article introuvable."), False
         
-        # Si fermeture du modal
-        if "close-full-article-modal" in prop_id:
-            return "", False
-            
-        if not stored_articles:
-            return html.P("Aucun article disponible."), True
-            
-        try:
-            # Extraire l'index de l'article à afficher
-            article_index = json.loads(prop_id.split('.')[0])['index']
-            
-            if article_index >= len(stored_articles):
-                return html.P("Article non trouvé."), True
-                
-            article = stored_articles[article_index]
-            
-            # Créer le contenu du modal
-            title = article.get('title', 'Sans titre')
-            date = article.get('date', '')
-            journal = article.get('journal', '')
-            text = article.get('text', '')
-            url = article.get('url', '')
-            
-            # Créer un lien vers l'article original si disponible
-            article_link = None
-            if url:
-                article_link = html.Div([
-                    html.A("Voir l'article original", href=url, target="_blank", className="btn btn-primary mt-3")
-                ])
-            
-            # Mettre en forme le contenu
-            content = html.Div([
-                html.H3(title, className="mb-2"),
-                html.H5(f"{date} - {journal}", className="text-muted mb-4"),
-                html.Hr(),
-                dcc.Markdown(text, className="article-text"),
-                article_link if article_link else html.Div()
-            ])
-            
-            return content, True
-            
-        except Exception as e:
-            print(f"Erreur lors de l'affichage de l'article complet : {str(e)}")
-            return html.P(f"Erreur lors de l'affichage de l'article : {str(e)}"), True
+        article = stored_articles[article_index]
+        
+        # Créer le contenu du modal à partir de l'article filtré
+        title = article.get('title', 'Sans titre')
+        date = article.get('date', '')
+        journal = article.get('journal', '')
+        text = article.get('content') or article.get('original_content') or article.get('text', '')
+        url = article.get('url', '')
+
+        article_link = html.A("Voir l'article original", href=url, target="_blank", className="btn btn-primary mt-3") if url else None
+
+        # Mettre en forme le contenu
+        
+        # Surligner le terme filtré dans le texte complet (si possible)
+        term_for_highlight = None
+        if similar_terms_articles and len(similar_terms_articles) > 0:
+            # Tenter de retrouver le terme utilisé dans le filtrage
+            # On suppose que le terme est celui qui a été utilisé dans le modal précédent (passe en store ou clickData normalement)
+            # Ici, on prend le premier terme trouvé dans le texte de l'extrait si possible
+            # Si besoin, adapter pour passer explicitement le terme via le store ou le callback
+            # Fallback : None si pas trouvé
+            # Pour robustesse, on peut essayer d'extraire le terme du premier extrait
+            pass # à améliorer selon la logique de passage du terme
+        if term_for_highlight is None and 'highlighted_excerpt' in article:
+            # Si on a stocké l'extrait avec surlignage, tenter d'en extraire le terme
+            pass
+        # Pour l'instant, on utilise selected_term si accessible, sinon pas de surlignage
+        # Mais ici, il faudrait idéalement passer explicitement le terme filtré
+        # Pour la démo, on surligne tous les mots du titre dans le texte (exemple)
+        from src.webapp.term_tracking.utils import highlight_term_in_text
+        # Utiliser filtered_term si dispo, sinon fallback
+        print(f"DEBUG: Terme filtré pour surlignage: '{filtered_term}'", flush=True)
+        # Assurons-nous que filtered_term est une chaîne non vide avant de l'utiliser
+        if filtered_term:
+            highlighted_text = highlight_term_in_text(text, filtered_term)
+        else:
+            # Fallback sur les mots du titre si pas de terme filtré
+            highlighted_text = highlight_term_in_text(text, title.split())
+
+        content = html.Div([
+            html.H3(title, className="mb-2"),
+            html.H5(f"{date} - {journal}", className="text-muted mb-4"),
+            html.Hr(),
+            dcc.Markdown(highlighted_text, dangerously_allow_html=True, className="article-text"),
+            article_link if article_link else html.Div()
+        ])
+
+        return content, True
     
     # Callback pour remplir le dropdown de collections
     @app.callback(

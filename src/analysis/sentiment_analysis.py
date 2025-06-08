@@ -38,39 +38,72 @@ class SentimentAnalyzer:
         """Initialize the appropriate sentiment analyzer based on configuration."""
         if self.model_name == 'vader':
             try:
+                print("Initializing VADER sentiment analyzer...")
                 self.analyzer = SentimentIntensityAnalyzer()
+                print("VADER sentiment analyzer initialized successfully.")
             except Exception as e:
+                print(f"Error initializing VADER, downloading lexicon: {e}")
                 import nltk
                 nltk.download('vader_lexicon')
                 self.analyzer = SentimentIntensityAnalyzer()
+                print("VADER sentiment analyzer initialized after downloading lexicon.")
         
         elif self.model_name == 'transformers':
             try:
+                # Check for GPU availability
+                import torch
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                print(f"Using device: {device}")
+                if device == "cuda":
+                    print(f"GPU: {torch.cuda.get_device_name(0)}")
+                    print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024 / 1024 / 1024:.2f} GB")
+                    print(f"CUDA Version: {torch.version.cuda}")
+                
                 # For CamemBERT models, we need special handling
                 if 'camembert' in self.transformer_model.lower():
-                    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+                    print(f"Initializing CamemBERT model: {self.transformer_model}")
+                    from transformers import AutoModelForSequenceClassification, AutoTokenizer, logging
                     
+                    # Set transformers logging level to get more information
+                    logging.set_verbosity_info()
+                    
+                    print("Loading tokenizer with use_fast=False...")
                     # Use the slow tokenizer to avoid conversion issues
                     self.tokenizer = AutoTokenizer.from_pretrained(
                         self.transformer_model,
                         use_fast=False  # Use the slow tokenizer to avoid conversion issues
                     )
-                    self.model = AutoModelForSequenceClassification.from_pretrained(self.transformer_model)
+                    print("Tokenizer loaded successfully.")
+                    
+                    print(f"Loading model {self.transformer_model}...")
+                    self.model = AutoModelForSequenceClassification.from_pretrained(
+                        self.transformer_model
+                    )
+                    # Move model to GPU if available
+                    if device == "cuda":
+                        self.model = self.model.to("cuda")
+                    print(f"Model loaded successfully to {device}.")
                     
                     # Create pipeline with pre-loaded components
+                    print("Creating sentiment analysis pipeline...")
                     self.analyzer = pipeline(
                         "sentiment-analysis",
                         model=self.model,
                         tokenizer=self.tokenizer,
+                        device=0 if device == "cuda" else -1,  # Use GPU if available
                         truncation=True
                     )
+                    print("Pipeline created successfully.")
                 else:
+                    print(f"Initializing standard transformer model: {self.transformer_model}")
                     # For other models, use the standard pipeline approach
                     self.analyzer = pipeline(
                         "sentiment-analysis", 
                         model=self.transformer_model,
+                        device=0 if device == "cuda" else -1,  # Use GPU if available
                         truncation=True
                     )
+                    print("Standard pipeline created successfully.")
             except Exception as e:
                 import traceback
                 print(f"Error initializing transformer model: {e}")
@@ -111,23 +144,47 @@ class SentimentAnalyzer:
         if len(text.split()) > max_length:
             text = ' '.join(text.split()[:max_length])
         
-        result = self.analyzer(text)[0]
-        label = result['label']
-        score = result['score']
+        # Log the first few analyses to debug label issues
+        static_counter = getattr(self, '_debug_counter', 0)
+        debug_mode = static_counter < 5  # Only log the first 5 analyses
         
-        # cmarkea/distilcamembert-base-sentiment uses LABEL_0=neg, LABEL_1=neu, LABEL_2=pos
-        sentiment_map = {
-            "LABEL_0": {"negative": score, "neutral": 1 - score, "positive": 0.0, "compound": -score},
-            "LABEL_1": {"negative": 0.0, "neutral": score, "positive": 0.0, "compound": 0.0},
-            "LABEL_2": {"negative": 0.0, "neutral": 1 - score, "positive": score, "compound": score},
-        }
-        
-        return sentiment_map.get(label, {
-            "negative": 0.0,
-            "neutral": 1.0,
-            "positive": 0.0,
-            "compound": 0.0
-        })
+        try:
+            result = self.analyzer(text)[0]
+            label = result['label']
+            score = result['score']
+            
+            if debug_mode:
+                print(f"DEBUG: Raw model output: {result}")
+                print(f"DEBUG: Label={label}, Score={score}")
+                self._debug_counter = static_counter + 1
+            
+            # cmarkea/distilcamembert-base-sentiment uses a 5-star rating system:
+            # 1 star: très négatif, 2 stars: négatif, 3 stars: neutre, 4 stars: positif, 5 stars: très positif
+            if label == "1 star":
+                return {"negative": score, "neutral": 0.0, "positive": 0.0, "compound": -score}
+            elif label == "2 stars":
+                return {"negative": score * 0.7, "neutral": score * 0.3, "positive": 0.0, "compound": -score * 0.5}
+            elif label == "3 stars":
+                return {"negative": 0.0, "neutral": score, "positive": 0.0, "compound": 0.0}
+            elif label == "4 stars":
+                return {"negative": 0.0, "neutral": score * 0.3, "positive": score * 0.7, "compound": score * 0.5}
+            elif label == "5 stars":
+                return {"negative": 0.0, "neutral": 0.0, "positive": score, "compound": score}
+            # Fallback for other label formats
+            elif 'neg' in label.lower():
+                return {"negative": score, "neutral": 1 - score, "positive": 0.0, "compound": -score}
+            elif 'neu' in label.lower():
+                return {"negative": 0.0, "neutral": score, "positive": 0.0, "compound": 0.0}
+            elif 'pos' in label.lower():
+                return {"negative": 0.0, "neutral": 1 - score, "positive": score, "compound": score}
+            else:
+                # If we get here, we have an unexpected label format
+                if debug_mode:
+                    print(f"WARNING: Unknown label format: {label}. Using default neutral sentiment.")
+                return {"negative": 0.0, "neutral": 1.0, "positive": 0.0, "compound": 0.0}
+        except Exception as e:
+            print(f"Error in analyze_text_transformers: {e}")
+            return {"negative": 0.0, "neutral": 1.0, "positive": 0.0, "compound": 0.0}
     
     def analyze_text(self, text: str) -> Dict[str, float]:
         """
@@ -189,7 +246,56 @@ class SentimentAnalyzer:
         Returns:
             List of documents with added sentiment scores
         """
-        return [self.analyze_document(doc) for doc in documents]
+        import time
+        start_time = time.time()
+        total_docs = len(documents)
+        print(f"Starting sentiment analysis on {total_docs} documents...")
+        
+        results = []
+        for i, doc in enumerate(documents):
+            if i % 10 == 0 or i == total_docs - 1:
+                elapsed = time.time() - start_time
+                docs_per_second = (i + 1) / elapsed if elapsed > 0 else 0
+                remaining = (total_docs - i - 1) / docs_per_second if docs_per_second > 0 else 0
+                print(f"Processing document {i+1}/{total_docs} ({(i+1)/total_docs*100:.1f}%) - "
+                      f"Speed: {docs_per_second:.2f} docs/sec - "
+                      f"Elapsed: {elapsed:.1f}s - "
+                      f"Remaining: {remaining:.1f}s")
+            
+            # Get document ID or title for logging
+            doc_id = doc.get('id', doc.get('title', f"doc_{i}"))
+            doc_len = len(doc.get('cleaned_text', doc.get('text', doc.get('content', '')))) 
+            
+            try:
+                start_doc = time.time()
+                result = self.analyze_document(doc)
+                doc_time = time.time() - start_doc
+                
+                # Log detailed info for every 50th document or if processing took unusually long
+                if i % 50 == 0 or doc_time > 1.0:
+                    sentiment = result.get('sentiment', {})
+                    compound = sentiment.get('compound', 0)
+                    print(f"  - Doc {doc_id[:30]}... ({doc_len} chars): "
+                          f"sentiment={compound:.2f} ({doc_time:.3f}s)")
+                
+                results.append(result)
+            except Exception as e:
+                print(f"Error processing document {doc_id[:30]}...: {e}")
+                # Add the document without sentiment to avoid data loss
+                doc['sentiment'] = {
+                    'negative': 0.0,
+                    'neutral': 1.0,
+                    'positive': 0.0,
+                    'compound': 0.0,
+                    'error': str(e)
+                }
+                results.append(doc)
+        
+        total_time = time.time() - start_time
+        print(f"Completed sentiment analysis on {total_docs} documents in {total_time:.2f}s ")
+        print(f"Average processing time: {total_time/total_docs:.4f}s per document")
+        
+        return results
     
     def get_sentiment_summary(self, documents: List[Dict[str, Any]]) -> Dict[str, Any]:
         """

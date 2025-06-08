@@ -151,47 +151,38 @@ def load_config(config_path=None):
 
 def get_term_files():
     """
-    Récupère les fichiers de termes disponibles.
+    Récupère les fichiers de termes disponibles dans le répertoire data/terms.
     
     Returns:
-        Liste de dictionnaires avec label et value pour chaque fichier
+        Liste de dictionnaires avec label et value pour chaque fichier JSON
     """
     import os
     import json
     
     project_root = pathlib.Path(__file__).resolve().parents[3]
-    config = load_config()
     
-    # Look for term files in examples directory and data/processed
+    # Chercher uniquement dans le répertoire data/terms
+    terms_dir = project_root / 'data' / 'terms'
     term_files = []
     
-    # Check examples directory
-    examples_dir = project_root / 'examples'
-    if examples_dir.exists():
-        print(f"Searching for JSON files in {examples_dir}")
-        example_files = list(examples_dir.glob('*.json'))
-        print(f"Found {len(example_files)} JSON files in examples directory: {[f.name for f in example_files]}")
-        term_files.extend(example_files)
+    # Vérifier si le répertoire data/terms existe
+    if terms_dir.exists():
+        print(f"Recherche de fichiers JSON dans {terms_dir}")
+        term_files = list(terms_dir.glob('*.json'))
+        print(f"Trouvé {len(term_files)} fichiers JSON dans le répertoire terms: {[f.name for f in term_files]}")
     else:
-        print(f"Examples directory not found: {examples_dir}")
+        print(f"Répertoire terms non trouvé: {terms_dir}")
+        # Créer le répertoire s'il n'existe pas
+        terms_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Répertoire terms créé: {terms_dir}")
     
-    # Check processed directory
-    processed_dir = project_root / config['data']['processed_dir']
-    if processed_dir.exists():
-        print(f"Searching for JSON files in {processed_dir}")
-        processed_files = list(processed_dir.glob('*.json'))
-        print(f"Found {len(processed_files)} JSON files in processed directory: {[f.name for f in processed_files]}")
-        term_files.extend(processed_files)
-    else:
-        print(f"Processed directory not found: {processed_dir}")
-    
-    # If no term files found, create a default example
-    if not term_files and examples_dir.exists():
-        print("No JSON files found, creating a default example")
+    # Si aucun fichier de termes n'est trouvé, créer un exemple par défaut
+    if not term_files:
+        print("Aucun fichier JSON trouvé, création d'un exemple par défaut")
         default_terms = {
             "exemple": ["terme1", "terme2", "terme3"]
         }
-        default_path = examples_dir / "default_terms.json"
+        default_path = terms_dir / "default_terms.json"
         with open(default_path, 'w', encoding='utf-8') as f:
             json.dump(default_terms, f, ensure_ascii=False, indent=2)
         term_files.append(default_path)
@@ -424,6 +415,29 @@ def get_articles_by_filter(term=None, period=None, filter_type=None, filter_valu
             filtered_articles.append(article)
     
     return filtered_articles
+
+def highlight_term_in_text(text, term):
+    """
+    Met en évidence toutes les occurrences du terme (ou liste de termes) dans le texte avec une balise <mark>.
+    - Recherche insensible à la casse.
+    - Ne surligne que les mots entiers (\b).
+    Args:
+        text (str): Le texte dans lequel surligner le terme.
+        term (str or list): Le terme ou la liste de termes à surligner.
+    Returns:
+        str: Le texte avec les termes surlignés par <mark>.
+    """
+    import re
+    if not text or not term:
+        return text
+    terms = term if isinstance(term, list) else [term]
+    # Trier les termes par longueur décroissante pour éviter les conflits de sous-chaînes
+    terms = sorted(set(terms), key=len, reverse=True)
+    # Construire le pattern regex pour tous les termes
+    pattern = r"\b(" + "|".join(re.escape(t) for t in terms) + r")\b"
+    def repl(match):
+        return f"<mark>{match.group(0)}</mark>"
+    return re.sub(pattern, repl, text, flags=re.IGNORECASE)
 
 def extract_excerpt(text, term, context_size=100):
     """

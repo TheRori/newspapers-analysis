@@ -15,6 +15,7 @@ from src.webapp.term_tracking.utils import (
 )
 from src.webapp.topic_filter_component import get_topic_filter_component
 from src.webapp.export_component import create_export_button, create_export_modal, create_feedback_toast
+from src.webapp.term_tracking.stores import create_global_stores
 
 def get_term_tracking_layout():
     """
@@ -140,6 +141,29 @@ def get_term_tracking_layout():
                                     )
                                 ], width=12),
                             ], className="mb-3"),
+                            
+                            dbc.Row([
+                                dbc.Col([
+                                    dbc.Checkbox(
+                                        id="term-tracking-similar-terms-checkbox",
+                                        label="Activer la recherche de termes similaires",
+                                        value=False
+                                    )
+                                ], width=12),
+                            ], className="mb-3"),
+                            
+                            dbc.Row([
+                                dbc.Col([
+                                    dbc.Label("Termes similaires à rechercher (séparés par des virgules)"),
+                                    dbc.Input(
+                                        id="term-tracking-similar-terms-input",
+                                        type="text",
+                                        placeholder="ordinateur,informatique",
+                                        value=""
+                                    ),
+                                    html.Small("Spécifiez les termes pour lesquels vous souhaitez trouver des mots similaires", className="text-muted")
+                                ], width=12),
+                            ], className="mb-3", id="term-tracking-similar-terms-container", style={"display": "none"}),
                         ], id="semantic-drift-options", style={"display": "none"}),
                         
                         html.H5("Fichier source", className="mt-3"),
@@ -365,6 +389,9 @@ def get_term_tracking_layout():
     
     # Retourner la mise en page complète
     return html.Div([
+        # Stores globaux pour les articles
+        create_global_stores(),
+        
         # Contenu principal
         html.Div([
             html.H2("Suivi de termes", className="mb-4"),
@@ -381,6 +408,20 @@ def get_term_tracking_layout():
                 ),
             ],
             id="articles-modal",
+            size="lg",
+            is_open=False,
+        ),
+
+        # Modal dédiée pour les articles de termes similaires
+        dbc.Modal(
+            [
+                dbc.ModalHeader(dbc.ModalTitle("Articles pour le terme similaire"), close_button=True),
+                dbc.ModalBody(id="similar-terms-articles-modal-body"),
+                dbc.ModalFooter(
+                    dbc.Button("Fermer", id="close-similar-terms-articles-modal", className="ms-auto")
+                ),
+            ],
+            id="similar-terms-articles-modal",
             size="lg",
             is_open=False,
         ),
