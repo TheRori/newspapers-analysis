@@ -7,6 +7,7 @@ import pickle
 from typing import List, Dict, Any, Optional, Union
 
 import numpy as np
+import tiktoken
 import pandas as pd
 from nltk.sentiment import SentimentIntensityAnalyzer
 from transformers import pipeline, AutoModelForSequenceClassification, AutoTokenizer
@@ -44,11 +45,37 @@ class SentimentAnalyzer:
                 self.analyzer = SentimentIntensityAnalyzer()
         
         elif self.model_name == 'transformers':
-            self.analyzer = pipeline(
-                "sentiment-analysis", 
-                model=self.transformer_model,
-                truncation=True
-            )
+            try:
+                # For CamemBERT models, we need special handling
+                if 'camembert' in self.transformer_model.lower():
+                    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+                    
+                    # Use the slow tokenizer to avoid conversion issues
+                    self.tokenizer = AutoTokenizer.from_pretrained(
+                        self.transformer_model,
+                        use_fast=False  # Use the slow tokenizer to avoid conversion issues
+                    )
+                    self.model = AutoModelForSequenceClassification.from_pretrained(self.transformer_model)
+                    
+                    # Create pipeline with pre-loaded components
+                    self.analyzer = pipeline(
+                        "sentiment-analysis",
+                        model=self.model,
+                        tokenizer=self.tokenizer,
+                        truncation=True
+                    )
+                else:
+                    # For other models, use the standard pipeline approach
+                    self.analyzer = pipeline(
+                        "sentiment-analysis", 
+                        model=self.transformer_model,
+                        truncation=True
+                    )
+            except Exception as e:
+                import traceback
+                print(f"Error initializing transformer model: {e}")
+                print(traceback.format_exc())
+                raise
     
     def analyze_text_vader(self, text: str) -> Dict[str, float]:
         """
