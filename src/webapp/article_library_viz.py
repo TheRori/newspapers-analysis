@@ -339,7 +339,7 @@ def register_article_library_callbacks(app):
                     if sentiments and "sentiment" in df.columns:
                         df = df[df["sentiment"].isin(sentiments)]
                     
-                    # Filtrer par journal
+                    # Filtrer par journal (utiliser la colonne journal)
                     if journals and "journal" in df.columns:
                         df = df[df["journal"].isin(journals)]
                     

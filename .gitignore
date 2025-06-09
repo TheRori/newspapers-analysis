@@ -73,3 +73,4 @@ Exemple : mot "ordinateur" → fréquence croissante + changement sémantique da
 .venv
 *.pkl
 app_log*
+replace_newspaper.py

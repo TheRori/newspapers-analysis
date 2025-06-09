@@ -286,11 +286,34 @@ class DashDataProvider:
 
             # --- Sentiment : priorité au mapping, sinon colonne existante ---
             sentiment_val = sentiment_map.get(article_id)
+            
+            # Normaliser le nom du journal pour le regroupement
+            journal_name = row.get("newspaper")
+            journal_base = None
+            if journal_name:
+                import re
+                # Fonction de normalisation des noms de journaux
+                def normalize_journal_name(name):
+                    # D'abord enlever les chiffres à la fin
+                    name = re.sub(r'\s*\d+\s*$', '', name)
+                    
+                    # Normalisation spécifique pour certains journaux
+                    if re.search(r'(?i)l[\'’]\s*impartial', name):
+                        return "L'Impartial"
+                    elif re.search(r'(?i)solidarit[eé]', name):
+                        return "Solidarité"
+                    
+                    # Retourner le nom normalisé
+                    return name
+                
+                journal_base = normalize_journal_name(journal_name)
+                
             export_rows.append({
                 "id_article": article_id,
                 "titre": row.get("title"),
                 "date": row.get("date"),
                 "journal": row.get("newspaper"),
+                "journal_base": journal_base,  # Ajouter le nom de base du journal
                 "nom_du_topic": row.get("nom_du_topic", "Non défini"),
                 "score_topic": score_topic_pct,
                 "cluster": row.get("cluster"),
@@ -302,7 +325,7 @@ class DashDataProvider:
         
         export_df = pd.DataFrame(export_rows)
         
-        final_columns = ["id_article", "titre", "date", "journal", "nom_du_topic", "score_topic", "cluster", "sentiment", "entities", "entities_org", "entities_loc"]
+        final_columns = ["id_article", "titre", "date", "journal", "journal_base", "nom_du_topic", "score_topic", "cluster", "sentiment", "entities", "entities_org", "entities_loc"]
         for col in final_columns:
             if col not in export_df.columns:
                 export_df[col] = None
