@@ -114,7 +114,7 @@ def create_advanced_network_graph(df: pd.DataFrame, period: str, similarity_thre
 
     edge_trace = go.Scatter(
         x=edge_x, y=edge_y,
-        line=dict(width=0.7, color='#888'),
+        line=dict(width=0.7, color='#aaa'),  # Couleur plus claire pour les arêtes
         hoverinfo='none',
         mode='lines')
 
@@ -143,6 +143,7 @@ def create_advanced_network_graph(df: pd.DataFrame, period: str, similarity_thre
         hoverinfo='text',
         text=node_text,  # Afficher le texte des nœuds
         textposition="bottom center",
+        textfont=dict(color='white'),  # Texte en blanc pour contraste sur fond noir
         marker=dict(
             color=node_color,
             size=node_size,
@@ -158,14 +159,15 @@ def create_advanced_network_graph(df: pd.DataFrame, period: str, similarity_thre
                  layout=go.Layout(
                     title=dict(
                         text=f"Réseau sémantique pour la période : {period}",
-                        font=dict(size=16)
+                        font=dict(size=16, color='white')  # Titre en blanc
                     ),
                     showlegend=False,
                     hovermode='closest',
                     margin=dict(b=20, l=5, r=5, t=40),
-                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                    plot_bgcolor="rgba(240, 240, 240, 0.95)",
+                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, color='white'),
+                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, color='white'),
+                    plot_bgcolor="black",
+                    paper_bgcolor="black",  # Fond du graphique en noir également
                     clickmode="event+select"  # Activer les événements de clic
                     )
                 )

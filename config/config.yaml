@@ -50,7 +50,7 @@ analysis:
 data:
   cluster_results_dir: data/results/clusters/
   files:
-    articles: articles_v1_filtered.json
+    articles: tv_program_articles_20250521_223703.json
   lexical_analysis_dir: data/results/lexical_analysis/
   processed_dir: C:\Users\nicol\Documents\Projects\newspapers-analysis\data\processed
   raw_dir: data/raw

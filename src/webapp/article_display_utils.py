@@ -531,14 +531,15 @@ def create_full_article_modal(id_prefix=""):
     Returns:
         dbc.Modal pour afficher l'article complet
     """
-    modal_id = f"{id_prefix}-full-article-modal" if id_prefix else "full-article-modal"
-    body_id = f"{id_prefix}-full-article-modal-body" if id_prefix else "full-article-modal-body"
-    close_id = f"{id_prefix}-close-full-article-modal" if id_prefix else "close-full-article-modal"
+    modal_id = f"{id_prefix}full-article-modal" if id_prefix else "full-article-modal"
+    title_id = f"{id_prefix}full-article-modal-title" if id_prefix else "full-article-modal-title"
+    body_id = f"{id_prefix}full-article-modal-body" if id_prefix else "full-article-modal-body"
+    close_id = f"{id_prefix}close-full-article-modal" if id_prefix else "close-full-article-modal"
     
     return dbc.Modal(
         [
             dbc.ModalHeader([
-                html.H4("Article complet", className="modal-title"),
+                html.H4(id=title_id, children="Article complet", className="modal-title"),
                 dbc.Button("×", id=close_id, className="close")
             ]),
             dbc.ModalBody(id=body_id),

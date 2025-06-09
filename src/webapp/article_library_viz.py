@@ -1,12 +1,14 @@
 import dash
-from dash import html, dcc, Input, Output, State, dash_table
+from dash import html, dcc, Input, Output, State, dash_table, ctx, ALL
 import dash_bootstrap_components as dbc
 import pandas as pd
 import os
 import json
+import re
 from pathlib import Path
 from src.webapp.data_provider import DashDataProvider
 from src.webapp.source_manager_viz import get_topic_matrix_files, get_clusters_files, get_processed_json_files, get_sentiment_files, get_entity_files
+from src.webapp.article_display_utils import extract_excerpt, create_full_article_modal
 
 def get_article_library_layout():
     # Récupérer les fichiers de sentiment et d'entités disponibles
@@ -192,7 +194,7 @@ def get_article_library_layout():
             id="lib-articles-table",
             # Exclure les colonnes _full du tableau
             columns=[col for col in columns if not col["id"].endswith("_full")],
-            data=df.to_dict("records"),  # Données initiales chargées ici
+            data=df.to_dict("records"),  # Données initiales
             filter_action="native",
             sort_action="native",
             page_size=20,
@@ -276,10 +278,100 @@ def get_article_library_layout():
             ],
         )
     ])
+    
+    # Ajouter le modal pour afficher le contenu complet de l'article
+    layout.children.append(create_full_article_modal(id_prefix="lib-"))
+    
     return layout
 
 def register_article_library_callbacks(app):
     provider = DashDataProvider()
+    
+    # Callback pour afficher le contenu complet de l'article dans un modal
+    @app.callback(
+        Output("lib-full-article-modal", "is_open"),
+        Output("lib-full-article-modal-title", "children"),
+        Output("lib-full-article-modal-body", "children"),
+        Input("lib-articles-table", "active_cell"),
+        State("lib-articles-table", "data"),
+        State("lib-articles-table", "derived_virtual_data"),
+        State("lib-articles-table", "derived_virtual_selected_rows"),
+        prevent_initial_call=True
+    )
+    def show_article_content(active_cell, data, filtered_data, selected_rows):
+        if active_cell is None:
+            return False, "", ""
+        
+        try:
+            # Utiliser les données filtrées/triées actuellement affichées
+            row_index = active_cell["row"]
+            
+            # Si nous avons des données filtrées, les utiliser
+            if filtered_data is not None:
+                article_data = filtered_data[row_index]
+            else:
+                article_data = data[row_index]
+            
+            # Récupérer les informations de l'article
+            article_id = article_data.get("id_article", "")
+            title = article_data.get("titre", "Sans titre")
+            date = article_data.get("date", "")
+            journal = article_data.get("journal", "")
+            
+            print(f"DEBUG: Affichage de l'article {article_id}, titre: {title}")
+            
+            # Charger le contenu de l'article depuis le fichier JSON
+            project_root = Path(__file__).parent.parent.parent
+            config = load_config()
+            articles_path = project_root / config['data']['processed_dir'] / "articles.json"
+            
+            try:
+                with open(articles_path, 'r', encoding='utf-8') as f:
+                    articles = json.load(f)
+                
+                # Rechercher l'article par ID
+                article_content = ""
+                for article in articles:
+                    if article.get("id", "") == article_id or article.get("base_id", "") == article_id:
+                        article_content = article.get("content") or article.get("original_content") or article.get("text", "")
+                        break
+                
+                if not article_content:
+                    return True, f"{title}", html.P("Contenu de l'article non disponible", className="text-danger")
+                
+                # Créer le contenu du modal
+                modal_title = f"{title}"
+                modal_body = html.Div([
+                    html.H6(f"{date} - {journal}", className="text-muted mb-3"),
+                    html.Hr(),
+                    html.Div([
+                        html.P(paragraph) for paragraph in article_content.split("\n") if paragraph.strip()
+                    ]),
+                    html.Hr(),
+                    html.Small(f"ID de l'article: {article_id}", className="text-muted")
+                ])
+                
+                return True, modal_title, modal_body
+                
+            except Exception as e:
+                print(f"Erreur lors du chargement des articles: {e}")
+                return True, "Erreur", html.P(f"Erreur lors du chargement des articles: {str(e)}", className="text-danger")
+                
+        except Exception as e:
+            print(f"Erreur lors de l'affichage du contenu: {e}")
+            return True, "Erreur", html.P(f"Erreur lors de l'affichage du contenu: {str(e)}", className="text-danger")
+    
+    # Fonction utilitaire pour charger la configuration
+    def load_config():
+        import yaml
+        
+        project_root = Path(__file__).resolve().parents[2]
+        config_path = project_root / 'config' / 'config.yaml'
+        
+        with open(config_path, encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        return config
     
     # Utiliser un pattern différent pour gérer les callbacks multiples sur le même output
     # Utiliser un seul callback avec ctx.triggered pour déterminer quelle action a déclenché le callback
@@ -347,6 +439,8 @@ def register_article_library_callbacks(app):
                     if entity and entity.strip() and "entities" in df.columns:
                         search_term = entity.lower().strip()
                         df = df[df["entities"].fillna("").str.lower().str.contains(search_term)]
+                
+                # La colonne contenu a été supprimée
                 
                 # Formater les entités pour l'affichage avec troncature
                 if "entities" in df.columns:
