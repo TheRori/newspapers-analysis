@@ -43,23 +43,27 @@ def get_article_library_layout():
     
     # ---- Préparation des filtres dynamiques à partir du DataFrame ----
 
-    # Filtre pour les topics
+    # Récupérer les valeurs uniques pour les filtres
     topic_options = []
+    cluster_options = []
+    sentiment_options = []
+    journal_options = []
+    
     if "nom_du_topic" in df.columns:
         unique_topics = df["nom_du_topic"].dropna().unique()
         topic_options = sorted([{"label": str(t), "value": t} for t in unique_topics], key=lambda x: x["label"])
-
-    # Filtre pour les clusters
-    cluster_options = []
+    
     if "cluster" in df.columns:
         unique_clusters = df["cluster"].dropna().unique()
-        cluster_options = sorted([{"label": str(c), "value": c} for c in unique_clusters], key=lambda x: str(x["label"]))
-
-    # Filtre pour le sentiment
-    sentiment_options = []
+        cluster_options = sorted([{"label": str(c), "value": c} for c in unique_clusters], key=lambda x: x["label"])
+    
     if "sentiment" in df.columns:
         unique_sentiments = df["sentiment"].dropna().unique()
         sentiment_options = sorted([{"label": str(s), "value": s} for s in unique_sentiments], key=lambda x: x["label"])
+        
+    if "journal" in df.columns:
+        unique_journals = df["journal"].dropna().unique()
+        journal_options = sorted([{"label": str(j), "value": j} for j in unique_journals], key=lambda x: x["label"])
 
     # ---- Définition des colonnes du tableau ----
     
@@ -81,8 +85,10 @@ def get_article_library_layout():
     # Créer les colonnes pour la DataTable, en n'affichant que celles qui existent
     columns = []
     for col_id in display_names.keys():
-        if col_id in df.columns:
-            columns.append({"name": display_names[col_id], "id": col_id})
+        # Ne pas inclure les colonnes _full dans l'affichage
+        if col_id in df.columns and not col_id.endswith("_full"):
+            column_def = {"name": display_names[col_id], "id": col_id}
+            columns.append(column_def)
 
     # Conversion de la colonne 'entities' en chaîne de caractères pour l'affichage initial
     if "entities" in df.columns:
@@ -171,41 +177,101 @@ def get_article_library_layout():
         
         # Section des filtres
         dbc.Row([
-            dbc.Col([html.Label("Filtrer par topic"), dcc.Dropdown(id="lib-topic-filter", options=topic_options, multi=True)], width=3),
-            dbc.Col([html.Label("Filtrer par cluster"), dcc.Dropdown(id="lib-cluster-filter", options=cluster_options, multi=True)], width=3),
-            dbc.Col([html.Label("Filtrer par sentiment"), dcc.Dropdown(id="lib-sentiment-filter", options=sentiment_options, multi=True)], width=3),
-            dbc.Col([html.Label("Filtrer par entité"), dcc.Input(id="lib-entity-filter", type="text", placeholder="Rechercher une entité...", debounce=True)], width=3),
+            dbc.Col([html.Label("Filtrer par topic"), dcc.Dropdown(id="lib-topic-filter", options=topic_options, multi=True, placeholder="Sélectionner un ou plusieurs topics")], width=3),
+            dbc.Col([html.Label("Filtrer par cluster"), dcc.Dropdown(id="lib-cluster-filter", options=cluster_options, multi=True, placeholder="Sélectionner un ou plusieurs clusters")], width=3),
+            dbc.Col([html.Label("Filtrer par sentiment"), dcc.Dropdown(id="lib-sentiment-filter", options=sentiment_options, multi=True, placeholder="Sélectionner un ou plusieurs sentiments")], width=3),
+            dbc.Col([html.Label("Filtrer par journal"), dcc.Dropdown(id="lib-journal-filter", options=journal_options, multi=True, placeholder="Sélectionner un ou plusieurs journaux")], width=3),
         ], className="mb-3"),
+        dbc.Row([
+            dbc.Col([html.Label("Filtrer par entité"), dcc.Input(id="lib-entity-filter", type="text", placeholder="Rechercher une entité...", debounce=True)], width=12),
+        ], className="mb-3"),
+        
         
         # Tableau de données - Charger les données initiales ici
         dash_table.DataTable(
             id="lib-articles-table",
-            columns=columns,
+            # Exclure les colonnes _full du tableau
+            columns=[col for col in columns if not col["id"].endswith("_full")],
             data=df.to_dict("records"),  # Données initiales chargées ici
             filter_action="native",
             sort_action="native",
             page_size=20,
+            # Configuration des tooltips
+            tooltip_delay=0,
+            tooltip_duration=None,  # Reste affiché tant que la souris est dessus
+            cell_selectable=True,  # Permet de sélectionner les cellules pour voir le contenu complet
             style_table={"overflowX": "auto"},
             style_cell={"textAlign": "left", "whiteSpace": "normal", "padding": "5px"},
             style_header={"backgroundColor": "rgb(230, 230, 230)", "fontWeight": "bold"},
+            style_cell_conditional=[
+                # Limiter la largeur des colonnes d'entités
+                {"if": {"column_id": "entities"}, "maxWidth": "200px", "textOverflow": "ellipsis", "overflow": "hidden"},
+                {"if": {"column_id": "entities_org"}, "maxWidth": "150px", "textOverflow": "ellipsis", "overflow": "hidden"},
+                {"if": {"column_id": "entities_loc"}, "maxWidth": "150px", "textOverflow": "ellipsis", "overflow": "hidden"},
+            ],
             style_data_conditional=[
+                # Sentiment très négatif (rouge foncé)
+                {
+                    'if': {
+                        'column_id': 'sentiment',
+                        'filter_query': '{sentiment} <= -0.5'
+                    },
+                    'backgroundColor': '#8b0000',
+                    'color': 'white'
+                },
                 # Sentiment négatif (rouge)
                 {
-                    'if': {'filter_query': '{sentiment} < -0.05', 'column_id': 'sentiment'},
-                    'color': 'white',
-                    'backgroundColor': '#d9534f'
+                    'if': {
+                        'column_id': 'sentiment',
+                        'filter_query': '{sentiment} > -0.5 && {sentiment} <= -0.25'
+                    },
+                    'backgroundColor': '#d9534f',
+                    'color': 'white'
                 },
-                # Sentiment positif (vert)
+                # Sentiment légèrement négatif (rouge clair)
                 {
-                    'if': {'filter_query': '{sentiment} > 0.05', 'column_id': 'sentiment'},
-                    'color': 'white',
-                    'backgroundColor': '#5cb85c'
+                    'if': {
+                        'column_id': 'sentiment',
+                        'filter_query': '{sentiment} > -0.25 && {sentiment} < -0.05'
+                    },
+                    'backgroundColor': '#ff6666',
+                    'color': 'white'
                 },
                 # Sentiment neutre (gris/noir)
                 {
-                    'if': {'filter_query': '-0.05 <= {sentiment} && {sentiment} <= 0.05', 'column_id': 'sentiment'},
-                    'color': 'black',
-                    'backgroundColor': '#f7f7f7'
+                    'if': {
+                        'column_id': 'sentiment',
+                        'filter_query': '{sentiment} >= -0.05 && {sentiment} <= 0.05'
+                    },
+                    'backgroundColor': '#f7f7f7',
+                    'color': 'black'
+                },
+                # Sentiment légèrement positif (vert clair)
+                {
+                    'if': {
+                        'column_id': 'sentiment',
+                        'filter_query': '{sentiment} > 0.05 && {sentiment} < 0.25'
+                    },
+                    'backgroundColor': '#8fbc8f',
+                    'color': 'white'
+                },
+                # Sentiment positif (vert)
+                {
+                    'if': {
+                        'column_id': 'sentiment',
+                        'filter_query': '{sentiment} >= 0.25 && {sentiment} < 0.5'
+                    },
+                    'backgroundColor': '#5cb85c',
+                    'color': 'white'
+                },
+                # Sentiment très positif (vert foncé)
+                {
+                    'if': {
+                        'column_id': 'sentiment',
+                        'filter_query': '{sentiment} >= 0.5'
+                    },
+                    'backgroundColor': '#006400',
+                    'color': 'white'
                 },
             ],
         )
@@ -227,6 +293,7 @@ def register_article_library_callbacks(app):
             Input("lib-topic-filter", "value"),
             Input("lib-cluster-filter", "value"),
             Input("lib-sentiment-filter", "value"),
+            Input("lib-journal-filter", "value"),
             Input("lib-entity-filter", "value"),
             # Trigger pour la mise à jour des sources
             Input("lib-apply-sources-button", "n_clicks")
@@ -240,7 +307,7 @@ def register_article_library_callbacks(app):
             State("lib-entity-dropdown", "value"),
         ]
     )
-    def update_table(table_id, topics, clusters, sentiments, entity, apply_clicks, main_source, topic_matrix_source, clusters_source, sentiment_source, entity_source):
+    def update_table(table_id, topics, clusters, sentiments, journals, entity, apply_clicks, main_source, topic_matrix_source, clusters_source, sentiment_source, entity_source):
         # Utiliser ctx.triggered pour déterminer quelle action a déclenché le callback
         ctx = dash.callback_context
         if not ctx.triggered:
@@ -254,7 +321,7 @@ def register_article_library_callbacks(app):
         csv_path = project_root / "data" / "biblio_enriched.csv"
         
         # Cas 1: Initialisation ou filtrage
-        if "lib-articles-table.id" in trigger_id or any(f in trigger_id for f in ["topic-filter", "cluster-filter", "sentiment-filter", "entity-filter"]):
+        if "lib-articles-table.id" in trigger_id or any(f in trigger_id for f in ["topic-filter", "cluster-filter", "sentiment-filter", "journal-filter", "entity-filter"]):
             try:
                 df = pd.read_csv(csv_path, encoding="utf-8")
                 
@@ -272,14 +339,72 @@ def register_article_library_callbacks(app):
                     if sentiments and "sentiment" in df.columns:
                         df = df[df["sentiment"].isin(sentiments)]
                     
+                    # Filtrer par journal
+                    if journals and "journal" in df.columns:
+                        df = df[df["journal"].isin(journals)]
+                    
                     # Filtrer par entité
                     if entity and entity.strip() and "entities" in df.columns:
                         search_term = entity.lower().strip()
                         df = df[df["entities"].fillna("").str.lower().str.contains(search_term)]
                 
-                # Formater les entités pour l'affichage
+                # Formater les entités pour l'affichage avec troncature
                 if "entities" in df.columns:
-                    df["entities"] = df["entities"].apply(lambda x: str(x) if pd.notna(x) else "")
+                    df["entities"] = df["entities"].apply(lambda x: f"{str(x)[:50]}{'...' if len(str(x)) > 50 else ''}" if pd.notna(x) and str(x).strip() else "")
+                
+                if "entities_org" in df.columns:
+                    df["entities_org"] = df["entities_org"].apply(lambda x: f"{str(x)[:40]}{'...' if len(str(x)) > 40 else ''}" if pd.notna(x) and str(x).strip() else "")
+                
+                if "entities_loc" in df.columns:
+                    df["entities_loc"] = df["entities_loc"].apply(lambda x: f"{str(x)[:40]}{'...' if len(str(x)) > 40 else ''}" if pd.notna(x) and str(x).strip() else "")
+                    
+                # Charger les entités par défaut au chargement de l'application
+                if "lib-articles-table.id" in trigger_id and "entity_source" in provider.custom_sources and provider.custom_sources["entity_source"]:
+                    try:
+                        entity_source = provider.custom_sources["entity_source"]
+                        print(f"[ENTITIES] Chargement automatique des entités depuis : {entity_source}")
+                        with open(entity_source, "r", encoding="utf-8") as f:
+                            entities_json = json.load(f)
+                        
+                        entity_map = {}
+                        # Traiter selon le format du fichier d'entités
+                        if isinstance(entities_json, list):
+                            # Format liste d'articles avec entités
+                            for art in entities_json:
+                                aid = art.get("id") or art.get("base_id")
+                                if aid and "entities" in art and isinstance(art["entities"], list):
+                                    entity_map[aid] = art["entities"]
+                        elif isinstance(entities_json, dict) and "entities" in entities_json:
+                            # Format {"entities": {"doc_id": [entities]}}  
+                            entity_map = entities_json["entities"]
+                        
+                        # Appliquer les entités aux articles
+                        for index, row in df.iterrows():
+                            article_id = row.get("id") or row.get("base_id")
+                            if article_id in entity_map:
+                                entities = entity_map[article_id]
+                                if isinstance(entities, list):
+                                    # Créer une chaîne complète pour les entités
+                                    entities_str = ", ".join(sorted(set(e.get('text', '') for e in entities if isinstance(e, dict))))
+                                    
+                                    # Extraire les entités par type
+                                    entities_org = [e.get('text', '') for e in entities if isinstance(e, dict) and e.get('label') == 'ORG']
+                                    entities_loc = [e.get('text', '') for e in entities if isinstance(e, dict) and e.get('label') == 'LOC']
+                                    
+                                    # Version tronquée pour l'affichage avec trois points
+                                    df.at[index, "entities"] = f"{entities_str[:50]}{'...' if len(entities_str) > 50 else ''}"
+                                    
+                                    # Ajouter les entités par type si ces colonnes existent
+                                    if "entities_org" in df.columns and entities_org:
+                                        org_str = ", ".join(sorted(set(entities_org)))
+                                        df.at[index, "entities_org"] = f"{org_str[:40]}{'...' if len(org_str) > 40 else ''}"
+                                    
+                                    if "entities_loc" in df.columns and entities_loc:
+                                        loc_str = ", ".join(sorted(set(entities_loc)))
+                                        df.at[index, "entities_loc"] = f"{loc_str[:40]}{'...' if len(loc_str) > 40 else ''}"
+
+                    except Exception as e:
+                        print(f"Erreur lors du chargement automatique des entités: {e}")
                 
                 return df.to_dict("records"), dash.no_update
             except Exception as e:
