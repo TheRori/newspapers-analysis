@@ -16,15 +16,25 @@ analysis:
     transformer_model: cmarkea/distilcamembert-base-sentiment
   topic_modeling:
     algorithm: lda
+    bertopic:
+      batch_size: 64
+      embedding_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+      hdbscan_min_cluster_size: 5
+      hdbscan_min_samples: 3
+      pca_components: 50
+      redistribute_outliers: true
+      umap_min_dist: 0.0
+      umap_n_components: 5
+      umap_n_neighbors: 15
+      use_pca: true
     clustering_method: kmeans
+    coherence_improvement_threshold: 0.05
+    ignore_first_n_for_elbow: 3
     max_df: 0.7
     min_df: 5
     n_clusters: 5
+    num_candidates_for_cv: 3
     num_topics: 6
-    topic_range_min: 2
-    topic_range_max: 50
-    topic_range_step: 2
-    coherence_improvement_threshold: 0.05  # 5% improvement threshold for elbow detection
     preprocessing:
       allowed_pos:
       - NOUN
@@ -33,27 +43,14 @@ analysis:
       filter_ads: true
       min_token_length: 3
       spacy_model: fr_core_news_md
+    topic_range_max: 40
+    topic_range_min: 4
+    topic_range_step: 2
     use_spacy_preprocessing: true
-    bertopic:
-      # Paramètres UMAP pour la réduction de dimensionnalité
-      umap_n_neighbors: 15
-      umap_n_components: 5
-      umap_min_dist: 0.0
-      # Paramètres HDBSCAN pour le clustering (valeurs réduites pour moins d'outliers)
-      hdbscan_min_cluster_size: 5  # Valeur par défaut réduite (15 → 5)
-      hdbscan_min_samples: 3       # Valeur par défaut réduite (10 → 3)
-      # Activation de la redistribution des outliers
-      redistribute_outliers: true
-      # Modèle d'embedding
-      embedding_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-      # Autres paramètres
-      batch_size: 64
-      use_pca: true
-      pca_components: 50
 data:
   cluster_results_dir: data/results/clusters/
   files:
-    articles: classified_tv_programs_20250523_104843_filtered.json
+    articles: articles_v1_filtered.json
   lexical_analysis_dir: data/results/lexical_analysis/
   processed_dir: C:\Users\nicol\Documents\Projects\newspapers-analysis\data\processed
   raw_dir: data/raw

@@ -24,6 +24,33 @@ from src.webapp.cluster_map_viz import create_cluster_map, generate_map_coordina
 import pandas as pd
 import numpy as np
 
+# NOUVELLE LOGIQUE : Fonction pour trouver et charger les noms de topics les plus récents
+def find_and_load_latest_topic_names():
+    """
+    Finds the most recent topic_names_llm_*.json file and loads the names.
+    """
+    try:
+        project_root = Path(__file__).resolve().parents[2]
+        results_dir = project_root / 'data' / 'results'
+        
+        topic_names_files = list(results_dir.glob('topic_names_llm_*.json'))
+        if not topic_names_files:
+            print("Aucun fichier de noms de topics (topic_names_llm_*.json) trouvé.")
+            return {}
+            
+        # Trouver le fichier le plus récent
+        latest_file = max(topic_names_files, key=os.path.getmtime)
+        print(f"Chargement des noms de topics depuis le fichier le plus récent : {latest_file}")
+        
+        with open(latest_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Retourner le dictionnaire de noms de topics
+        return data.get('topic_names', {})
+    except Exception as e:
+        print(f"Erreur lors du chargement des noms de topics les plus récents : {e}")
+        return {}
+
 # Helper to load clustering results (assume similar structure to topic modeling)
 def load_clustering_stats(path):
     """
@@ -271,6 +298,10 @@ def find_best_cluster_file(directory):
 def render_clustering_stats(stats):
     print(f"[DEBUG] render_clustering_stats called with stats type: {type(stats)}")
     print(f"[DEBUG] Stats keys: {list(stats.keys()) if stats else 'None'}")
+    
+    # NOUVELLE LOGIQUE : Charger les noms de topics les plus récents de manière indépendante
+    all_topic_names = find_and_load_latest_topic_names()
+    
     children = []
     # 1. Score de clustering (silhouette, etc.)
     if 'silhouette_score' in stats:
@@ -373,166 +404,65 @@ def render_clustering_stats(stats):
             journal_fig.update_layout(height=500)
             children.append(dcc.Graph(figure=journal_fig, id='cluster-journal-plot'))
     
-    # Visualisation radar des clusters avec noms de topics
-    print(f"[DEBUG] Checking radar chart conditions: cluster_centers in stats: {'cluster_centers' in stats}")
+    # NOUVELLE LOGIQUE : La condition pour la heatmap ne dépend plus de `stats['topic_names_llm']`
     if 'cluster_centers' in stats:
-        print(f"[DEBUG] cluster_centers type: {type(stats['cluster_centers'])}")
-        print(f"[DEBUG] cluster_centers length: {len(stats['cluster_centers'])}")
-        if len(stats['cluster_centers']) > 0:
-            print(f"[DEBUG] First center length: {len(stats['cluster_centers'][0])}")
-        print(f"[DEBUG] topic_names_llm in stats: {'topic_names_llm' in stats}")
-        
-    if 'cluster_centers' in stats and len(stats['cluster_centers']) > 0 and len(stats['cluster_centers'][0]) <= 10 and 'topic_names_llm' in stats:
         try:
-            print(f"[DEBUG] Starting radar chart visualization")
+            print("[DEBUG] Démarrage de la visualisation de la heatmap")
             centers = stats['cluster_centers']
-            # Prendre les 6-10 premières dimensions pour le radar
-            dims = min(10, len(centers[0]))
-            print(f"[DEBUG] Using {dims} dimensions for radar chart")
             
-            # Debug topic_names_llm
-            print(f"[DEBUG] topic_names_llm type: {type(stats['topic_names_llm'])}")
-            print(f"[DEBUG] topic_names_llm keys: {list(stats['topic_names_llm'].keys()) if isinstance(stats['topic_names_llm'], dict) else 'Not a dict'}")
-            
-            # Utiliser les noms de topics LLM pour les axes du radar
-            categories = []
-            for i in range(dims):
-                topic_key = f"topic_{i}"
-                print(f"[DEBUG] Checking for {topic_key} in topic_names_llm")
-                if isinstance(stats['topic_names_llm'], dict) and topic_key in stats['topic_names_llm']:
-                    categories.append(stats['topic_names_llm'][topic_key])
-                    print(f"[DEBUG] Added topic name: {stats['topic_names_llm'][topic_key]}")
-                else:
-                    categories.append(f"Topic {i}")
-                    print(f"[DEBUG] Added default topic name: Topic {i}")
-            
-            print(f"[DEBUG] Created {len(categories)} categories for radar chart")
-            
-            fig = go.Figure()
-            for i, center in enumerate(centers):
-                print(f"[DEBUG] Adding trace for cluster {i}")
-                fig.add_trace(go.Scatterpolar(
-                    r=center[:dims],
-                    theta=categories,
-                    fill='toself',
-                    name=f'Cluster {i}'
-                ))
-                print(f"[DEBUG] Added trace for cluster {i}")
-        except Exception as e:
-            import traceback
-            print(f"[DEBUG] Error creating radar chart: {e}")
-            traceback.print_exc()
-            # Skip radar chart if there's an error
-            return children
-        
-        fig.update_layout(
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                )
-            ),
-            title="Poids des topics dans chaque cluster (diagramme radar)",
-            height=600
-        )
-        children.append(dcc.Graph(figure=fig, id='cluster-radar-plot'))
-    
-    # 3. Poids des topics dans chaque cluster (heatmap)
-    print(f"[DEBUG] Checking heatmap conditions: cluster_centers in stats: {'cluster_centers' in stats}, topic_names_llm in stats: {'topic_names_llm' in stats}")
-    if 'cluster_centers' in stats and 'topic_names_llm' in stats:
-        try:
-            print(f"[DEBUG] Starting heatmap visualization")
-            centers = stats['cluster_centers']
-            print(f"[DEBUG] cluster_centers type: {type(centers)}, length: {len(centers)}")
-            print(f"[DEBUG] topic_names_llm type: {type(stats['topic_names_llm'])}")
-            
-            # Créer une heatmap pour visualiser le poids de chaque topic dans les clusters
             heatmap_data = []
-            # Déterminer le nombre total de topics
-            num_topics = max([len(center) for center in centers])
-            print(f"[DEBUG] Number of topics detected: {num_topics}")
             
             for i, center in enumerate(centers):
-                print(f"[DEBUG] Processing cluster {i}, center length: {len(center)}")
-                # Utiliser tous les topics disponibles au lieu de limiter à 10
                 for j, weight in enumerate(center):
-                    # Ensure we're using the exact topic number as in the topic modeling results
-                    # In the cluster centers, the index j directly corresponds to topic j
                     topic_id = j
-                    print(f"[DEBUG] Processing topic ID: {topic_id}")
-                    
-                    # Use get_topic_name function to get real topic names
-                    # We pass the exact topic number to ensure correct matching
-                    topic_name = get_topic_name(topic_id, default=f"Topic {topic_id}")
-                    print(f"[DEBUG] Got topic name: {topic_name} for topic {topic_id}")
+                    # Utiliser les noms de topics chargés indépendamment
+                    topic_name = get_topic_name(topic_id, all_topic_names, default=f"Topic {topic_id}")
                     
                     heatmap_data.append({
                         'Cluster': f"Cluster {i}",
                         'Topic': topic_name,
                         'Poids': weight
                     })
-            print(f"[DEBUG] Created heatmap_data with {len(heatmap_data)} entries")
+            
+            if heatmap_data:
+                heatmap_df = pd.DataFrame(heatmap_data)
+                heatmap_fig = px.density_heatmap(
+                    heatmap_df, x='Cluster', y='Topic', z='Poids',
+                    title="Poids des topics dans chaque cluster",
+                    color_continuous_scale='Viridis'
+                )
+                
+                num_topics = len(heatmap_df['Topic'].unique())
+                dynamic_height = max(600, 400 + num_topics * 30)
+                
+                unique_topics = heatmap_df['Topic'].unique()
+                topic_indices = {topic: int(re.search(r'\d+', topic).group()) if re.search(r'\d+', topic) else i for i, topic in enumerate(unique_topics)}
+                sorted_topics = sorted(unique_topics, key=lambda x: topic_indices.get(x, 0))
+                
+                heatmap_fig.update_layout(
+                    height=dynamic_height,
+                    margin=dict(l=250, r=50, t=50, b=100),
+                    yaxis=dict(
+                        tickmode='array',
+                        tickvals=sorted_topics, # Utiliser directement les noms pour les tickvals
+                        ticktext=sorted_topics,
+                        tickfont=dict(size=10),
+                        title_font=dict(size=12),
+                        autorange="reversed" # Assure que le topic 0 est en haut
+                    )
+                )
+                children.append(dcc.Graph(figure=heatmap_fig, id='cluster-heatmap-plot'))
+
         except Exception as e:
             import traceback
-            print(f"[DEBUG] Error creating heatmap: {e}")
-            traceback.print_exc()
-            # Skip heatmap if there's an error
-            return children
-        
-        if heatmap_data:
-            heatmap_df = pd.DataFrame(heatmap_data)
-            heatmap_fig = px.density_heatmap(
-                heatmap_df, x='Cluster', y='Topic', z='Poids',
-                title="Poids des topics dans chaque cluster",
-                color_continuous_scale='Viridis'
-            )
-            
-            # Calculate appropriate height based on number of topics
-            num_topics = len(heatmap_df['Topic'].unique())
-            # Ensure minimum height of 600px and add 30px per topic
-            dynamic_height = max(600, 400 + num_topics * 30)
-            
-            # Sort topics by their numerical ID to ensure correct order
-            def extract_topic_number(topic_name):
-                # Extract the number from topic names like "Topic 40" or custom names with numbers
-                match = re.search(r'\d+', topic_name)
-                if match:
-                    return int(match.group())
-                return 0  # Default for topics without numbers
-            
-            # Get unique topics and sort them by their numerical ID
-            unique_topics = heatmap_df['Topic'].unique()
-            # Create a dictionary mapping topic names to their original indices
-            topic_indices = {}
-            for i, topic in enumerate(unique_topics):
-                # Try to extract the original topic number
-                match = re.search(r'Topic (\d+)', topic)
-                if match:
-                    topic_indices[topic] = int(match.group(1))
-                else:
-                    topic_indices[topic] = i
-            
-            # Sort topics by their numerical index
-            sorted_topics = sorted(unique_topics, key=lambda x: topic_indices.get(x, 0))
-            
-            # Update layout to ensure all topic labels are visible and in correct order
-            heatmap_fig.update_layout(
-                height=dynamic_height,
-                margin=dict(l=250, r=50, t=50, b=100),  # Increase left margin for topic names
-                yaxis=dict(
-                    tickmode='array',
-                    tickvals=list(range(len(sorted_topics))),
-                    ticktext=sorted_topics,
-                    tickfont=dict(size=10),  # Adjust font size as needed
-                    title_font=dict(size=12)
-                )
-            )
-            
-            children.append(dcc.Graph(figure=heatmap_fig, id='cluster-heatmap-plot'))
-    
+            print(f"Erreur lors de la création de la heatmap: {str(e)}")
+            print(traceback.print_exc())
+
     # Store pour stocker les données des clusters
     children.append(dcc.Store(id='cluster-data-store', data=stats))
     
     return html.Div(children)
+
 
 # Page de navigation des articles par cluster
 def get_article_browser_layout(cluster_data=None):
@@ -1036,7 +966,7 @@ def register_clustering_callbacks(app):
             result_holder['tab'] = "tab-params"
         return result_holder['output'], result_holder['data'], result_holder['tab']
     
-    # Callback pour charger les résultats depuis un fichier existant
+    # CORRECTION : Callback pour charger les résultats depuis un fichier existant
     @app.callback(
         [Output("results-stats-output", "children"),
          Output("results-data-store", "data")],
@@ -1059,64 +989,50 @@ def register_clustering_callbacks(app):
                     # Préparer les éléments à afficher
                     output_elements = []
                     
+                    # CORRECTION : Charger les noms de topics les plus récents
+                    all_topic_names = find_and_load_latest_topic_names()
+                    
                     # 1. Générer la carte des clusters
                     if 'map_coordinates' in stats:
-                        # Si les coordonnées de la carte sont déjà présentes
                         df = pd.DataFrame(stats['map_coordinates'])
                     elif 'embeddings' in stats and 'labels' in stats and 'doc_ids' in stats:
-                        # Générer les coordonnées à partir des embeddings
                         print(f"Génération des coordonnées de la carte à partir des embeddings pour {len(stats['doc_ids'])} documents")
-                        # Utiliser la fonction generate_map_coordinates de cluster_map_viz.py
                         df = generate_map_coordinates(stats, method='tsne')
                         
-                        # Si le DataFrame est vide, essayer une méthode plus simple
                         if df.empty:
                             print("Tentative de génération des coordonnées avec PCA (méthode de secours)")
-                            # Créer un DataFrame simple avec les coordonnées
                             from sklearn.decomposition import PCA
                             embeddings = np.array(stats['embeddings'])
                             if len(embeddings) > 0:
-                                # Réduire la dimension à 2D avec PCA
                                 pca = PCA(n_components=2, random_state=42)
                                 coords = pca.fit_transform(embeddings)
-                                
-                                # Créer le DataFrame avec les coordonnées et les labels
                                 df = pd.DataFrame({
-                                    'doc_id': stats['doc_ids'],
-                                    'cluster': stats['labels'],
-                                    'x': coords[:, 0],
-                                    'y': coords[:, 1],
-                                    'is_anomaly': [False] * len(stats['doc_ids']),  # Par défaut, pas d'anomalies
-                                    'intensity': [0.8] * len(stats['doc_ids']),     # Intensité par défaut
-                                    'anomaly_reason': [""] * len(stats['doc_ids'])   # Pas de raison d'anomalie
+                                    'doc_id': stats['doc_ids'], 'cluster': stats['labels'],
+                                    'x': coords[:, 0], 'y': coords[:, 1],
+                                    'is_anomaly': [False] * len(stats['doc_ids']),
+                                    'intensity': [0.8] * len(stats['doc_ids']),
+                                    'anomaly_reason': [""] * len(stats['doc_ids'])
                                 })
                     else:
                         return dbc.Alert("Le fichier de clustering ne contient pas les données nécessaires (embeddings, labels ou doc_ids).", color="warning"), None
                     
                     if not df.empty:
-                        # Créer la carte des clusters
                         fig = create_cluster_map(df)
                         output_elements.append(html.H3("Carte des clusters", className="mt-4"))
                         output_elements.append(dcc.Graph(figure=fig, config={'displayModeBar': True}, style={"height": "600px"}))
                     
-                    # 2. Générer la heatmap de répartition des topics (depuis render_clustering_stats)
-                    if 'cluster_centers' in stats and 'topic_names_llm' in stats:
+                    # 2. Générer la heatmap de répartition des topics
+                    # CORRECTION : La condition ne dépend plus de `stats['topic_names_llm']`
+                    if 'cluster_centers' in stats:
                         try:
                             centers = stats['cluster_centers']
-                            
-                            # Créer une heatmap pour visualiser le poids de chaque topic dans les clusters
                             heatmap_data = []
-                            # Déterminer le nombre total de topics
-                            num_topics = max([len(center) for center in centers])
                             
                             for i, center in enumerate(centers):
-                                # Utiliser tous les topics disponibles
                                 for j, weight in enumerate(center):
-                                    # Ensure we're using the exact topic number as in the topic modeling results
                                     topic_id = j
-                                    
-                                    # Use get_topic_name function to get real topic names
-                                    topic_name = get_topic_name(topic_id, default=f"Topic {topic_id}")
+                                    # CORRECTION : Appel correct à get_topic_name avec le dictionnaire de noms
+                                    topic_name = get_topic_name(topic_id, all_topic_names, default=f"Topic {topic_id}")
                                     
                                     heatmap_data.append({
                                         'Cluster': f"Cluster {i}",
@@ -1132,35 +1048,21 @@ def register_clustering_callbacks(app):
                                     color_continuous_scale='Viridis'
                                 )
                                 
-                                # Calculate appropriate height based on number of topics
                                 num_topics = len(heatmap_df['Topic'].unique())
-                                # Ensure minimum height of 600px and add 30px per topic
                                 dynamic_height = max(600, 400 + num_topics * 30)
                                 
-                                # Get unique topics and sort them by their numerical ID
                                 unique_topics = heatmap_df['Topic'].unique()
-                                # Create a dictionary mapping topic names to their original indices
-                                topic_indices = {}
-                                for i, topic in enumerate(unique_topics):
-                                    # Try to extract the original topic number
-                                    match = re.search(r'Topic (\d+)', topic)
-                                    if match:
-                                        topic_indices[topic] = int(match.group(1))
-                                    else:
-                                        topic_indices[topic] = i
-                                
-                                # Sort topics by their numerical index
+                                topic_indices = {topic: int(re.search(r'\d+', topic).group()) if re.search(r'\d+', topic) else i for i, topic in enumerate(unique_topics)}
                                 sorted_topics = sorted(unique_topics, key=lambda x: topic_indices.get(x, 0))
                                 
-                                # Update layout to ensure all topic labels are visible and in correct order
                                 heatmap_fig.update_layout(
                                     height=dynamic_height,
-                                    margin=dict(l=250, r=50, t=50, b=100),  # Increase left margin for topic names
+                                    margin=dict(l=250, r=50, t=50, b=100),
                                     yaxis=dict(
                                         tickmode='array',
-                                        tickvals=list(range(len(sorted_topics))),
+                                        tickvals=sorted_topics,
                                         ticktext=sorted_topics,
-                                        tickfont=dict(size=10),  # Adjust font size as needed
+                                        tickfont=dict(size=10),
                                         title_font=dict(size=12)
                                     )
                                 )
@@ -1172,7 +1074,6 @@ def register_clustering_callbacks(app):
                             print(f"Erreur lors de la création de la heatmap: {str(e)}")
                             print(traceback.format_exc())
                     
-                    # Retourner les éléments de visualisation et les stats
                     return html.Div(output_elements), stats
                 else:
                     return dbc.Alert("Impossible de charger les données du fichier sélectionné.", color="warning"), None

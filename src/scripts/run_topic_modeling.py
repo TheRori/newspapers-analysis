@@ -221,12 +221,13 @@ def main():
             modeler.fit_transform(preprocessed_data['tokenized_texts'])
         elif topic_config['algorithm'] == 'bertopic':
             logger.info("Passing raw texts to BERTopic model for optimal embedding. SpaCy preprocessed_data is available if needed elsewhere.")
-            texts_for_model = [doc.get('content', doc.get('text', '')) for doc in articles]
-            modeler.fit_transform(texts_for_model, documents=articles) # Pass original articles for metadata
+            # Pour BERTopic, on passe directement les articles complets
+            # La méthode fit_transform s'occupera d'extraire les textes
+            modeler.fit_transform(articles)
     elif topic_config['algorithm'] == 'bertopic': 
         logger.info("Passing raw texts to BERTopic model (e.g., no suitable tokenized_texts from cache or BERTopic preference).")
-        texts_for_model = [doc.get('content', doc.get('text', '')) for doc in articles]
-        modeler.fit_transform(texts_for_model, documents=articles)
+        # Pour BERTopic, on passe directement les articles complets
+        modeler.fit_transform(articles)
     else: 
         logger.error(f"Failed to obtain or prepare data for {topic_config['algorithm']}. Check preprocessing and caching logic.")
         if topic_config['algorithm'] in ['gensim_lda', 'hdp']:

@@ -115,103 +115,121 @@ class TopicModeler:
             # Search for optimal number of topics using coherence scores
             best_num_topics, best_coherence = self._find_optimal_num_topics(tokenized_texts)
             logger.info(f"Auto topic detection complete. Optimal number of topics: {best_num_topics} (coherence: {best_coherence:.4f})")
-            actual_num_topics = best_num_topics
-            # Update num_topics to the optimal value found
             self.num_topics = best_num_topics
-        else:
-            actual_num_topics = int(self.num_topics)
+        
+        # S'assurer que self.num_topics est un entier
+        actual_num_topics = int(self.num_topics)
             
         if self.algorithm == 'hdp':
             self.model = HdpModel(self.gensim_corpus, id2word=self.gensim_dictionary)
             self.num_topics = len(self.model.show_topics(formatted=False))
         else:
-            logger.info(f"Training LDA model with {actual_num_topics} topics")
-            self.model = LdaMulticore(self.gensim_corpus, num_topics=actual_num_topics, id2word=self.gensim_dictionary, 
-                                     passes=10, workers=self.workers, random_state=42)
+            logger.info(f"Training LDA model with {actual_num_topics} topics using parallel processing")
+            # Utiliser le traitement parallèle uniquement pour le modèle final
+            # Note: LdaMulticore utilise déjà le traitement parallèle par défaut
+            self.model = LdaMulticore(
+                self.gensim_corpus, 
+                num_topics=actual_num_topics, 
+                id2word=self.gensim_dictionary, 
+                passes=10, 
+                workers=self.workers, 
+                random_state=42
+            )
                 
         return gensim.matutils.corpus2dense(self.model[self.gensim_corpus], num_terms=self.num_topics).T
         
     def _find_optimal_num_topics(self, tokenized_texts: List[List[str]]) -> Tuple[int, float]:
-        """Find the optimal number of topics by evaluating coherence scores."""
-        coherence_scores = []
-        
-        # Get topic range parameters from config
+        """
+        Find the optimal number of topics using a refined hybrid approach:
+        1. Fast scan with 'u_mass'.
+        2. Select top candidates by ignoring initial peaks (Elbow Method).
+        3. Focused, slow scan with 'c_v' on these relevant candidates.
+        """
+        gensim_logger = logging.getLogger('gensim')
+        original_level = gensim_logger.level
+        gensim_logger.setLevel(logging.WARNING)
+
+        # --- Configuration de l'approche ---
         topic_min = self.config.get('topic_range_min', 2)
-        topic_max = self.config.get('topic_range_max', 20)
+        topic_max = self.config.get('topic_range_max', 40)
         topic_step = self.config.get('topic_range_step', 2)
+        num_candidates_to_check = self.config.get('num_candidates_for_cv', 3)
+        # --- NOUVEAU PARAMÈTRE : Ignorer les N premiers résultats pour trouver le coude ---
+        ignore_first_n_results = self.config.get('ignore_first_n_for_elbow', 3) # Ignore 2, 4, 6 sujets
+
+        topic_range = list(range(topic_min, topic_max + 1, topic_step))
         
-        # Create the range of topics to test
-        topic_range = range(topic_min, topic_max + 1, topic_step)
+        # --- ÉTAPE 1: Filtrage rapide avec u_mass ---
+        print_important(f"HYBRID SEARCH (STEP 1/2): Fast scan with 'u_mass' on {len(topic_range)} values.")
         
-        print_important(f"SEARCHING FOR OPTIMAL NUMBER OF TOPICS\nTesting {len(topic_range)} different values: {list(topic_range)}\nRange: min={topic_min}, max={topic_max}, step={topic_step}")
-        
-        for num_topics in topic_range:
-            logger.info(f"Testing model with {num_topics} topics...")
-            model = LdaModel(self.gensim_corpus, num_topics=num_topics, id2word=self.gensim_dictionary, passes=2, random_state=42)
+        u_mass_scores = {}
+        try:
+            for num_topics in tqdm(topic_range, desc="Scanning (u_mass)"):
+                model = LdaModel(self.gensim_corpus, num_topics=num_topics, id2word=self.gensim_dictionary, passes=2, random_state=42)
+                # Passer corpus ou texts à CoherenceModel pour u_mass
+                cm = CoherenceModel(model=model, texts=tokenized_texts, dictionary=self.gensim_dictionary, coherence='u_mass')
+                u_mass_scores[num_topics] = cm.get_coherence()
+                tqdm.write(f"Topics: {num_topics}, Coherence (u_mass): {u_mass_scores[num_topics]:.4f}")
+
+            # --- ÉTAPE 1.5: Sélection intelligente des candidats (Méthode du coude) ---
+            # On convertit en liste de tuples (topic_num, score)
+            scores_list = list(u_mass_scores.items())
             
-            # Calculate coherence score
-            coherence_model = CoherenceModel(model=model, texts=tokenized_texts, dictionary=self.gensim_dictionary, coherence='c_v')
-            coherence_score = coherence_model.get_coherence()
-            coherence_scores.append(coherence_score)
+            # On ignore les N premiers résultats pour éviter le pic initial inutile
+            meaningful_scores = scores_list[ignore_first_n_results:]
             
-            logger.info(f"Topics: {num_topics}, Coherence: {coherence_score:.4f}")
-        
-        # Find the elbow point (where coherence score starts to decrease significantly)
-        # First, find the maximum coherence score as a reference
-        max_index = coherence_scores.index(max(coherence_scores))
-        max_coherence = coherence_scores[max_index]
-        max_num_topics = topic_range[max_index]
-        
-        # Then, find the elbow point - the point where adding more topics doesn't improve coherence much
-        # We'll use a simple approach: find where the rate of improvement drops below a threshold
-        elbow_index = 0
-        elbow_found = False
-        improvement_threshold = self.config.get('coherence_improvement_threshold', 0.05)  # 5% improvement threshold
-        
-        # Start by assuming the first point is the best
-        best_index = 0
-        best_coherence = coherence_scores[0]
-        best_num_topics = topic_range[0]
-        
-        # Look for significant improvements in coherence
-        for i in range(1, len(coherence_scores)):
-            # Calculate improvement over previous point
-            improvement = coherence_scores[i] - coherence_scores[i-1]
-            improvement_percent = improvement / abs(coherence_scores[i-1]) if coherence_scores[i-1] != 0 else 0
+            if not meaningful_scores:
+                logger.warning("Not enough topics tested to find an elbow. Falling back to all scores.")
+                meaningful_scores = scores_list
+
+            # On sélectionne les meilleurs candidats PARMI les scores restants
+            # Pour u_mass, un score plus élevé (moins négatif) est meilleur
+            sorted_candidates = sorted(meaningful_scores, key=lambda item: item[1], reverse=True)
+            top_candidates = [k for k, v in sorted_candidates[:num_candidates_to_check]]
             
-            # If we see a significant improvement, update the best point
-            if improvement_percent > improvement_threshold:
-                best_index = i
-                best_coherence = coherence_scores[i]
-                best_num_topics = topic_range[i]
-            # If improvement is minimal or negative, we may have found the elbow
-            elif not elbow_found and i > 1 and i > best_index:
-                elbow_index = i - 1  # The previous point was the elbow
-                elbow_found = True
+            print_important(f"HYBRID SEARCH (STEP 1/2) COMPLETE.\nTop {num_candidates_to_check} meaningful candidates (elbow method): {top_candidates}")
+
+        except Exception as e:
+            logger.error(f"Error during u_mass scan: {e}")
+            gensim_logger.setLevel(original_level)
+            # Retourner un entier par défaut au lieu de 'auto'
+            default_topics = int(self.config.get('num_topics', 10))
+            logger.warning(f"Falling back to default number of topics: {default_topics}")
+            return default_topics, 0.0
+            
+        # --- ÉTAPE 2: Vérification ciblée avec c_v ---
+        print_important(f"HYBRID SEARCH (STEP 2/2): Reliable check with 'c_v' on {len(top_candidates)} candidates.")
         
-        # If we didn't find a clear elbow, use the point with maximum coherence
-        if not elbow_found:
-            logger.info("No clear elbow point found. Using the maximum coherence score.")
-            best_index = max_index
-            best_coherence = max_coherence
-            best_num_topics = max_num_topics
+        cv_scores = {}
+        try:
+            for num_topics in tqdm(top_candidates, desc="Verifying (c_v)"):
+                model = LdaModel(self.gensim_corpus, num_topics=num_topics, id2word=self.gensim_dictionary, passes=5, random_state=42)
+                cm = CoherenceModel(model=model, texts=tokenized_texts, dictionary=self.gensim_dictionary, coherence='c_v')
+                cv_scores[num_topics] = cm.get_coherence()
+                logger.info(f"Candidate {num_topics}: Coherence (c_v) = {cv_scores[num_topics]:.4f}")
+
+        finally:
+            gensim_logger.setLevel(original_level)
+            
+        if not cv_scores:
+            logger.warning("Could not compute any c_v score. Returning the best u_mass candidate.")
+            # S'assurer que nous retournons un entier
+            default_topics = int(top_candidates[0] if top_candidates else self.config.get('num_topics', 10))
+            return default_topics, 0.0
+
+        # --- DÉCISION FINALE ---
+        best_num_topics = max(cv_scores, key=cv_scores.get)
+        best_coherence_score = cv_scores[best_num_topics]
+
+        print_important(f"OPTIMAL NUMBER OF TOPICS: {best_num_topics}\nFinal Coherence (c_v): {best_coherence_score:.4f}\nMethod: Refined Hybrid Search (Elbow on u_mass -> c_v)")
         
         # Log all coherence scores for reference
-        for i, (num_topics, score) in enumerate(zip(topic_range, coherence_scores)):
-            status = ""
-            if i == max_index:
-                status = " (MAX)"
-            if i == best_index:
-                status = " (BEST)"
-            if elbow_found and i == elbow_index:
-                status += " (ELBOW)"
-            logger.info(f"Topics: {num_topics}, Coherence: {score:.4f}{status}")
+        for num_topics, score in cv_scores.items():
+            marker = "(BEST)" if num_topics == best_num_topics else ""
+            logger.info(f"Final candidate: {num_topics}, Coherence (c_v): {score:.4f} {marker}".strip())
         
-        selection_method = "elbow point" if elbow_found else "maximum coherence"
-        print_important(f"OPTIMAL NUMBER OF TOPICS: {best_num_topics}\nCoherence score: {best_coherence:.4f}\nSelection method: {selection_method}")
+        return best_num_topics, best_coherence_score
         
-        return best_num_topics, best_coherence
-
     def _fit_transform_bertopic(self, texts: List[str]) -> np.ndarray:
         bertopic_config = self.config.get('bertopic', {})
         embedding_model_name = bertopic_config.get('embedding_model', 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
