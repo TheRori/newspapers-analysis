@@ -20,6 +20,9 @@ import threading
 import time
 import subprocess
 from src.webapp.topic_modeling_viz import get_topic_name
+from src.webapp.cluster_map_viz import create_cluster_map, generate_map_coordinates
+import pandas as pd
+import numpy as np
 
 # Helper to load clustering results (assume similar structure to topic modeling)
 def load_clustering_stats(path):
@@ -1053,11 +1056,131 @@ def register_clustering_callbacks(app):
                 # Charger les statistiques du fichier
                 stats = load_clustering_stats(file_path)
                 if stats:
-                    return render_clustering_stats(stats), stats
+                    # Préparer les éléments à afficher
+                    output_elements = []
+                    
+                    # 1. Générer la carte des clusters
+                    if 'map_coordinates' in stats:
+                        # Si les coordonnées de la carte sont déjà présentes
+                        df = pd.DataFrame(stats['map_coordinates'])
+                    elif 'embeddings' in stats and 'labels' in stats and 'doc_ids' in stats:
+                        # Générer les coordonnées à partir des embeddings
+                        print(f"Génération des coordonnées de la carte à partir des embeddings pour {len(stats['doc_ids'])} documents")
+                        # Utiliser la fonction generate_map_coordinates de cluster_map_viz.py
+                        df = generate_map_coordinates(stats, method='tsne')
+                        
+                        # Si le DataFrame est vide, essayer une méthode plus simple
+                        if df.empty:
+                            print("Tentative de génération des coordonnées avec PCA (méthode de secours)")
+                            # Créer un DataFrame simple avec les coordonnées
+                            from sklearn.decomposition import PCA
+                            embeddings = np.array(stats['embeddings'])
+                            if len(embeddings) > 0:
+                                # Réduire la dimension à 2D avec PCA
+                                pca = PCA(n_components=2, random_state=42)
+                                coords = pca.fit_transform(embeddings)
+                                
+                                # Créer le DataFrame avec les coordonnées et les labels
+                                df = pd.DataFrame({
+                                    'doc_id': stats['doc_ids'],
+                                    'cluster': stats['labels'],
+                                    'x': coords[:, 0],
+                                    'y': coords[:, 1],
+                                    'is_anomaly': [False] * len(stats['doc_ids']),  # Par défaut, pas d'anomalies
+                                    'intensity': [0.8] * len(stats['doc_ids']),     # Intensité par défaut
+                                    'anomaly_reason': [""] * len(stats['doc_ids'])   # Pas de raison d'anomalie
+                                })
+                    else:
+                        return dbc.Alert("Le fichier de clustering ne contient pas les données nécessaires (embeddings, labels ou doc_ids).", color="warning"), None
+                    
+                    if not df.empty:
+                        # Créer la carte des clusters
+                        fig = create_cluster_map(df)
+                        output_elements.append(html.H3("Carte des clusters", className="mt-4"))
+                        output_elements.append(dcc.Graph(figure=fig, config={'displayModeBar': True}, style={"height": "600px"}))
+                    
+                    # 2. Générer la heatmap de répartition des topics (depuis render_clustering_stats)
+                    if 'cluster_centers' in stats and 'topic_names_llm' in stats:
+                        try:
+                            centers = stats['cluster_centers']
+                            
+                            # Créer une heatmap pour visualiser le poids de chaque topic dans les clusters
+                            heatmap_data = []
+                            # Déterminer le nombre total de topics
+                            num_topics = max([len(center) for center in centers])
+                            
+                            for i, center in enumerate(centers):
+                                # Utiliser tous les topics disponibles
+                                for j, weight in enumerate(center):
+                                    # Ensure we're using the exact topic number as in the topic modeling results
+                                    topic_id = j
+                                    
+                                    # Use get_topic_name function to get real topic names
+                                    topic_name = get_topic_name(topic_id, default=f"Topic {topic_id}")
+                                    
+                                    heatmap_data.append({
+                                        'Cluster': f"Cluster {i}",
+                                        'Topic': topic_name,
+                                        'Poids': weight
+                                    })
+                            
+                            if heatmap_data:
+                                heatmap_df = pd.DataFrame(heatmap_data)
+                                heatmap_fig = px.density_heatmap(
+                                    heatmap_df, x='Cluster', y='Topic', z='Poids',
+                                    title="Poids des topics dans chaque cluster",
+                                    color_continuous_scale='Viridis'
+                                )
+                                
+                                # Calculate appropriate height based on number of topics
+                                num_topics = len(heatmap_df['Topic'].unique())
+                                # Ensure minimum height of 600px and add 30px per topic
+                                dynamic_height = max(600, 400 + num_topics * 30)
+                                
+                                # Get unique topics and sort them by their numerical ID
+                                unique_topics = heatmap_df['Topic'].unique()
+                                # Create a dictionary mapping topic names to their original indices
+                                topic_indices = {}
+                                for i, topic in enumerate(unique_topics):
+                                    # Try to extract the original topic number
+                                    match = re.search(r'Topic (\d+)', topic)
+                                    if match:
+                                        topic_indices[topic] = int(match.group(1))
+                                    else:
+                                        topic_indices[topic] = i
+                                
+                                # Sort topics by their numerical index
+                                sorted_topics = sorted(unique_topics, key=lambda x: topic_indices.get(x, 0))
+                                
+                                # Update layout to ensure all topic labels are visible and in correct order
+                                heatmap_fig.update_layout(
+                                    height=dynamic_height,
+                                    margin=dict(l=250, r=50, t=50, b=100),  # Increase left margin for topic names
+                                    yaxis=dict(
+                                        tickmode='array',
+                                        tickvals=list(range(len(sorted_topics))),
+                                        ticktext=sorted_topics,
+                                        tickfont=dict(size=10),  # Adjust font size as needed
+                                        title_font=dict(size=12)
+                                    )
+                                )
+                                
+                                output_elements.append(html.H3("Répartition des topics", className="mt-4"))
+                                output_elements.append(dcc.Graph(figure=heatmap_fig, id='cluster-heatmap-plot'))
+                        except Exception as e:
+                            import traceback
+                            print(f"Erreur lors de la création de la heatmap: {str(e)}")
+                            print(traceback.format_exc())
+                    
+                    # Retourner les éléments de visualisation et les stats
+                    return html.Div(output_elements), stats
                 else:
                     return dbc.Alert("Impossible de charger les données du fichier sélectionné.", color="warning"), None
             except Exception as e:
-                return dbc.Alert(f"Erreur lors du chargement du fichier: {str(e)}", color="danger"), None
+                import traceback
+                print(f"Erreur lors du chargement ou de la génération des visualisations: {str(e)}")
+                print(traceback.format_exc())
+                return dbc.Alert(f"Erreur lors du traitement du fichier: {str(e)}", color="danger"), None
         else:
             return dbc.Alert(f"Le fichier {selected_file} n'existe pas.", color="warning"), None
     

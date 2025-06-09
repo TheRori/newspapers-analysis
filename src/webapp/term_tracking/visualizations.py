@@ -48,13 +48,29 @@ def create_term_tracking_visualizations(results_file, viz_type="bar"):
             key_type = key_column
         term_columns = df.columns[1:].tolist()
 
-        # Extraction automatique des années et journaux si Article ID
+        # Remplacer l'extraction par regex : récupérer le vrai nom du journal depuis articles_v1.json
+        import json
+        import os
+        articles_json_path = os.path.join("data", "processed", "articles_v1.json")
+        if os.path.exists(articles_json_path):
+            with open(articles_json_path, "r", encoding="utf-8") as f:
+                articles = json.load(f)
+            # mapping id/base_id -> newspaper
+            id_to_newspaper = {}
+            for article in articles:
+                article_id = str(article.get("id") or article.get("base_id"))
+                id_to_newspaper[article_id] = article.get("newspaper", "Inconnu")
+            def get_newspaper(article_id):
+                return id_to_newspaper.get(str(article_id), "Inconnu")
+            if "Article ID" in df.columns:
+                df["Journal"] = df["Article ID"].apply(get_newspaper)
+        # Extraction automatique de la date si possible (conserve la logique précédente)
         if key_type == "Article ID" or (df.columns[0].startswith('article_')):
             if df.columns[0].startswith('article_'):
                 df = df.rename(columns={df.columns[0]: 'Article ID'})
                 key_type = "Article ID"
             df['Date'] = df['Article ID'].str.extract(r'article_(\d{4}-\d{2}-\d{2})_')
-            df['Journal'] = df['Article ID'].str.extract(r'article_\d{4}-\d{2}-\d{2}_([^_]+)_')
+        # NB: la colonne Journal est maintenant issue du JSON, plus du parsing d'ID
 
         # === LOGIQUE STRICTEMENT IDENTIQUE À term_tracking_viz copy.py POUR LE GRAPHIQUE CHRONOLOGIQUE ===
         # Créer colonne Année à partir de Date si possible
