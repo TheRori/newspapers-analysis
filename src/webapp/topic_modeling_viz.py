@@ -27,6 +27,18 @@ import ast
 import logging
 import datetime
 
+# Import des composants d'exportation
+from src.webapp.export_component import (
+    create_export_button,
+    create_export_modal,
+    create_feedback_toast,
+    register_export_callbacks
+)
+from src.utils.export_utils import save_analysis
+
+# Variable globale pour stocker le résultat actuellement sélectionné
+current_selected_result = None
+
 # Configuration du logging
 def setup_logging():
 	project_root = pathlib.Path(__file__).resolve().parents[2]
@@ -353,7 +365,15 @@ def get_topic_modeling_layout():
 		dbc.Row([
 			dbc.Col([
 				dbc.Card([
-					dbc.CardHeader(_html.H4("Résultats de Topic Modeling", className="mb-0")),
+					dbc.CardHeader(
+						dbc.Row([
+							dbc.Col(_html.H4("Résultats de Topic Modeling", className="mb-0"), width="auto"),
+							dbc.Col(
+								create_export_button("topic_modeling", button_id="export-topic-modeling-button"),
+								width="auto", className="ms-auto"
+							)
+						])
+					),
 					dbc.CardBody([
 						_html.Div([
 							dbc.Label("Sélectionner un fichier de résultats:", className="fw-bold"),
@@ -541,6 +561,13 @@ def get_topic_modeling_layout():
 			], label="Filtrage des publicités", tab_id="ad-filter-tab")
 		], id="topic-modeling-tabs", active_tab="stats-tab"),
 		# Le Store pour l'état des filtres a été supprimé
+		
+		# Store pour stocker le résultat sélectionné
+		dcc.Store(id="topic-modeling-selected-result-store", data=None),
+		
+		# Composants d'exportation
+		create_export_modal("topic_modeling", modal_id="export-topic-modeling-modal"),
+		create_feedback_toast("export-topic-modeling-feedback-toast")
 	], fluid=True)
 
 # Callback registration
@@ -1048,6 +1075,17 @@ def register_topic_modeling_callbacks(app):
 	import time  # Ajout du module time pour mesurer les performances
 	from datetime import datetime
 	
+	# Enregistrer les callbacks d'exportation pour le topic modeling
+	register_export_callbacks(
+		app,
+		analysis_type="topic_modeling",
+		get_source_data_function=get_topic_modeling_source_data,
+		get_figure_function=get_topic_modeling_figure,
+		button_id="export-topic-modeling-button",
+		modal_id="export-topic-modeling-modal",
+		toast_id="export-topic-modeling-feedback-toast"
+	)
+	
 	# Register the topic filter component callbacks
 	register_topic_filter_callbacks(app, id_prefix="topic-filter")
 	parser_args = get_topic_modeling_args()
@@ -1088,6 +1126,16 @@ def register_topic_modeling_callbacks(app):
 		except Exception as e:
 			print(f"Erreur lors de l'ouverture de la boîte de dialogue: {e}")
 			return current_value
+
+	# Callback pour mettre à jour la variable globale current_selected_result
+	@app.callback(
+		Output("topic-modeling-selected-result-store", "data"),
+		[Input("topic-modeling-results-dropdown", "value")]
+	)
+	def update_selected_result(selected_file):
+		global current_selected_result
+		current_selected_result = selected_file
+		return selected_file
 
 	# Callback pour lancer le topic modeling
 	@app.callback(
@@ -1513,6 +1561,103 @@ def register_topic_modeling_callbacks(app):
 		except Exception as e:
 			print(f"Erreur lors du chargement des options de topic pour le filtre pub: {e}")
 
+
+# Fonctions pour l'exportation des résultats de topic modeling
+def get_topic_modeling_source_data():
+    """
+    Récupère les chemins des fichiers source pour l'exportation du topic modeling.
+    Utilise le résultat actuellement sélectionné dans le dropdown pour trouver les fichiers correspondants.
+    
+    Returns:
+        list: Liste des chemins de fichiers à inclure dans l'exportation
+    """
+    global current_selected_result
+    project_root, config, advanced_analysis_dir, doc_topic_dir, topic_names_dir = get_config_and_paths()
+    
+    source_files = []
+    
+    # Si aucun résultat n'est sélectionné, retourner une liste vide
+    if not current_selected_result:
+        return source_files
+    
+    # Extraire l'ID du modèle à partir du chemin du fichier sélectionné
+    # Format typique: advanced_analysis_gensim_lda_20250609-191600_08f53591.json
+    try:
+        # Supprimer le cache buster s'il est présent
+        clean_path = current_selected_result.split('?')[0]
+        file_name = os.path.basename(clean_path)
+        
+        # Extraire le timestamp et l'ID du modèle
+        match = re.search(r'advanced_analysis_(\w+)_(\d{8}-\d{6})_(\w+)\.json', file_name)
+        if match:
+            model_type = match.group(1)
+            timestamp = match.group(2)
+            model_id = match.group(3)
+            
+            # Ajouter le fichier d'analyse avancée sélectionné
+            source_files.append(clean_path)
+            
+            # Trouver le fichier de matrice document-topic correspondant (CSV ou JSON)
+            doc_topic_path_csv = doc_topic_dir / f"doc_topic_matrix_{model_type}_{timestamp}_{model_id}.csv"
+            doc_topic_path_json = doc_topic_dir / f"doc_topic_matrix_{model_type}_{timestamp}_{model_id}.json"
+            
+            # Vérifier d'abord le format CSV
+            if doc_topic_path_csv.exists():
+                source_files.append(str(doc_topic_path_csv))
+            # Sinon, vérifier le format JSON
+            elif doc_topic_path_json.exists():
+                source_files.append(str(doc_topic_path_json))
+            
+            # Trouver le fichier de noms de topics correspondant
+            topic_names_path = topic_names_dir / f"topic_names_llm_{model_type}_{timestamp}_{model_id}.json"
+            if topic_names_path.exists():
+                source_files.append(str(topic_names_path))
+            
+            # Fallback pour les anciens formats de noms de fichiers
+            if not topic_names_path.exists():
+                # Chercher avec un pattern plus générique
+                pattern = f"topic_names_llm_*_{model_id}.json"
+                matching_files = list(topic_names_dir.glob(pattern))
+                if matching_files:
+                    source_files.append(str(matching_files[0]))
+        else:
+            # Si le format ne correspond pas, utiliser les fichiers les plus récents
+            topic_modeling_logger.warning(f"Format de nom de fichier non reconnu: {file_name}. Utilisation des fichiers les plus récents.")
+            
+            # Fichier d'analyse avancée
+            source_files.append(clean_path)
+            
+            # Fichier de matrice document-topic (CSV ou JSON)
+            doc_topic_files = list(doc_topic_dir.glob('doc_topic_matrix_*.csv')) + list(doc_topic_dir.glob('doc_topic_matrix_*.json'))
+            if doc_topic_files:
+                doc_topic_files.sort(key=lambda x: os.stat(x).st_mtime, reverse=True)
+                source_files.append(str(doc_topic_files[0]))
+            
+            # Fichier de noms de topics
+            topic_names_files = list(topic_names_dir.glob('topic_names_llm_*.json'))
+            if topic_names_files:
+                topic_names_files.sort(key=lambda x: os.stat(x).st_mtime, reverse=True)
+                source_files.append(str(topic_names_files[0]))
+    
+    except Exception as e:
+        topic_modeling_logger.error(f"Erreur lors de la récupération des fichiers source: {e}")
+        # En cas d'erreur, retourner le fichier sélectionné uniquement
+        if current_selected_result:
+            source_files.append(current_selected_result.split('?')[0])
+    
+    return source_files
+
+def get_topic_modeling_figure():
+    """
+    Récupère la figure actuelle du topic modeling pour l'exportation.
+    
+    Returns:
+        dict: Figure au format JSON ou None si aucune figure n'est disponible
+    """
+    # Pour l'instant, nous n'avons pas de figure spécifique à exporter
+    # Cette fonction pourrait être améliorée pour récupérer une visualisation
+    # des topics si elle est disponible
+    return None
 
 # Helper to render advanced stats (adapt to your JSON structure)
 def render_advanced_topic_stats_from_json(json_file_path):

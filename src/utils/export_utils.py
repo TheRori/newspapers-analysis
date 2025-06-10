@@ -82,7 +82,7 @@ def get_export_path(config: Dict[str, Any]) -> Path:
 def save_analysis(
     title: str,
     description: str,
-    source_data: Dict[str, Any],
+    source_data: Union[Dict[str, Any], List[str]],
     analysis_type: str,
     figure: Optional[go.Figure] = None,
     additional_metadata: Optional[Dict[str, Any]] = None,
@@ -175,8 +175,25 @@ def save_analysis(
         # Sauvegarder les fichiers source mentionnés dans source_data
         saved_files = []
         
+        # Cas spécial pour topic_modeling où source_data est une liste de chemins de fichiers
+        if analysis_type == "topic_modeling" and isinstance(source_data, list):
+            log_info(f"Traitement d'une liste de fichiers source pour le topic modeling: {len(source_data)} fichiers")
+            for file_path_str in source_data:
+                source_file = Path(file_path_str)
+                if source_file.exists():
+                    dest_path = source_dir / source_file.name
+                    shutil.copy2(source_file, dest_path)
+                    saved_files.append({
+                        "type": "source_file",
+                        "original_path": str(source_file),
+                        "saved_path": str(dest_path)
+                    })
+                    log_success(f"Fichier copié avec succès: {source_file.name} -> {dest_path}")
+                else:
+                    log_warning(f"Fichier source non trouvé, ignoré: {source_file}")
+        
         # Fichier de résultats (pour term_tracking, topic_modeling, etc.)
-        if "results_file" in source_data and source_data["results_file"]:
+        elif isinstance(source_data, dict) and "results_file" in source_data and source_data["results_file"]:
             results_file = Path(source_data["results_file"])
             if results_file.exists():
                 # Copier le fichier de résultats

@@ -53,13 +53,14 @@
                         <h3>Période</h3>
                         <select id="year-range">
                             <option value="all">Toutes les années</option>
+                            <option value="1960-1965">1960-1965</option>
+                            <option value="1965-1970">1965-1970</option>
+                            <option value="1970-1975">1970-1975</option>
+                            <option value="1975-1980">1975-1980</option>
+                            <option value="1980-1985">1980-1985</option>
+                            <option value="1985-1990">1985-1990</option>
                             <option value="1990-1995">1990-1995</option>
                             <option value="1995-2000">1995-2000</option>
-                            <option value="2000-2005">2000-2005</option>
-                            <option value="2005-2010">2005-2010</option>
-                            <option value="2010-2015">2010-2015</option>
-                            <option value="2015-2020">2015-2020</option>
-                            <option value="2020-2025">2020-2025</option>
                         </select>
                     </div>
                 </div>
@@ -81,6 +82,16 @@
         </div>
     </div>
 
+    <!-- Modal pour afficher les détails du canton -->
+    <div id="sentiment-modal" class="sentiment-modal" style="display:none;">
+      <div class="sentiment-modal-content">
+        <span class="sentiment-modal-close" id="sentiment-modal-close">&times;</span>
+        <h2 id="sentiment-modal-title">Détails du canton</h2>
+        <div id="sentiment-modal-body">
+          <!-- Contenu généré dynamiquement -->
+        </div>
+      </div>
+    </div>
     <script src="sentiment_heatmap.js"></script>
 </body>
 </html>

@@ -1,0 +1,262 @@
+/* network.css */
+
+:root {
+    --primary-color: #00ff9d;
+    --primary-dark: #00cc7d;
+    --secondary-color: #333;
+    --background-color: #000;
+    --text-color: #eee;
+    --card-bg-color: #111;
+    --card-border-color: var(--primary-color);
+    --hover-color: #00ff9d40;
+}
+
+body {
+    font-family: 'Courier New', monospace;
+    margin: 0;
+    padding: 0;
+    background-color: var(--background-color);
+    color: var(--text-color);
+}
+
+/* --- Header & Navigation --- */
+header {
+    background-color: var(--secondary-color);
+    padding: 1rem;
+    box-shadow: 0 2px 10px rgba(0, 255, 157, 0.3);
+}
+
+.header-content {
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.header-content h1 {
+    margin: 0;
+    color: var(--primary-color);
+    font-size: 2rem;
+    text-transform: uppercase;
+}
+
+.header-content p {
+    margin: 0.5rem 0 0;
+    font-size: 1rem;
+    opacity: 0.8;
+}
+
+.main-nav {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+}
+
+.nav-link {
+    color: var(--text-color);
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.nav-link:hover, .nav-link.active {
+    background-color: var(--primary-color);
+    color: var(--background-color);
+}
+
+/* --- Layout Principal --- */
+.container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+/* --- Visualisation du Réseau --- */
+#network-container {
+    width: 100%;
+    height: 70vh; /* Hauteur relative à la fenêtre */
+    background-color: var(--card-bg-color);
+    border: 2px solid var(--card-border-color);
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+}
+
+#network-container:active {
+    cursor: grabbing;
+}
+
+/* Styles pour les éléments D3 */
+.link {
+    stroke: #555;
+}
+
+.node {
+    stroke: #fff;
+    stroke-width: 1.5px;
+    cursor: pointer;
+}
+
+.node-label {
+    fill: white;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    pointer-events: none;
+    text-anchor: middle;
+}
+
+/* --- Info-bulle (Tooltip) --- */
+#tooltip {
+    position: absolute;
+    display: none;
+    background-color: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--primary-color);
+    pointer-events: none;
+    z-index: 1000;
+    font-size: 0.9rem;
+    max-width: 300px;
+}
+
+/* --- Slider de Zoom --- */
+#zoom-slider-container {
+    position: absolute;
+    bottom: 120px;
+    right: -30px;
+    width: 150px;
+    height: 20px;
+    transform: rotate(-90deg);
+    z-index: 100;
+}
+
+#zoom-slider {
+    width: 100%;
+    cursor: pointer;
+    accent-color: var(--primary-color);
+}
+
+
+/* --- Liste des Articles --- */
+.articles-container {
+    margin-top: 2rem;
+    background-color: var(--card-bg-color);
+    border: 2px solid var(--card-border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+}
+
+.articles-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--primary-color);
+    padding-bottom: 0.5rem;
+}
+
+.articles-header h2 {
+    color: var(--primary-color);
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.articles-list {
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+}
+
+.article-item {
+    padding: 0.8rem;
+    border-bottom: 1px solid #333;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.article-item:hover {
+    background-color: var(--hover-color);
+}
+
+.article-title {
+    font-weight: bold;
+    margin-bottom: 0.3rem;
+}
+
+.article-meta {
+    font-size: 0.8rem;
+    color: #aaa;
+}
+
+.no-articles {
+    text-align: center;
+    padding: 2rem;
+    color: #888;
+}
+
+/* --- Modale --- */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+}
+
+.modal-content {
+    background-color: var(--card-bg-color);
+    margin: 5% auto;
+    padding: 20px;
+    border: 2px solid var(--primary-color);
+    border-radius: 8px;
+    width: 80%;
+    max-width: 800px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--primary-color);
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+}
+
+.close {
+    color: var(--primary-color);
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: #fff;
+}
+
+.modal-body {
+    overflow-y: auto;
+    flex-grow: 1;
+}
+
+.article-metadata {
+    text-align: right;
+    font-size: 0.9rem;
+    opacity: 0.7;
+}
+
+/* --- Footer --- */
+footer {
+    text-align: center;
+    padding: 1rem;
+    margin-top: 2rem;
+    background-color: var(--secondary-color);
+    color: #aaa;
+    font-size: 0.8rem;
+}

@@ -1,8 +1,7 @@
 // Configuration
 const config = {
     dataPath: 'data/source/collections/term_tracking_chrono/f49a77fc-3f0d-48de-aa75-82db1cfa409c/source_files/term_tracking_results.csv',
-    articlesPath: 'data/source/articles.json',
-    articlesParquetPath: 'data/source/articles.parquet',
+    articlesPath: 'data/source/articles_v1_filtered.json',
     margin: { top: 40, right: 80, bottom: 60, left: 60 },
     transitionDuration: 800,
     colors: d3.schemeSet2,
@@ -289,7 +288,7 @@ async function loadData() {
         });
         
         // Obtenir la liste des années uniques et les trier
-        const years = [...new Set(articleInfo.map(item => item.year))].sort();
+        const years = [...new Set(articleInfo.map(item => item.date))].sort();
         
         // Obtenir la liste des cantons et journaux uniques (sans normalisation)
         const cantons = [...new Set(articleInfo.map(item => item.canton).filter(c => c !== 'unknown'))];
@@ -299,7 +298,7 @@ async function loadData() {
         
         // Agréger les données par année
         const yearlyData = years.reduce((acc, year) => {
-            const articlesThisYear = articleInfo.filter(a => a.year === year);
+            const articlesThisYear = articleInfo.filter(a => a.date.substring(0, 4) === year);
             
             acc[year] = terms.reduce((termAcc, term) => {
                 termAcc[term] = articlesThisYear.reduce((sum, article) => sum + (article.values[term] || 0), 0);

@@ -3,9 +3,8 @@
 
 // Configuration globale
 const dataConfig = {
-    dataPath: 'data/source/collections/term_tracking_chrono/f49a77fc-3f0d-48de-aa75-82db1cfa409c/source_files/term_tracking_results.csv',
-    articlesPath: 'data/source/articles.json',
-    articlesParquetPath: 'data/source/articles.parquet',
+    dataPath: 'data/source/collections/term_tracking_chrono/0cc5204f-5f9b-464e-89aa-880a31b514d1/source_files/term_tracking_results.csv',
+    articlesPath: 'data/source/articles_v1_filtered.json',
     timelineEventsPath: 'config/timeline_events.json',
     timelineDataPath: 'data/source/collections/term_tracking_chrono/ab7dd30b-8f09-46d0-ae5e-08aabddd1a90/source_files/term_tracking_results.csv',
     maxTermsToShow: 8,

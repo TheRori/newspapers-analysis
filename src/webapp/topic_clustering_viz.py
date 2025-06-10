@@ -21,8 +21,17 @@ import time
 import subprocess
 from src.webapp.topic_modeling_viz import get_topic_name
 from src.webapp.cluster_map_viz import create_cluster_map, generate_map_coordinates
+from src.webapp.export_component import (
+    create_export_button,
+    create_export_modal,
+    create_feedback_toast,
+    register_export_callbacks
+)
 import pandas as pd
 import numpy as np
+
+# Variable globale pour stocker le résultat de clustering actuellement sélectionné
+current_selected_cluster = None
 
 # NOUVELLE LOGIQUE : Fonction pour trouver et charger les noms de topics les plus récents
 def find_and_load_latest_topic_names():
@@ -723,6 +732,9 @@ def get_clustering_layout():
             dbc.Col([
                 html.H2("Analyse de Clustering", className="text-center mb-4"),
                 
+                # Bouton d'exportation pour la médiation
+                create_export_button("clustering", button_id="export-clustering-button"),
+                
                 # Système d'onglets
                 dbc.Tabs([
                     # Onglet Paramètres
@@ -779,12 +791,121 @@ def get_clustering_layout():
                 # Store pour les données de clustering
                 dcc.Store(id="cluster-data-store"),
                 # Store pour les données de résultats chargés
-                dcc.Store(id="results-data-store")
+                dcc.Store(id="results-data-store"),
+                # Store pour stocker le résultat de clustering sélectionné
+                dcc.Store(id="clustering-selected-result-store", data=None),
+                
+                # Composants pour l'exportation
+                create_export_modal("clustering", modal_id="export-clustering-modal"),
+                create_feedback_toast("export-clustering-feedback-toast")
             ], width=12)
         ])
     ])
 
 # Callback registration for clustering (to be called from app.py)
+def get_clustering_source_data():
+    """
+    Récupère les données source pour l'exportation du clustering.
+    Utilise le résultat de clustering actuellement sélectionné dans le dropdown.
+    
+    Returns:
+        dict: Données source pour l'exportation
+    """
+    global current_selected_cluster
+    project_root = Path(__file__).resolve().parents[2]
+    
+    # Chemins vers les répertoires
+    doc_topic_matrix_path = project_root / 'data' / 'results' / 'doc_topic_matrix'
+    advanced_analysis_path = project_root / 'data' / 'results' / 'advanced_analysis'
+    clusters_dir = project_root / 'data' / 'results' / 'clusters'
+    
+    # Initialiser les fichiers à None
+    doc_topic_file = None
+    advanced_analysis_file = None
+    cluster_file = None
+    
+    # Si un résultat de clustering est sélectionné
+    if current_selected_cluster:
+        try:
+            # Utiliser le fichier de clustering sélectionné
+            cluster_file = current_selected_cluster
+            
+            # Extraire l'ID du modèle à partir du nom du fichier
+            file_name = os.path.basename(cluster_file)
+            
+            # Format typique: doc_clusters_k5_gensim_lda_20250609-191600_08f53591.json
+            match = re.search(r'doc_clusters_k\d+_(\w+)_(\d{8}-\d{6})_(\w+)\.json', file_name)
+            if match:
+                model_type = match.group(1)
+                timestamp = match.group(2)
+                model_id = match.group(3)
+                
+                # Trouver le fichier de matrice document-topic correspondant
+                doc_topic_file_path = doc_topic_matrix_path / f"doc_topic_matrix_{model_type}_{timestamp}_{model_id}.csv"
+                if doc_topic_file_path.exists():
+                    doc_topic_file = str(doc_topic_file_path)
+                
+                # Trouver le fichier d'analyse avancée correspondant
+                advanced_analysis_file_path = advanced_analysis_path / f"advanced_analysis_{model_type}_{timestamp}_{model_id}.json"
+                if advanced_analysis_file_path.exists():
+                    advanced_analysis_file = str(advanced_analysis_file_path)
+            else:
+                # Si le format ne correspond pas, utiliser les fichiers les plus récents
+                print(f"Format de nom de fichier de clustering non reconnu: {file_name}. Utilisation des fichiers les plus récents.")
+                
+                # Fichier de matrice document-topic
+                doc_topic_files = list(doc_topic_matrix_path.glob('*.csv'))
+                if doc_topic_files:
+                    doc_topic_file = str(max(doc_topic_files, key=os.path.getmtime))
+                
+                # Fichier d'analyse avancée
+                advanced_analysis_files = list(advanced_analysis_path.glob('*.json'))
+                if advanced_analysis_files:
+                    advanced_analysis_file = str(max(advanced_analysis_files, key=os.path.getmtime))
+        except Exception as e:
+            print(f"Erreur lors de la récupération des fichiers source pour le clustering: {e}")
+    else:
+        # Si aucun résultat n'est sélectionné, utiliser les fichiers les plus récents
+        # Fichier de matrice document-topic
+        doc_topic_files = list(doc_topic_matrix_path.glob('*.csv'))
+        if doc_topic_files:
+            doc_topic_file = str(max(doc_topic_files, key=os.path.getmtime))
+        
+        # Fichier d'analyse avancée
+        advanced_analysis_files = list(advanced_analysis_path.glob('*.json'))
+        if advanced_analysis_files:
+            advanced_analysis_file = str(max(advanced_analysis_files, key=os.path.getmtime))
+        
+        # Fichier de clustering
+        cluster_files = list(clusters_dir.glob('doc_clusters_k*.json'))
+        if cluster_files:
+            cluster_file = str(max(cluster_files, key=os.path.getmtime))
+    
+    return {
+        "doc_topic_matrix_file": doc_topic_file,
+        "advanced_analysis_file": advanced_analysis_file,
+        "results_file": cluster_file
+    }
+
+def get_clustering_figure():
+    """
+    Récupère la figure actuelle pour l'exportation du clustering.
+    
+    Returns:
+        dict: Données de la figure pour l'exportation
+    """
+    # Pour le clustering, nous utilisons la figure de la carte des clusters si disponible
+    try:
+        from src.webapp.cluster_map_viz import get_current_cluster_map
+        figure = get_current_cluster_map()
+        if figure:
+            return figure
+    except Exception as e:
+        print(f"Erreur lors de la récupération de la figure de clustering: {e}")
+    
+    # Si pas de figure disponible, retourner None
+    return None
+
 def register_clustering_callbacks(app):
     import threading
     import time
@@ -795,6 +916,17 @@ def register_clustering_callbacks(app):
     from dash.dependencies import Input, Output, State, ALL
     from dash import callback_context, no_update
     import subprocess
+    
+    # Enregistrer les callbacks d'exportation pour le clustering
+    register_export_callbacks(
+        app,
+        analysis_type="clustering",
+        get_source_data_function=get_clustering_source_data,
+        get_figure_function=get_clustering_figure,
+        button_id="export-clustering-button",
+        modal_id="export-clustering-modal",
+        toast_id="export-clustering-feedback-toast"
+    )
     
     @app.callback(
         [Output("clustering-stats-output", "children"),
@@ -965,6 +1097,21 @@ def register_clustering_callbacks(app):
         if 'tab' not in result_holder:
             result_holder['tab'] = "tab-params"
         return result_holder['output'], result_holder['data'], result_holder['tab']
+    
+    # Callback pour mettre à jour la variable globale current_selected_cluster
+    @app.callback(
+        Output("clustering-selected-result-store", "data"),
+        [Input("results-file-dropdown", "value")]
+    )
+    def update_selected_cluster(selected_file):
+        global current_selected_cluster
+        if selected_file:
+            # Construire le chemin complet vers le fichier de résultats
+            project_root = Path(__file__).resolve().parents[2]
+            current_selected_cluster = os.path.join(project_root, 'data', 'results', 'clusters', selected_file)
+        else:
+            current_selected_cluster = None
+        return selected_file
     
     # CORRECTION : Callback pour charger les résultats depuis un fichier existant
     @app.callback(
