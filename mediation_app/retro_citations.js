@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function loadArticles() {
         try {
             console.log('Chargement des articles...');
-            const response = await fetch('data/source/articles.json');
+            const response = await fetch('data/source/articles_v1_filtered.json');
             if (!response.ok) {
                 throw new Error(`Erreur HTTP: ${response.status}`);
             }

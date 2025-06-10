@@ -24,6 +24,16 @@
     </header>
 
     <div class="container">
+
+        <div class="data-source-selector">
+            <label for="date-range-select">Période d'Analyse :</label>
+            <select id="date-range-select">
+                <option value="4c55b89d_55-71">1955 - 1971</option>
+                <option value="b582d8f5_72-79">1972 - 1979</option>
+                <option value="a9f32285_80-88" selected>1980 - 1988</option>
+                <option value="75353129_89-99">1989 - 1999</option>
+            </select>
+        </div>
         <div class="entity-type-selector">
             <button class="entity-type-button active" data-type="ORG">Organisations</button>
             <button class="entity-type-button" data-type="LOC">Lieux</button>
@@ -33,12 +43,9 @@
         <div class="entity-cards-container">
             <div class="swiper entity-swiper">
                 <div class="swiper-wrapper" id="entity-cards">
-                    <!-- Cards will be generated here -->
-                </div>
-                <!-- Navigation buttons -->
+                    </div>
                 <div class="swiper-button-next"></div>
                 <div class="swiper-button-prev"></div>
-                <!-- Pagination -->
                 <div class="swiper-pagination"></div>
             </div>
         </div>
@@ -65,14 +72,12 @@
             <div class="entity-articles">
                 <h3>Articles mentionnant cette organisation</h3>
                 <div id="entity-articles-list" class="articles-list">
-                    <!-- Articles will be listed here -->
                     <p class="no-selection">Sélectionnez une organisation pour voir les articles associés</p>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Modal pour afficher les articles -->
     <div id="article-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -81,8 +86,7 @@
             </div>
             <div class="modal-body">
                 <div id="article-content">
-                    <!-- Article content will be displayed here -->
-                </div>
+                    </div>
             </div>
             <div class="modal-footer">
                 <div class="article-metadata">
