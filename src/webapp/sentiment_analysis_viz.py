@@ -170,10 +170,10 @@ def get_sentiment_analysis_layout():
     # Create the layout
     layout = html.Div([
         dbc.Container([
-            dbc.Row([
-                dbc.Col([
+            dbc.Tabs([
+                # Onglet "Lancer une analyse"
+                dbc.Tab([
                     dbc.Card([
-                        dbc.CardHeader(html.H3("Analyse de sentiment", className="mb-0")),
                         dbc.CardBody([
                             html.P("Configurez les paramètres de l'analyse de sentiment ci-dessous, puis cliquez sur 'Lancer'.", className="text-muted mb-3"),
 
@@ -201,13 +201,11 @@ def get_sentiment_analysis_layout():
                             html.Div(id="sentiment-run-output", className="mt-3")
                         ])
                     ], className="mb-4")
-                ], width=12)
-            ]),
-
-            dbc.Row([
-                dbc.Col([
+                ], label="Lancer une analyse", tab_id="sentiment-run-tab"),
+                
+                # Onglet "Résultats"
+                dbc.Tab([
                     dbc.Card([
-                        dbc.CardHeader(html.H3("Résultats de l'analyse de sentiment", className="mb-0")),
                         dbc.CardBody([
                             # Results dropdown
                             dbc.Row([
@@ -231,18 +229,25 @@ def get_sentiment_analysis_layout():
                             create_export_modal("sentiment_analysis", "sentiment-export-modal"),
                             create_feedback_toast("sentiment-export-feedback"),
 
-                            html.Br(),
+                            # Bouton pour charger les résultats
+                            dbc.Button(
+                                "Charger les résultats",
+                                id="sentiment-load-button",
+                                color="primary",
+                                className="mb-3"
+                            ),
+                            html.Hr(),
 
-                            # Le composant de filtrage par cluster a été supprimé ici car il est utilisé uniquement en amont
-
-                            # Results container
-                            html.Div(id="sentiment-results-container", children=[
-                                # This will be populated by the callback
-                            ])
+                            # Results container with loading animation
+                            dcc.Loading(
+                                id="loading-sentiment-results",
+                                children=[html.Div(id="sentiment-results-container", children=[])],
+                                type="circle"
+                            )
                         ], className="mt-3")
                     ])
-                ], width=12)
-            ])
+                ], label="Résultats", tab_id="sentiment-results-tab")
+            ], id="sentiment-tabs", active_tab="sentiment-run-tab")
         ])
     ])
 
@@ -1061,9 +1066,14 @@ def register_sentiment_analysis_callbacks(app):
     # Callback to display sentiment analysis results
     @app.callback(
         Output("sentiment-results-container", "children"),
-        Input("sentiment-results-dropdown", "value")
+        Input("sentiment-load-button", "n_clicks"),
+        State("sentiment-results-dropdown", "value"),
+        prevent_initial_call=True
     )
-    def display_sentiment_results(results_file):
+    def display_sentiment_results(n_clicks, results_file):
+        if not n_clicks:
+            return html.P("Cliquez sur 'Charger les résultats' pour afficher les visualisations.")
+            
         # Extraire le chemin du fichier du paramètre de cache-busting
         if results_file and '?' in results_file:
             results_file = results_file.split('?')[0]

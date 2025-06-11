@@ -308,17 +308,20 @@ def get_topic_modeling_controls():
 	return controls
 
 # Layout for the topic modeling page
+# Fichier : src/webapp/topic_modeling_viz.py
 def get_topic_modeling_layout():
 	return dbc.Container([
-		dbc.Row([
-			dbc.Col([
+		# NOUVELLE STRUCTURE : Onglets principaux pour séparer la configuration des résultats
+		dbc.Tabs([
+			# Onglet 1: Paramètres pour lancer une nouvelle analyse
+			dbc.Tab([
 				dbc.Card([
-					dbc.CardHeader(_html.H3("Paramètres du Topic Modeling", className="mb-0")),
+					dbc.CardHeader(html.H3("Paramètres du Topic Modeling", className="mb-0")),
 					dbc.CardBody([
-						_html.P("Configurez les paramètres de l'analyse thématique ci-dessous, puis cliquez sur 'Lancer'.", className="text-muted mb-3"),
+						html.P("Configurez les paramètres de l'analyse thématique ci-dessous, puis cliquez sur 'Lancer'.", className="text-muted mb-3"),
 
 						# Fichier source personnalisé
-						_html.H5("Fichier source", className="mb-2"),
+						html.H5("Fichier source", className="mb-2"),
 						dbc.Row([
 							dbc.Col([
 								dbc.InputGroup([
@@ -329,12 +332,12 @@ def get_topic_modeling_layout():
 									),
 									dbc.Button("Parcourir", id="source-file-browse", color="secondary", n_clicks=0)
 								]),
-								_html.Small("Laissez vide pour utiliser le fichier par défaut de la configuration.", className="text-muted")
+								html.Small("Laissez vide pour utiliser le fichier par défaut de la configuration.", className="text-muted")
 							], width=12),
 						], className="mb-3"),
 
 						# Sélection de fichier de cache
-						_html.H5("Fichier de cache Spacy", className="mb-2"),
+						html.H5("Fichier de cache Spacy", className="mb-2"),
 						dbc.Row([
 							dbc.Col([
 								dbc.Select(
@@ -343,234 +346,182 @@ def get_topic_modeling_layout():
 									value="",
 									className="mb-2"
 								),
-
-								_html.Small("Sélectionnez un fichier de cache Spacy existant pour accélérer le traitement.", className="text-muted d-block"),
-								_html.Div(id="cache-info-display", className="mt-2")
+								html.Small("Sélectionnez un fichier de cache Spacy existant pour accélérer le traitement.", className="text-muted d-block"),
+								html.Div(id="cache-info-display", className="mt-2")
 							], width=12),
 						], className="mb-3"),
 
 						dbc.Form(get_topic_modeling_controls()),
 
 						# Add topic filter component
-						_html.H5("Filtrage par cluster", className="mt-4 mb-3"),
+						html.H5("Filtrage par cluster", className="mt-4 mb-3"),
 						get_topic_filter_component(id_prefix="topic-filter"),
 
 						dbc.Button("Lancer le Topic Modeling", id="btn-run-topic-modeling", color="primary", n_clicks=0, className="mt-3 mb-2"),
-						_html.Div(id="topic-modeling-run-status", className="mb-3"),
+						html.Div(id="topic-modeling-run-status", className="mb-3"),
 					]),
-				], className="mb-4 shadow"),
-			], width=12)
-		]),
-		# Sélecteur de fichiers de résultats
-		dbc.Row([
-			dbc.Col([
-				dbc.Card([
-					dbc.CardHeader(
-						dbc.Row([
-							dbc.Col(_html.H4("Résultats de Topic Modeling", className="mb-0"), width="auto"),
-							dbc.Col(
-								create_export_button("topic_modeling", button_id="export-topic-modeling-button"),
-								width="auto", className="ms-auto"
-							)
-						])
-					),
-					dbc.CardBody([
-						_html.Div([
-							dbc.Label("Sélectionner un fichier de résultats:", className="fw-bold"),
-							dcc.Dropdown(
-								id="topic-modeling-results-dropdown",
-								options=get_topic_modeling_results(),
-								value=get_topic_modeling_results()[0]['value'] if get_topic_modeling_results() else None,
-								clearable=False,
-								className="mb-3"
+				], className="my-4 shadow"),
+			], label="Paramètres", tab_id="tab-params"),
+
+			# Onglet 2: Visualisation des résultats existants
+			dbc.Tab([
+				# Bloc de sélection du fichier de résultats et bouton d'export
+				dbc.Row([
+					dbc.Col([
+						dbc.Card([
+							dbc.CardHeader(
+								dbc.Row([
+									dbc.Col(html.H4("Résultats de Topic Modeling", className="mb-0"), width="auto"),
+									dbc.Col(
+										create_export_button("topic_modeling", button_id="export-topic-modeling-button"),
+										width="auto", className="ms-auto"
+									)
+								])
 							),
-						]),
-					])
-				], className="mb-4 shadow")
-			], width=12)
-		]),
-		# Tabs for different visualizations
-		dbc.Tabs([
-			dbc.Tab([
-				dbc.Row([
-					dbc.Col([
-						_html.H4("Statistiques avancées", className="mt-4 mb-3"),
-						dcc.Loading(
-							id="loading-advanced-topic-stats",
-							type="default",
-							children=_html.Div(id="advanced-topic-stats-content")
-						)
-					], width=12)
-				])
-			], label="Statistiques", tab_id="stats-tab"),
-			dbc.Tab([
-				dbc.Row([
-					dbc.Col([
-						_html.H4("Explorateur d'articles", className="mt-4 mb-3"),
-						dcc.Loading(
-							id="loading-article-browser",
-							type="default",
-							children=_html.Div(id="article-browser-content")
-						)
-					], width=12)
-				])
-			], label="Explorateur d'articles", tab_id="article-browser-tab"),
-			dbc.Tab([
-				dbc.Row([
-					dbc.Col([
-						_html.H4("Nommage des topics avec LLM", className="mt-4 mb-3"),
-						_html.P("Cet outil vous permet de générer automatiquement des noms et des résumés pour vos topics en utilisant un LLM.", className="text-muted"),
-						dbc.Card([
 							dbc.CardBody([
-								dbc.Row([
-									dbc.Col([
-										dbc.Label("Méthode de génération", html_for="topic-naming-method"),
-										dbc.Select(
-											id="topic-naming-method",
-											options=[
-												{"label": "Utiliser les articles représentatifs", "value": "articles"},
-												{"label": "Utiliser les mots-clés", "value": "keywords"}
-											],
-											value="articles",
-											className="mb-2"
-										),
-									], width=6),
-									dbc.Col([
-										dbc.Label("Nombre d'articles par topic", html_for="topic-naming-num-articles"),
-										dbc.Input(
-											id="topic-naming-num-articles",
-											type="number",
-											min=1,
-											max=20,
-											step=1,
-											value=10,
-											className="mb-2"
-										),
-									], width=6),
-								]),
-								dbc.Row([
-									dbc.Col([
-										dbc.Label("Seuil de probabilité", html_for="topic-naming-threshold"),
-										dbc.Input(
-											id="topic-naming-threshold",
-											type="number",
-											min=0.1,
-											max=0.9,
-											step=0.1,
-											value=0.5,
-											className="mb-2"
-										),
-									], width=6),
-									dbc.Col([
-										dbc.Label("Fichier de sortie", html_for="topic-naming-output-path"),
-										dbc.Input(
-											id="topic-naming-output-path",
-											type="text",
-											placeholder="Laissez vide pour générer automatiquement",
-											className="mb-2"
-										),
-									], width=6),
-								]),
-								dbc.Button(
-									"Générer les noms des topics",
-									id="btn-run-topic-naming", # ID CORRIGÉ
-									color="primary",
-									className="mt-2"
+								dbc.Label("Sélectionner un fichier de résultats:", className="fw-bold"),
+								dcc.Dropdown(
+									id="topic-modeling-results-dropdown",
+									options=get_topic_modeling_results(),
+									value=get_topic_modeling_results()[0]['value'] if get_topic_modeling_results() else None,
+									clearable=False,
+									className="mb-3"
 								),
 							])
-						], className="mb-4"),
-						_html.Div(id="topic-naming-status", className="mt-3"),
-						dcc.Loading(
-							id="loading-topic-naming-results",
-							type="default",
-							children=_html.Div(id="topic-naming-results")
-						)
+						], className="my-4 shadow")
 					], width=12)
-				])
-			], label="Nommage des topics", tab_id="topic-naming-tab"),
-			dbc.Tab([
-				dbc.Row([
-					dbc.Col([
-						_html.H4("Filtrage des publicités par topic", className="mt-4 mb-3"),
-						_html.P("Cet outil vous permet de détecter et filtrer les publicités d'un topic spécifique en utilisant un LLM.", className="text-muted"),
-						dbc.Card([
-							dbc.CardBody([
-								dbc.Row([
-									dbc.Col([
-										dbc.Label("Topic à analyser", html_for="ad-filter-topic-id"),
-										dbc.InputGroup([
-											dbc.Select(
-												id="ad-filter-topic-id",
-												options=[{"label": "Chargement des topics...", "value": ""}],  # Valeur initiale
-												value=None,
-												className="mb-2"
-											),
-											dbc.Button("Rafraîchir", id="btn-refresh-topics", color="secondary", className="mb-2 ms-2")
+				]),
+
+				# Bloc des sous-onglets pour les différentes visualisations
+				dbc.Tabs([
+					dbc.Tab([
+						dbc.Row([
+							dbc.Col([
+								html.H4("Statistiques avancées", className="mt-4 mb-3"),
+								dbc.Button("Charger les résultats", id="load-stats-button", color="primary", className="mb-3"),
+								html.Hr(),
+								dcc.Loading(
+									id="loading-advanced-topic-stats",
+									type="circle",
+									children=html.Div(id="advanced-topic-stats-content")
+								)
+							], width=12)
+						])
+					], label="Statistiques", tab_id="stats-tab"),
+					dbc.Tab([
+						dbc.Row([
+							dbc.Col([
+								html.H4("Explorateur d'articles", className="mt-4 mb-3"),
+								dbc.Button("Charger les résultats", id="load-articles-button", color="primary", className="mb-3"),
+								html.Hr(),
+								dcc.Loading(
+									id="loading-article-browser",
+									type="circle",
+									children=html.Div(id="article-browser-content")
+								)
+							], width=12)
+						])
+					], label="Explorateur d'articles", tab_id="article-browser-tab"),
+					dbc.Tab([
+						dbc.Row([
+							dbc.Col([
+								html.H4("Nommage des topics avec LLM", className="mt-4 mb-3"),
+								html.P("Cet outil vous permet de générer automatiquement des noms et des résumés pour vos topics en utilisant un LLM.", className="text-muted"),
+								dbc.Card([
+									dbc.CardBody([
+										# ... (contenu du formulaire de nommage) ...
+										dbc.Row([
+											dbc.Col([
+												dbc.Label("Méthode de génération", html_for="topic-naming-method"),
+												dbc.Select(
+													id="topic-naming-method",
+													options=[
+														{"label": "Utiliser les articles représentatifs", "value": "articles"},
+														{"label": "Utiliser les mots-clés", "value": "keywords"}
+													],
+													value="articles",
+													className="mb-2"
+												),
+											], width=6),
+											dbc.Col([
+												dbc.Label("Nombre d'articles par topic", html_for="topic-naming-num-articles"),
+												dbc.Input(
+													id="topic-naming-num-articles",
+													type="number", min=1, max=20, step=1, value=10, className="mb-2"
+												),
+											], width=6),
 										]),
-									], width=6),
-									dbc.Col([
-										dbc.Label("Valeur minimale du topic", html_for="ad-filter-min-value"),
-										dbc.Input(
-											id="ad-filter-min-value",
-											type="number",
-											min=0.1,
-											max=0.9,
-											step=0.1,
-											value=0.5,
-											className="mb-2"
-										),
-									], width=6),
-								]),
-								dbc.Row([
-									dbc.Col([
-										dbc.Label("Fichier de sortie", html_for="ad-filter-output-path"),
-										dbc.Input(
-											id="ad-filter-output-path",
-											type="text",
-											placeholder="Laissez vide pour générer automatiquement",
-											className="mb-2"
-										),
-									], width=12),
-								]),
-								dbc.Row([
-									dbc.Col([
-										dbc.Checkbox(
-											id="ad-filter-dry-run",
-											label="Mode test (ne pas écrire le fichier)",
-											value=False,
-											className="mb-3"
-										),
-									], width=12),
-								]),
-								dbc.Button(
-									"Lancer le filtrage des publicités",
-									id="btn-run-ad-filter",
-									color="primary",
-									className="mt-2"
-								),
-							])
-						], className="mb-4"),
-						_html.Div(id="ad-filter-status", className="mt-3"),
-						dcc.Loading(
-							id="loading-ad-filter-results",
-							type="default",
-							children=_html.Div(id="ad-filter-results")
-						)
-					], width=12)
-				])
-			], label="Filtrage des publicités", tab_id="ad-filter-tab")
-		], id="topic-modeling-tabs", active_tab="stats-tab"),
-		# Le Store pour l'état des filtres a été supprimé
-		
-		# Store pour stocker le résultat sélectionné
+										dbc.Row([
+											dbc.Col([
+												dbc.Label("Seuil de probabilité", html_for="topic-naming-threshold"),
+												dbc.Input(
+													id="topic-naming-threshold",
+													type="number", min=0.1, max=0.9, step=0.1, value=0.5, className="mb-2"
+												),
+											], width=6),
+											dbc.Col([
+												dbc.Label("Fichier de sortie", html_for="topic-naming-output-path"),
+												dbc.Input(
+													id="topic-naming-output-path",
+													type="text", placeholder="Laissez vide pour générer automatiquement", className="mb-2"
+												),
+											], width=6),
+										]),
+										dbc.Button("Générer les noms des topics", id="btn-run-topic-naming", color="primary", className="mt-2"),
+									])
+								], className="mb-4"),
+								html.Div(id="topic-naming-status", className="mt-3"),
+								dcc.Loading(id="loading-topic-naming-results", type="default", children=html.Div(id="topic-naming-results"))
+							], width=12)
+						])
+					], label="Nommage des topics", tab_id="topic-naming-tab"),
+					dbc.Tab([
+						dbc.Row([
+							dbc.Col([
+								html.H4("Filtrage des publicités par topic", className="mt-4 mb-3"),
+								html.P("Cet outil vous permet de détecter et filtrer les publicités d'un topic spécifique en utilisant un LLM.", className="text-muted"),
+								dbc.Card([
+									dbc.CardBody([
+										# ... (contenu du formulaire de filtrage) ...
+										dbc.Row([
+											dbc.Col([
+												dbc.Label("Topic à analyser", html_for="ad-filter-topic-id"),
+												dbc.InputGroup([
+													dbc.Select(id="ad-filter-topic-id", options=[{"label": "Chargement des topics...", "value": ""}], value=None, className="mb-2"),
+													dbc.Button("Rafraîchir", id="btn-refresh-topics", color="secondary", className="mb-2 ms-2")
+												]),
+											], width=6),
+											dbc.Col([
+												dbc.Label("Valeur minimale du topic", html_for="ad-filter-min-value"),
+												dbc.Input(id="ad-filter-min-value", type="number", min=0.1, max=0.9, step=0.1, value=0.5, className="mb-2"),
+											], width=6),
+										]),
+										dbc.Row([
+											dbc.Col([
+												dbc.Label("Fichier de sortie", html_for="ad-filter-output-path"),
+												dbc.Input(id="ad-filter-output-path", type="text", placeholder="Laissez vide pour générer automatiquement", className="mb-2"),
+											], width=12),
+										]),
+										dbc.Row([
+											dbc.Col([dbc.Checkbox(id="ad-filter-dry-run", label="Mode test (ne pas écrire le fichier)", value=False, className="mb-3")], width=12),
+										]),
+										dbc.Button("Lancer le filtrage des publicités", id="btn-run-ad-filter", color="primary", className="mt-2"),
+									])
+								], className="mb-4"),
+								html.Div(id="ad-filter-status", className="mt-3"),
+								dcc.Loading(id="loading-ad-filter-results", type="default", children=html.Div(id="ad-filter-results"))
+							], width=12)
+						])
+					], label="Filtrage des publicités", tab_id="ad-filter-tab")
+				], id="topic-modeling-sub-tabs"), # Renommé pour clarté
+			], label="Résultats", tab_id="tab-results")
+		], id="topic-modeling-main-tabs", active_tab="tab-params"), # ID des onglets principaux
+
+		# Composants globaux (Stores, Modals) qui doivent être en dehors des onglets
 		dcc.Store(id="topic-modeling-selected-result-store", data=None),
-		
-		# Composants d'exportation
 		create_export_modal("topic_modeling", modal_id="export-topic-modeling-modal"),
 		create_feedback_toast("export-topic-modeling-feedback-toast")
 	], fluid=True)
-
-# Callback registration
 # Fonction pour obtenir les informations sur les fichiers de cache
 def get_cache_file_options():
 	"""
@@ -702,214 +653,198 @@ def get_cache_info():
 
 	return cache_info
 
-# Function to load and display the article browser with topic distribution
+
 def load_article_browser(custom_doc_topic_path=None):
-	"""
-	Loads the doc_topic_matrix.json file and creates an interactive table to browse articles
-	with their topic distributions.
+    """
+    [VERSION DE DÉBOGAGE]
+    Charge la matrice doc-topic et les détails des articles pour créer un explorateur interactif.
+    """
+    print("\n--- [DÉBUT] Exécution de load_article_browser ---")
 
-	Args:
-		custom_doc_topic_path: Chemin personnalisé vers un fichier doc_topic_matrix.json
+    # --- Étape 1: Trouver les chemins des fichiers ---
+    project_root, config, _, doc_topic_dir, _ = get_config_and_paths()
+    results_dir = project_root / config['data']['results_dir']
+    
+    # Déterminer le chemin du fichier doc_topic
+    if custom_doc_topic_path:
+        doc_topic_path = custom_doc_topic_path
+    else:
+        # Logique pour trouver le dernier fichier de topics
+        if doc_topic_dir.exists():
+            doc_topic_files = list(doc_topic_dir.glob('doc_topic_matrix_*.json'))
+            if doc_topic_files:
+                doc_topic_files.sort(key=lambda x: os.stat(x).st_mtime, reverse=True)
+                doc_topic_path = str(doc_topic_files[0])
+            else:
+                doc_topic_path = str(results_dir / 'doc_topic_matrix.json')
+        else:
+            doc_topic_path = str(results_dir / 'doc_topic_matrix.json')
 
-	Returns:
-		dash components for the article browser
-	"""
-	project_root, config, _, doc_topic_dir, _ = get_config_and_paths()
-	results_dir = project_root / config['data']['results_dir']
+    print(f"  [INFO] Chemin du fichier de topics utilisé : {doc_topic_path}")
+    if not os.path.exists(doc_topic_path):
+        return html.Div(f"Fichier de topics introuvable : {doc_topic_path}", className="alert alert-danger")
 
-	# Use custom path if provided, otherwise find the latest doc_topic_matrix file
-	if custom_doc_topic_path:
-		doc_topic_path = custom_doc_topic_path
-	else:
-		# Find the latest doc_topic_matrix file
-		if doc_topic_dir.exists():
-			doc_topic_files = list(doc_topic_dir.glob('doc_topic_matrix_*.json'))
-			if doc_topic_files:
-				# Sort by modification time (newest first)
-				doc_topic_files.sort(key=lambda x: os.stat(x).st_mtime, reverse=True)
-				doc_topic_path = str(doc_topic_files[0])
-			else:
-				# Fallback to old location
-				doc_topic_path = str(results_dir / 'doc_topic_matrix.json')
-		else:
-			# Fallback to old location
-			doc_topic_path = str(results_dir / 'doc_topic_matrix.json')
+    # --- Étape 2: Charger et normaliser les données des topics ---
+    try:
+        with open(doc_topic_path, 'r', encoding='utf-8') as f:
+            doc_topic_data = json.load(f)
+        
+        doc_topic_list = []
+        if 'doc_topics' in doc_topic_data:
+            print("  [INFO] Format 'doc_topics' détecté. Conversion en liste...")
+            for doc_id, data in doc_topic_data['doc_topics'].items():
+                doc_topic_list.append({"doc_id": doc_id, **data})
+        elif isinstance(doc_topic_data, list):
+             doc_topic_list = doc_topic_data
+        else:
+            return html.Div("Format du fichier de topics non reconnu.", className="alert alert-danger")
+        
+        print(f"  [INFO] Nombre d'articles chargés depuis le fichier de topics : {len(doc_topic_list)}")
+        if doc_topic_list:
+            print(f"  [INFO] Exemple de premier article du fichier de topics : {doc_topic_list[0]}")
 
-	articles_path = project_root / 'data' / 'processed' / 'articles.json'
+    except Exception as e:
+        return html.Div(f"Erreur lors du chargement ou de la normalisation du fichier de topics : {e}", className="alert alert-danger")
 
-	if not doc_topic_path:
-		return html.Div("Fichier doc_topic_matrix.json introuvable. Exécutez d'abord le topic modeling.",
-					className="alert alert-warning")
 
-	# Load doc_topic_matrix.json
-	with open(doc_topic_path, 'r', encoding='utf-8') as f:
-		doc_topic_data = json.load(f)
+    # --- Étape 3: Charger les détails des articles ---
+    articles_path = project_root / config['data']['processed_dir'] / 'articles_v1_filtered.json'
+    print(f"  [INFO] Chemin du fichier d'articles utilisé : {articles_path}")
+    article_info = {}
+    if articles_path.exists():
+        try:
+            with open(articles_path, 'r', encoding='utf-8') as f:
+                articles = json.load(f)
+            
+            for article in articles:
+                main_id = article.get('id')
+                base_id = article.get('base_id')
+                if main_id:
+                    article_info[main_id] = article
+                if base_id and base_id not in article_info:
+                    article_info[base_id] = article
+            
+            print(f"  [INFO] Nombre d'articles chargés depuis {articles_path.name} : {len(article_info)}")
+            if article_info:
+                 # Affiche un exemple d'ID chargé pour vérifier le format
+                 example_key = next(iter(article_info))
+                 print(f"  [INFO] Exemple d'ID dans article_info : '{example_key}'")
 
-	# Check if the file has the expected structure
-	if not isinstance(doc_topic_data, list) and 'doc_topic_matrix' in doc_topic_data:
-		doc_topic_matrix = doc_topic_data['doc_topic_matrix']
-	else:
-		doc_topic_matrix = doc_topic_data
+        except Exception as e:
+            print(f"  [ERREUR] Impossible de charger les détails des articles depuis {articles_path.name}: {e}")
+    else:
+        print(f"  [AVERTISSEMENT] Fichier d'articles non trouvé : {articles_path}")
 
-	# Load article information if available
-	article_info = {}
-	if articles_path.exists():
-		try:
-			with open(articles_path, 'r', encoding='utf-8') as f:
-				articles = json.load(f)
 
-			# Create a lookup dictionary for article information
-			for article in articles:
-				article_id = article.get('doc_id', article.get('id', ''))
-				if article_id:
-					# Extract date and newspaper from article ID if available
-					date = ''
-					newspaper = ''
-					if isinstance(article_id, str) and 'article_' in article_id:
-						parts = article_id.split('_')
-						if len(parts) > 2:
-							date = parts[1]  # Extract date part
-						if len(parts) > 3:
-							newspaper = parts[2]  # Extract newspaper part
+    # --- Étape 4: Boucle de correspondance et préparation des données pour la table ---
+    print("\n--- [DÉBUT] Correspondance des articles ---")
+    table_data = []
+    found_count = 0
+    for i, item in enumerate(doc_topic_list):
+        doc_id = item.get('doc_id', '')
+        if not doc_id:
+            continue
 
-					article_info[str(article_id)] = {
-						'title': article.get('title', 'Sans titre'),
-						'date': article.get('date', date),
-						'newspaper': article.get('newspaper', newspaper),
-						'content': article.get('content', article.get('original_content', 'Contenu non disponible'))[:200] + '...'  # Preview
-					}
-		except Exception as e:
-			print(f"Erreur lors du chargement des articles: {e}")
+        # Logique de correspondance améliorée
+        article_details = article_info.get(doc_id)
+        match_type = "Correspondance exacte"
+        
+        if not article_details:
+            base_doc_id = doc_id.split('_mistral')[0] if '_mistral' in doc_id else doc_id
+            article_details = article_info.get(base_doc_id)
+            match_type = "Correspondance de base"
 
-	# Load topic names if available
-	topic_names = {}
+        if article_details:
+            found_count += 1
+            # Affiche seulement les 5 premières correspondances trouvées pour ne pas surcharger les logs
+            if found_count <= 5:
+                print(f"  [SUCCÈS] ID du topic '{doc_id}' trouvé via '{match_type}'. Titre: {article_details.get('title', 'N/A')}")
+        else:
+            # Affiche seulement les 5 premiers échecs
+            if (i - found_count) < 5:
+                 print(f"  [ÉCHEC] ID du topic '{doc_id}' n'a PAS été trouvé dans article_info.")
+            # Important : Assurer que article_details est un dictionnaire vide pour éviter les erreurs
+            article_details = {} 
 
-	# Try to load from topic_names_llm.json first
-	project_root, config, advanced_analysis_dir, _, topic_names_dir = get_config_and_paths()
+        topic_distribution = item.get('topic_distribution', [])
+        dominant_topic_idx = item.get('dominant_topic', -1)
+        if dominant_topic_idx == -1 and topic_distribution:
+             dominant_topic_idx = topic_distribution.index(max(topic_distribution))
+        
+        # Le contenu vient bien du champ "content"
+        table_data.append({
+            'doc_id': doc_id,
+            'title': article_details.get('title', 'TITRE INTROUVABLE'),
+            'date': article_details.get('date', 'Date introuvable'),
+            'newspaper': article_details.get('newspaper', 'Journal introuvable'),
+            'content': article_details.get('content', 'Contenu introuvable'), # <-- Ajout du contenu complet
+            'dominant_topic': dominant_topic_idx,
+            'topic_distribution': topic_distribution,
+        })
+    print(f"--- [FIN] Correspondance terminée. Articles trouvés: {found_count} / {len(doc_topic_list)} ---")
 
-	# Look for topic_names_llm files
-	topic_names_files = list(topic_names_dir.glob('topic_names_llm*.json'))
-	if topic_names_files:
-		# Sort by modification time (newest first)
-		topic_names_files.sort(key=lambda x: os.stat(x).st_mtime, reverse=True)
-		topic_names_file = topic_names_files[0]
 
-		try:
-			with open(topic_names_file, 'r', encoding='utf-8') as f:
-				topic_names_data = json.load(f)
-				if 'topic_names' in topic_names_data:
-					topic_names = topic_names_data['topic_names']
-				# Can be string or dict
-				if isinstance(stats['topic_names_llm'], dict):
-					topic_names = stats['topic_names_llm']
-				else:
-					try:
-						topic_names = ast.literal_eval(stats['topic_names_llm'])
-					except Exception:
-						topic_names = {}
-		except Exception as e:
-			print(f"Erreur lors du chargement des noms de topics: {e}")
+    # --- Étape 5: Création de l'interface Dash ---
+    # Charger les noms de topics (cette partie reste inchangée)
+    topic_names = {}
+    _, _, _, _, topic_names_dir = get_config_and_paths()
+    topic_names_files = list(topic_names_dir.glob('topic_names_llm*.json'))
+    if topic_names_files:
+        topic_names_files.sort(key=lambda x: os.stat(x).st_mtime, reverse=True)
+        try:
+            with open(topic_names_files[0], 'r', encoding='utf-8') as f:
+                topic_names = json.load(f).get('topic_names', {})
+        except Exception as e:
+            print(f"Avertissement : Erreur lors du chargement des noms de topics: {e}")
 
-	# Prepare data for the table
-	table_data = []
-	for item in doc_topic_matrix:
-		doc_id = item.get('doc_id', '')
-		topic_distribution = item.get('topic_distribution', [])
+    # Compléter les données de la table avec les noms de topics
+    for row in table_data:
+        row['dominant_topic_name'] = get_topic_name(row['dominant_topic'], topic_names, f"Topic {row['dominant_topic']}")
 
-		# Get article info if available
-		info = article_info.get(str(doc_id), {})
+    # Le reste de la fonction pour créer les contrôles et la table
+    num_topics = len(table_data[0]['topic_distribution']) if table_data and table_data[0]['topic_distribution'] else 0
+    sort_options = [
+        {'label': 'ID du document', 'value': 'doc_id'},
+        {'label': 'Date', 'value': 'date'},
+        {'label': 'Journal', 'value': 'newspaper'},
+        {'label': 'Topic dominant (valeur)', 'value': 'dominant_topic_value'}
+    ]
+    for i in range(num_topics):
+        topic_name = get_topic_name(i, topic_names, f"Topic {i}")
+        sort_options.append({'label': f'Poids du {topic_name}', 'value': f'topic_{i}'})
+    
+    # ... le reste de la création du layout est identique ...
+    children = [
+        dbc.Row([
+            dbc.Col([
+                html.H5("Trier les articles par:"),
+                dcc.Dropdown(id='article-sort-dropdown', options=sort_options, value='dominant_topic_value', clearable=False),
+                dbc.Checkbox(id='sort-descending-checkbox', label="Ordre décroissant", value=True, className="mt-2 mb-3")
+            ], width=6),
+            dbc.Col([
+                html.H5("Filtrer par topic dominant:"),
+                dcc.Dropdown(
+                    id='dominant-topic-filter',
+                    options=[{'label': 'Tous les topics', 'value': 'all'}] + [
+                        {'label': get_topic_name(i, topic_names, f"Topic {i}"), 'value': i}
+                        for i in range(num_topics)
+                    ],
+                    value='all',
+                    clearable=False
+                )
+            ], width=6)
+        ]),
+        dcc.Store(id='article-browser-data', data=table_data),
+        html.Div(id='article-browser-table-container', className="mt-4"),
+        dbc.Modal([
+            dbc.ModalHeader(dbc.ModalTitle("Détails de l'article")),
+            dbc.ModalBody(id="article-detail-body"),
+            dbc.ModalFooter(dbc.Button("Fermer", id="close-article-modal", className="ms-auto", n_clicks=0)),
+        ], id="article-detail-modal", size="xl", is_open=False),
+    ]
+    print("--- [FIN] Exécution de load_article_browser ---")
+    return html.Div(children)
 
-		# Find dominant topic
-		dominant_topic_idx = 0
-		if topic_distribution:
-			dominant_topic_idx = topic_distribution.index(max(topic_distribution))
-
-		# Format topic distribution for display
-		topic_dist_formatted = []
-		for i, value in enumerate(topic_distribution):
-			topic_name = topic_names.get(f'topic_{i}', f"Topic {i}")
-			topic_dist_formatted.append({
-				'topic_id': i,
-				'topic_name': topic_name,
-				'value': value
-			})
-
-		row = {
-			'doc_id': doc_id,
-			'title': info.get('title', 'Sans titre'),
-			'date': info.get('date', ''),
-			'newspaper': info.get('newspaper', ''),
-			'content_preview': info.get('content', 'Contenu non disponible'),
-			'dominant_topic': dominant_topic_idx,
-			'dominant_topic_name': topic_names.get(f'topic_{dominant_topic_idx}', f"Topic {dominant_topic_idx}"),
-			'dominant_topic_value': max(topic_distribution) if topic_distribution else 0,
-			'topic_distribution': topic_distribution,
-			'topic_dist_formatted': topic_dist_formatted
-		}
-		table_data.append(row)
-
-	# Create dropdown for sorting options
-	num_topics = len(table_data[0]['topic_distribution']) if table_data else 0
-	sort_options = [{'label': 'ID du document', 'value': 'doc_id'}]
-	sort_options.append({'label': 'Date', 'value': 'date'})
-	sort_options.append({'label': 'Journal', 'value': 'newspaper'})
-	sort_options.append({'label': 'Topic dominant', 'value': 'dominant_topic'})
-
-	for i in range(num_topics):
-		topic_name = topic_names.get(f'topic_{i}', f"Topic {i}")
-		sort_options.append({'label': f'Valeur du {topic_name}', 'value': f'topic_{i}'})
-
-	# Create the layout
-	children = [
-		dbc.Row([
-			dbc.Col([
-				html.H5("Trier les articles par:"),
-				dcc.Dropdown(
-					id='article-sort-dropdown',
-					options=sort_options,
-					value='dominant_topic',
-					clearable=False
-				),
-				dbc.Checkbox(
-					id='sort-descending-checkbox',
-					label="Ordre décroissant",
-					value=True,
-					className="mt-2 mb-3"
-				)
-			], width=6),
-			dbc.Col([
-				html.H5("Filtrer par topic dominant:"),
-				dcc.Dropdown(
-					id='dominant-topic-filter',
-					options=[{'label': 'Tous les topics', 'value': 'all'}] + [
-						{'label': topic_names.get(f'topic_{i}', f"Topic {i}"), 'value': i}
-						for i in range(num_topics)
-					],
-					value='all',
-					clearable=False
-				)
-			], width=6)
-		]),
-
-		# Store the data
-		dcc.Store(id='article-browser-data', data=table_data),
-
-		# Table to display articles
-		html.Div(id='article-browser-table-container', className="mt-4"),
-
-		# Modal for viewing article details
-		dbc.Modal([
-			dbc.ModalHeader(dbc.ModalTitle("Détails de l'article")),
-			dbc.ModalBody(id="article-detail-body"),
-			dbc.ModalFooter(
-				dbc.Button("Fermer", id="close-article-modal", className="ms-auto", n_clicks=0)
-			),
-		], id="article-detail-modal", size="lg", is_open=False),
-	]
-
-	return html.Div(children)
-
-# NOUVELLE LOGIQUE : Fonction de chargement des noms de topics simplifiée et robuste
 def load_topic_names(model_id=None):
 	"""
 	Charge les noms de topics pour un model_id spécifique.
@@ -1277,15 +1212,20 @@ def register_topic_modeling_callbacks(app):
 			topic_modeling_logger.error(f"Erreur lors du lancement du topic modeling: {str(e)}")
 			return dbc.Alert(f"Erreur lors du lancement du topic modeling: {str(e)}", color="danger"), dash.no_update
 
-	# Callback pour afficher les résultats de topic modeling lorsqu'un fichier est sélectionné
+	# Callback pour afficher les résultats de topic modeling lorsqu'on clique sur le bouton "Charger les résultats"
 	@app.callback(
 		Output("advanced-topic-stats-content", "children"),
-		Input("topic-modeling-results-dropdown", "value"),
+		Input("load-stats-button", "n_clicks"),
+		State("topic-modeling-results-dropdown", "value"),
 		prevent_initial_call=True
 	)
-	def update_advanced_topic_stats(selected_file):
+	def update_advanced_topic_stats(n_clicks, selected_file):
 		print("\n\n==== DÉBUT DEBUG update_advanced_topic_stats ====\n")
+		print(f"Bouton cliqué {n_clicks} fois")
 		print(f"Fichier sélectionné: {selected_file}")
+
+		if not n_clicks:
+			return html.Div("Cliquez sur 'Charger les résultats' pour afficher les statistiques.", className="alert alert-info")
 
 		if not selected_file:
 			print("Aucun fichier sélectionné")
@@ -1300,6 +1240,57 @@ def register_topic_modeling_callbacks(app):
 		result = render_advanced_topic_stats_from_json(selected_file)
 		print("\n==== FIN DEBUG update_advanced_topic_stats ====\n\n")
 		return result
+		
+	# Callback pour afficher l'explorateur d'articles lorsqu'on clique sur le bouton "Charger les résultats"
+	@app.callback(
+		Output("article-browser-content", "children"),
+		Input("load-articles-button", "n_clicks"),
+		State("topic-modeling-results-dropdown", "value"),
+		prevent_initial_call=True
+	)
+	def update_article_browser(n_clicks, selected_file):
+		print("\n\n==== DÉBUT DEBUG update_article_browser ====\n")
+		print(f"Bouton cliqué {n_clicks} fois")
+		print(f"Fichier sélectionné: {selected_file}")
+
+		if not n_clicks:
+			return html.Div("Cliquez sur 'Charger les résultats' pour afficher l'explorateur d'articles.", className="alert alert-info")
+
+		if not selected_file:
+			print("Aucun fichier sélectionné")
+			return html.Div("Sélectionnez un fichier de résultats pour afficher l'explorateur d'articles.", className="alert alert-info")
+
+		# Remove cache busting parameter if present
+		if isinstance(selected_file, str) and '?' in selected_file:
+			selected_file = selected_file.split('?')[0]
+			print(f"Fichier après suppression du cache: {selected_file}")
+
+		# Extraire le modèle et la date du nom de fichier pour trouver le fichier doc_topic correspondant
+		try:
+			# Récupérer les chemins nécessaires
+			project_root, config, advanced_analysis_dir, doc_topic_dir, _ = get_config_and_paths()
+			
+			# Extraire l'ID du modèle à partir du nom du fichier de résultats sélectionné
+			model_id_match = re.search(r'advanced_analysis_(.+)\.json', Path(selected_file).name)
+			if not model_id_match:
+				return html.Div("Impossible d'extraire l'ID du modèle à partir du fichier de résultats sélectionné.", className="alert alert-danger")
+			
+			model_id = model_id_match.group(1)
+			print(f"ID du modèle extrait: {model_id}")
+			
+			# Chercher le fichier doc_topic correspondant
+			doc_topic_file = doc_topic_dir / f"doc_topic_matrix_{model_id}.json"
+			if not doc_topic_file.exists():
+				return html.Div(f"Fichier doc_topic introuvable: {doc_topic_file}", className="alert alert-danger")
+			
+			print(f"Chargement de l'explorateur d'articles avec le fichier: {doc_topic_file}")
+			result = load_article_browser(str(doc_topic_file))
+			print("\n==== FIN DEBUG update_article_browser ====\n\n")
+			return result
+			
+		except Exception as e:
+			print(f"Erreur lors du chargement de l'explorateur d'articles: {str(e)}")
+			return html.Div(f"Erreur lors du chargement de l'explorateur d'articles: {str(e)}", className="alert alert-danger")
 	
 	# CORRECTION : Callback pour le bouton de nommage des topics
 	@app.callback(

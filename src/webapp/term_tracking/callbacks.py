@@ -519,15 +519,18 @@ def register_term_tracking_callbacks(app):
     @app.callback(
         Output("term-tracking-visualizations-container", "children"),
         [
-            Input("term-tracking-results-dropdown", "value"),
-            Input("term-tracking-viz-type", "value")
+            Input("term-tracking-load-button", "n_clicks")
+        ],
+        [
+            State("term-tracking-results-dropdown", "value"),
+            State("term-tracking-viz-type", "value")
         ]
     )
-    def update_term_tracking_visualizations(results_file, viz_type):
+    def update_term_tracking_visualizations(n_clicks, results_file, viz_type):
         """
         Met à jour les visualisations de suivi de termes en fonction du fichier de résultats et du type de visualisation sélectionnés.
         """
-        if not results_file:
+        if not n_clicks or not results_file:
             return html.Div("Aucun fichier de résultats sélectionné.")
             
         # Supprimer le paramètre de cache-busting s'il est présent
@@ -593,15 +596,18 @@ def register_term_tracking_callbacks(app):
     @app.callback(
         Output("semantic-drift-visualizations-container", "children"),
         [
-            Input("semantic-drift-results-dropdown", "value"),
-            Input("semantic-drift-viz-type", "value")
+            Input("semantic-drift-load-button", "n_clicks")
+        ],
+        [
+            State("semantic-drift-results-dropdown", "value"),
+            State("semantic-drift-viz-type", "value")
         ]
     )
-    def update_semantic_drift_visualizations(results_file, viz_type):
+    def update_semantic_drift_visualizations(n_clicks, results_file, viz_type):
         """
         Met à jour les visualisations de dérive sémantique en fonction des sélections de l'utilisateur.
         """
-        if not results_file:
+        if not n_clicks or not results_file:
             return html.Div("Aucun fichier de résultats sélectionné.")
         
         # Utiliser les visualisations standard
@@ -703,15 +709,18 @@ def register_term_tracking_callbacks(app):
     @app.callback(
         Output("similar-terms-visualizations-container", "children"),
         [
-            Input("similar-terms-results-dropdown", "value"),
-            Input("similar-terms-viz-type", "value")
+            Input("similar-terms-load-button", "n_clicks")
+        ],
+        [
+            State("similar-terms-results-dropdown", "value"),
+            State("similar-terms-viz-type", "value")
         ]
     )
-    def update_similar_terms_visualizations(results_file, viz_type):
+    def update_similar_terms_visualizations(n_clicks, results_file, viz_type):
         """
         Met à jour les visualisations de termes similaires en fonction des sélections de l'utilisateur.
         """
-        if not results_file:
+        if not n_clicks or not results_file:
             return html.Div("Aucun fichier de résultats sélectionné.")
         
         # Utiliser les visualisations standard

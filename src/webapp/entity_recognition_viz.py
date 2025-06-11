@@ -217,12 +217,21 @@ def get_entity_recognition_layout():
                     create_feedback_toast("entity-export-feedback"),
                     html.Br(),
                     
-                    # Le composant de filtrage par cluster a été supprimé ici car il est utilisé uniquement en amont
+                    # Bouton pour charger les résultats
+                    dbc.Button(
+                        "Charger les résultats",
+                        id="entity-load-button",
+                        color="primary",
+                        className="mb-3"
+                    ),
+                    html.Hr(),
                     
-                    # Results container
-                    html.Div(id="entity-results-container", children=[
-                        # This will be populated by the callback
-                    ])
+                    # Results container with loading animation
+                    dcc.Loading(
+                        id="loading-entity-results",
+                        children=[html.Div(id="entity-results-container", children=[])],
+                        type="circle"
+                    )
                 ], className="mt-3")
             ])
         ])
@@ -938,9 +947,14 @@ def register_entity_recognition_callbacks(app):
     # Callback to display entity recognition results
     @app.callback(
         Output("entity-results-container", "children"),
-        Input("entity-results-dropdown", "value")
+        Input("entity-load-button", "n_clicks"),
+        State("entity-results-dropdown", "value"),
+        prevent_initial_call=True
     )
-    def display_entity_results(results_file):
+    def display_entity_results(n_clicks, results_file):
+        if not n_clicks:
+            return html.P("Cliquez sur 'Charger les résultats' pour afficher les visualisations.")
+            
         # Extraire le chemin du fichier du paramètre de cache-busting
         if results_file and '?' in results_file:
             results_file = results_file.split('?')[0]

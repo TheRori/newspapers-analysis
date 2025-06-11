@@ -268,7 +268,17 @@ def get_term_tracking_layout():
                         )
                     ], style={"marginBottom": "20px"}),
                     
-                    # Sélection du type de visualisation et bouton d'export
+                    # Bouton pour charger les résultats
+                    dbc.Button(
+                        "Charger les résultats",
+                        id="term-tracking-load-button",
+                        color="primary",
+                        className="mb-3"
+                    ),
+                    html.Hr(),
+
+                    # Conteneur des visualisations avec animation de chargement
+                    dcc.Loading(id="loading-term-tracking", children=[html.Div([
                     dbc.Row([
                         dbc.Col([
                             html.Label("Type de visualisation:"),
@@ -296,7 +306,8 @@ def get_term_tracking_layout():
                     create_feedback_toast("term-tracking-export-feedback"),
                     
                     # Conteneur pour les visualisations
-                    html.Div(id="term-tracking-visualizations-container")
+                    html.Div(id="term-tracking-visualizations-container"),
+                    ])])
                 ], style={"padding": "20px"})
             ]
         ),
@@ -322,24 +333,34 @@ def get_term_tracking_layout():
                         )
                     ], style={"marginBottom": "20px"}),
                     
-                    # Sélection du type de visualisation
-                    html.Div([
-                        html.Label("Type de visualisation:"),
-                        dcc.RadioItems(
-                            id="semantic-drift-viz-type",
-                            options=[
-                                {"label": "Graphique linéaire", "value": "line"},
-                                {"label": "Carte de chaleur", "value": "heatmap"},
-                                {"label": "Tableau", "value": "table"},
-                                {"label": "Comparaison", "value": "comparison"}
-                            ],
-                            value="line",
-                            labelStyle={"display": "block", "marginBottom": "5px"}
-                        )
-                    ], style={"marginBottom": "20px"}),
-                    
-                    # Conteneur pour les visualisations
-                    html.Div(id="semantic-drift-visualizations-container")
+                    # Bouton pour charger les résultats
+                    dbc.Button(
+                        "Charger les résultats",
+                        id="semantic-drift-load-button",
+                        color="primary",
+                        className="mb-3"
+                    ),
+                    html.Hr(),
+
+                    dcc.Loading(id="loading-semantic-drift", children=[html.Div([
+                        # Sélection du type de visualisation
+                        html.Div([
+                            html.Label("Type de visualisation:"),
+                            dcc.RadioItems(
+                                id="semantic-drift-viz-type",
+                                options=[
+                                    {"label": "Graphique linéaire", "value": "line"},
+                                    {"label": "Carte de chaleur", "value": "heatmap"},
+                                    {"label": "Tableau", "value": "table"},
+                                    {"label": "Comparaison", "value": "comparison"}
+                                ],
+                                value="line",
+                                labelStyle={"display": "block", "marginBottom": "5px"}
+                            )
+                        ], style={"marginBottom": "20px"}),
+                        # Conteneur pour les visualisations
+                        html.Div(id="semantic-drift-visualizations-container")
+                    ])])
                 ], style={"padding": "20px"})
             ]
         ),
@@ -365,23 +386,33 @@ def get_term_tracking_layout():
                         )
                     ], style={"marginBottom": "20px"}),
                     
-                    # Sélection du type de visualisation
-                    html.Div([
-                        html.Label("Type de visualisation:"),
-                        dcc.RadioItems(
-                            id="similar-terms-viz-type",
-                            options=[
-                                {"label": "Tableau", "value": "table"},
-                                {"label": "Carte de chaleur", "value": "heatmap"},
-                                {"label": "Réseau", "value": "network"}
-                            ],
-                            value="network",
-                            labelStyle={"display": "block", "marginBottom": "5px"}
-                        )
-                    ], style={"marginBottom": "20px"}),
+                    # Bouton pour charger les résultats
+                    dbc.Button(
+                        "Charger les résultats",
+                        id="similar-terms-load-button",
+                        color="primary",
+                        className="mb-3"
+                    ),
+                    html.Hr(),
                     
-                    # Conteneur pour les visualisations
-                    html.Div(id="similar-terms-visualizations-container")
+                    dcc.Loading(id="loading-similar-terms", children=[html.Div([
+                        # Sélection du type de visualisation
+                        html.Div([
+                            html.Label("Type de visualisation:"),
+                            dcc.RadioItems(
+                                id="similar-terms-viz-type",
+                                options=[
+                                    {"label": "Tableau", "value": "table"},
+                                    {"label": "Carte de chaleur", "value": "heatmap"},
+                                    {"label": "Réseau", "value": "network"}
+                                ],
+                                value="network",
+                                labelStyle={"display": "block", "marginBottom": "5px"}
+                            )
+                        ], style={"marginBottom": "20px"}),
+                        # Conteneur pour les visualisations
+                        html.Div(id="similar-terms-visualizations-container")
+                    ])])
                 ], style={"padding": "20px"})
             ]
         )
