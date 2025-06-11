@@ -990,6 +990,123 @@ def render_topic_naming_results(topic_names_data):
 
 def register_topic_modeling_callbacks(app):
 	"""Register callbacks for the topic modeling page."""
+	from dash import html, dcc, Input, Output, State, ctx, ALL, MATCH, no_update, dash_table
+	import dash_bootstrap_components as dbc
+	import pandas as pd
+	import json
+	from pathlib import Path
+
+	# ... (tous les callbacks existants comme run_topic_modeling, update_advanced_topic_stats, etc. restent ici)
+    # ... (je ne les remets pas pour la clarté, mais ils doivent rester dans votre fonction)
+
+	# --- NOUVEAU CALLBACK : Affiche et met à jour la table des articles ---
+	@app.callback(
+		Output('article-browser-table-container', 'children'),
+		[Input('article-sort-dropdown', 'value'),
+		 Input('sort-descending-checkbox', 'value'),
+		 Input('dominant-topic-filter', 'value'),
+		 Input('article-browser-data', 'data')]
+	)
+	def update_article_table(sort_by, sort_desc, topic_filter, data):
+		if not data:
+			return html.P("Aucune donnée d'article à afficher. Veuillez d'abord charger un résultat.")
+
+		df = pd.DataFrame(data)
+
+		# 1. Filtrer par topic dominant
+		if topic_filter != 'all':
+			df = df[df['dominant_topic'] == topic_filter]
+
+		# 2. Trier les données
+		if sort_by:
+			# Gérer le tri par poids de topic (ex: 'topic_5')
+			if sort_by.startswith('topic_'):
+				parts = sort_by.split('_', 1)
+				if len(parts) == 2 and parts[1].isdigit():
+					topic_idx = int(parts[1])
+					# Extraire le poids pour ce topic et le mettre dans une nouvelle colonne pour le tri
+					df['sort_value'] = df['topic_distribution'].apply(lambda dist: dist[topic_idx] if len(dist) > topic_idx else 0)
+					df = df.sort_values(by='sort_value', ascending=not sort_desc)
+				else:
+					# Si ce n'est pas un index numérique, trier normalement si possible
+					if sort_by in df.columns:
+						df = df.sort_values(by=sort_by, ascending=not sort_desc)
+			else:
+				if sort_by in df.columns:
+					df = df.sort_values(by=sort_by, ascending=not sort_desc)
+
+		# 3. Créer la table
+		table = dash_table.DataTable(
+			id='article-table',
+			columns=[
+				{"name": "Titre", "id": "title", "presentation": "markdown"},
+				{"name": "Date", "id": "date"},
+				{"name": "Journal", "id": "newspaper"},
+				{"name": "Topic Dominant", "id": "dominant_topic_name"},
+			],
+			data=df[["title", "date", "newspaper", "dominant_topic_name", "content"]].to_dict('records'),
+			page_size=20,
+			style_cell={'textAlign': 'left', 'padding': '10px', 'fontFamily': 'sans-serif'},
+			style_header={'fontWeight': 'bold', 'backgroundColor': 'rgb(230, 230, 230)'},
+			style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': 'rgb(248, 248, 248)'}],
+			style_cell_conditional=[{'if': {'column_id': 'title'}, 'width': '50%'}],
+			markdown_options={"html": True}
+		)
+		return table
+
+	# --- NOUVEAU CALLBACK : Affiche le contenu de l'article dans une modale ---
+	@app.callback(
+		Output("article-detail-modal", "is_open"),
+		Output("article-detail-body", "children"),
+		Input("article-table", "active_cell"),
+		State("article-table", "data"), # Les données actuellement affichées dans la table
+		prevent_initial_call=True
+	)
+	def show_article_details(active_cell, table_rows):
+		if not active_cell:
+			return False, None
+
+		# Récupérer les données de la ligne cliquée
+		row_index = active_cell['row']
+		clicked_row_data = table_rows[row_index]
+		
+		# Récupérer les informations de l'article
+		title = clicked_row_data.get('title', 'Titre non disponible')
+		date = clicked_row_data.get('date', '')
+		newspaper = clicked_row_data.get('newspaper', '')
+		content = clicked_row_data.get('content', 'Contenu non disponible.')
+
+		# Mettre en forme le contenu pour l'affichage
+		# Remplacer les sauts de ligne par des balises <br> pour un affichage HTML correct
+		formatted_content = []
+		for paragraph in content.split('\n'):
+			if paragraph.strip(): # Ignorer les lignes vides
+				formatted_content.append(paragraph)
+				formatted_content.append(html.Br())
+
+		modal_body = html.Div([
+			html.H4(title),
+			html.P(f"{newspaper} - {date}", className="text-muted"),
+			html.Hr(),
+			html.P(formatted_content)
+		])
+
+		return True, modal_body
+
+	# --- CALLBACK EXISTANT : pour fermer la modale ---
+	@app.callback(
+		Output("article-detail-modal", "is_open", allow_duplicate=True),
+		Input("close-article-modal", "n_clicks"),
+		prevent_initial_call=True,
+	)
+	def close_article_modal(n_clicks):
+		if n_clicks > 0:
+			return False
+		return no_update
+
+    # NOTE : Assurez-vous que tous vos autres callbacks (run_topic_modeling, update_advanced_topic_stats, etc.)
+    # sont bien présents ici, dans cette même fonction `register_topic_modeling_callbacks`.
+	"""Register callbacks for the topic modeling page."""
 	from dash import html, dcc, Input, Output, State, ctx, ALL, MATCH, no_update
 	import dash_bootstrap_components as dbc
 	import plotly.express as px
