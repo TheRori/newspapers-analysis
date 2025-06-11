@@ -30,7 +30,19 @@ def get_term_tracking_layout():
     similar_terms_results = get_similar_terms_results()
     term_files = get_term_files()
     parser_args = get_term_tracking_args()
-    
+
+    header = [
+        html.H2("Analyse de Suivi de Termes", className="mb-2"),
+        dbc.Alert([
+            html.H4("Qu'est-ce que le suivi de termes ?", className="alert-heading"),
+            html.P(
+                "Cette page permet de suivre la fréquence d'apparition de termes spécifiques à travers le corpus. "
+                "Vous pouvez lancer une analyse pour compter les occurrences par article, agréger les résultats par année ou par journal, et visualiser l'évolution temporelle. "
+                "Une analyse de 'drift sémantique' est également disponible pour observer comment le sens des mots change au fil du temps en analysant leurs plus proches voisins sémantiques. "
+                "Les résultats sont présentés sous forme de graphiques, de tableaux et de réseaux de mots."
+            )
+        ], color="info", className="mb-4")
+    ]
     # Créer les onglets
     tabs = dcc.Tabs([
         # Onglet pour lancer une analyse

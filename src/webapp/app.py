@@ -125,6 +125,8 @@ app.layout = dbc.Container([
             html.H1("Newspaper Articles Analysis Dashboard", className="text-center mb-4"),
             html.Hr(),
             html.Div([
+                dbc.Button("🏠", id="btn-home", color="light", className="me-2", n_clicks=0, title="Accueil"),
+                dbc.Button("Commencer l'exploration", id="btn-home-explore", n_clicks=0, style={"display": "none"}),
                 dbc.Button("Bibliothèque d'articles", id="btn-article-library", color="dark", className="me-2", n_clicks=0),
                 dbc.Button("Gestion Source", id="btn-source-manager", color="primary", className="me-2", n_clicks=0),
                 dbc.Button("Topic Modeling", id="btn-topic", color="secondary", className="me-2", n_clicks=0),
@@ -148,8 +150,10 @@ logger.info("Layout Dash défini.")
 
 @app.callback(
     Output("page-content", "children"),
+    Input("btn-home", "n_clicks"),
     Input("btn-article-library", "n_clicks"),
     Input("btn-source-manager", "n_clicks"),
+    Input("btn-home-explore", "n_clicks"),
     Input("btn-topic", "n_clicks"),
     Input("btn-clustering", "n_clicks"),
     Input("btn-sentiment", "n_clicks"),
@@ -158,36 +162,31 @@ logger.info("Layout Dash défini.")
     Input("btn-term-tracking", "n_clicks"),
     Input("btn-export-manager", "n_clicks")
 )
-def display_page(btn_article_library, btn_source_manager, btn_topic, btn_clustering, btn_sentiment, btn_entity, btn_integrated, btn_term_tracking, btn_export_manager):
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        # Afficher le guide d'accueil par défaut
+def display_page(btn_home, btn_article_library, btn_source_manager, btn_home_explore, btn_topic, btn_clustering, btn_sentiment, btn_entity, btn_integrated, btn_term_tracking, btn_export_manager):
+    ctx_msg = ctx.triggered_id
+    if ctx_msg == "btn-home":
         return get_enhanced_home_layout()
+    elif ctx_msg == "btn-article-library":
+        return get_article_library_layout()
+    elif ctx_msg == "btn-source-manager" or ctx_msg == "btn-home-explore":
+        return get_source_manager_layout()
+    elif ctx_msg == "btn-topic":
+        return get_topic_modeling_layout()
+    elif ctx_msg == "btn-clustering":
+        return get_clustering_layout()
+    elif ctx_msg == "btn-sentiment":
+        return get_sentiment_analysis_layout()
+    elif ctx_msg == "btn-entity":
+        return get_entity_recognition_layout()
+    elif ctx_msg == "btn-integrated":
+        return get_integrated_analysis_layout()
+    elif ctx_msg == "btn-term-tracking":
+        return get_term_tracking_layout()
+    elif ctx_msg == "btn-export-manager":
+        return get_export_manager_layout()
     else:
-        # Determine which button was clicked
-        ctx_msg = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else ''
-
-        if ctx_msg == "btn-article-library":
-            return get_article_library_layout()
-        elif ctx_msg == "btn-source-manager":
-            return get_source_manager_layout()
-        elif ctx_msg == "btn-topic":
-            return get_topic_modeling_layout()
-        elif ctx_msg == "btn-clustering":
-            return get_clustering_layout()
-        elif ctx_msg == "btn-sentiment":
-            return get_sentiment_analysis_layout()
-        elif ctx_msg == "btn-entity":
-            return get_entity_recognition_layout()
-        elif ctx_msg == "btn-integrated":
-            return get_integrated_analysis_layout()
-        elif ctx_msg == "btn-term-tracking":
-            return get_term_tracking_layout()
-        elif ctx_msg == "btn-export-manager":
-            return get_export_manager_layout()
-        else:
-            # Page par défaut de secours
-            return get_enhanced_home_layout()
+        # Page par défaut de secours
+        return get_enhanced_home_layout()
 
 # Callback to update data selection controls based on analysis type
 @app.callback(

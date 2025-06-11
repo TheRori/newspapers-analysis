@@ -96,7 +96,20 @@ def get_entity_results():
 
 # Layout for the entity recognition page
 def get_entity_recognition_layout():
-    # Get available result files
+    header = [
+        html.H2("Reconnaissance d'Entités Nommées", className="mb-2"),
+        dbc.Alert([
+            html.H4("Qu'est-ce que la reconnaissance d'entités ?", className="alert-heading"),
+            html.P(
+                "Cet outil permet d'identifier et de catégoriser automatiquement les 'entités nommées' dans le texte des articles, "
+                "telles que les noms de personnes (PER), d'organisations (ORG), et de lieux (LOC). "
+                "L'analyse parcourt le corpus pour extraire ces entités, ce qui permet de quantifier et de visualiser rapidement "
+                "les acteurs et les lieux clés mentionnés. Les résultats sont présentés sous forme de graphiques montrant "
+                "la fréquence des entités et leur distribution par type."
+            )
+        ], color="info", className="mb-4")
+    ]
+    
     entity_results = get_entity_results()
     
     # Get parser arguments for the run form
@@ -321,16 +334,24 @@ def create_entity_visualizations(summary_file_path):
         for entity_type in entity_frequencies:
             if entity_frequencies[entity_type]:
                 # Create bar chart for top entities
-                entities = list(entity_frequencies[entity_type].keys())[:20]  # Top 20
-                counts = list(entity_frequencies[entity_type].values())[:20]
-                
+                entities = list(entity_frequencies[entity_type].keys())[:8]  # Top 8
+                counts = list(entity_frequencies[entity_type].values())[:8]
+
                 fig = px.bar(
                     x=entities, 
                     y=counts,
                     labels={"x": "Entité", "y": "Fréquence"},
-                    title=f"Top 20 entités de type {entity_type}"
+                    title=f"Top 8 entités de type {entity_type}",
+                    text_auto=True
                 )
-                fig.update_layout(height=400)
+                fig.update_layout(
+                    height=400,
+                    xaxis_tickfont_size=16,
+                    yaxis_tickfont_size=16,
+                    font=dict(size=18),  # Taille générale
+                    margin=dict(t=60, b=60, l=60, r=30)
+                )
+                fig.update_traces(marker_color="#1976d2", textfont_size=18)
                 
                 # Create table for top entities
                 rows = []
@@ -348,12 +369,18 @@ def create_entity_visualizations(summary_file_path):
                     [
                         html.Thead(
                             html.Tr([
-                                html.Th("#"),
-                                html.Th("Entité"),
-                                html.Th("Fréquence")
+                                html.Th("#", style={"fontSize": "1.2rem"}),
+                                html.Th("Entité", style={"fontSize": "1.2rem"}),
+                                html.Th("Fréquence", style={"fontSize": "1.2rem"})
                             ])
                         ),
-                        html.Tbody(rows)
+                        html.Tbody([
+                            html.Tr([
+                                html.Td(i+1, style={"fontSize": "1.1rem"}),
+                                html.Td(entity, style={"fontSize": "1.1rem"}),
+                                html.Td(count, style={"fontSize": "1.1rem"})
+                            ]) for i, (entity, count) in enumerate(sorted(entity_frequencies[entity_type].items(), key=lambda x: x[1], reverse=True)[:8])
+                        ])
                     ],
                     bordered=True,
                     hover=True,
@@ -370,7 +397,18 @@ def create_entity_visualizations(summary_file_path):
                             dbc.Row([
                                 dbc.Col(dcc.Graph(
                                     id={'type': 'entity-graph', 'subtype': f'entity-frequency-{entity_type}'},
-                                    figure=fig
+                                    figure=fig,
+                                    config={
+                                        "toImageButtonOptions": {
+                                            "format": "png",
+                                            "filename": f"entity_frequency_{entity_type}",
+                                            "height": 1200,
+                                            "width": 2000,
+                                            "scale": 3  # pour haute résolution
+                                        },
+                                        "displaylogo": False,
+                                        "modeBarButtonsToRemove": ["sendDataToCloud"]
+                                    }
                                 ), width=12)
                             ]),
                             dbc.Row([

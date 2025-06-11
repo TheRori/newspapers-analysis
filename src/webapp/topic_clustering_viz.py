@@ -730,7 +730,17 @@ def get_clustering_layout():
     return dbc.Container([
         dbc.Row([
             dbc.Col([
-                html.H2("Analyse de Clustering", className="text-center mb-4"),
+                html.H2("Analyse de Clustering Thématique", className="text-center mb-2"),
+                dbc.Alert([
+                    html.H4("Qu'est-ce que le clustering thématique ?", className="alert-heading"),
+                    html.P(
+                        "Cette page regroupe les articles en clusters (groupes) en se basant sur leurs similarités thématiques. "
+                        "L'analyse utilise les résultats de la modélisation de topics pour identifier des ensembles de documents qui traitent de sujets similaires. "
+                        "Vous pouvez choisir le nombre de clusters ou laisser l'algorithme le déterminer automatiquement. "
+                        "Les visualisations produites incluent une carte interactive des clusters, des graphiques montrant la répartition temporelle et par journal, "
+                        "ainsi qu'une heatmap détaillant la composition thématique de chaque cluster. Un explorateur d'articles est également disponible pour examiner le contenu de chaque groupe."
+                    )
+                ], color="info", className="mb-4"),
                 
                 # Bouton d'exportation pour la médiation
                 create_export_button("clustering", button_id="export-clustering-button"),

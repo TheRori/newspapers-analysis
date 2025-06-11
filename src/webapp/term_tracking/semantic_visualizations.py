@@ -57,6 +57,9 @@ def create_advanced_network_graph(df: pd.DataFrame, period: str, similarity_thre
             row['similar_word'],
             weight=row['similarity']
         )
+        # Optionally, add nodes explicitly for style control (not strictly needed)
+        G.nodes[row['term']]['is_primary'] = True
+        G.nodes[row['similar_word']]['is_primary'] = False
     
     # 2. Add edges between similar words themselves
     # Get all unique words (both primary terms and similar words)
@@ -99,10 +102,11 @@ def create_advanced_network_graph(df: pd.DataFrame, period: str, similarity_thre
     # 'weight' tells the layout to make nodes with higher similarity closer.
     # 'seed' ensures the layout is reproducible.
     try:
-        pos = nx.spring_layout(G, k=0.6, iterations=70, weight='weight', seed=42)
+        # Adjust spring_layout for tighter clusters and less empty space
+        pos = nx.spring_layout(G, k=0.3, iterations=100, weight='weight', seed=42)
     except Exception:
         # Fallback for small or disconnected graphs that might cause errors
-        pos = nx.spring_layout(G, k=0.6, iterations=70, seed=42)
+        pos = nx.spring_layout(G, k=0.3, iterations=100, seed=42)
 
     # 3. Create the Plotly Edge Trace
     edge_x, edge_y = [], []
@@ -132,10 +136,10 @@ def create_advanced_network_graph(df: pd.DataFrame, period: str, similarity_thre
         if node in primary_terms:
             node_color.append('crimson') # Use a distinct color for primary terms
             # Make primary term size dependent on its number of connections (degree)
-            node_size.append(15 + G.degree(node) * 2.5)
+            node_size.append(26 + G.degree(node) * 3.5)  # Larger base size
         else:
             node_color.append('royalblue')
-            node_size.append(10)
+            node_size.append(18)  # Larger for better print visibility
 
     node_trace = go.Scatter(
         x=node_x, y=node_y,
@@ -143,11 +147,11 @@ def create_advanced_network_graph(df: pd.DataFrame, period: str, similarity_thre
         hoverinfo='text',
         text=node_text,  # Afficher le texte des nœuds
         textposition="bottom center",
-        textfont=dict(color='white'),  # Texte en blanc pour contraste sur fond noir
+        textfont=dict(color='white', size=36),  # Increased font size for print
         marker=dict(
             color=node_color,
             size=node_size,
-            line_width=1.5,
+            line_width=2.5,
             line_color='white'
         )
     )
@@ -159,16 +163,18 @@ def create_advanced_network_graph(df: pd.DataFrame, period: str, similarity_thre
                  layout=go.Layout(
                     title=dict(
                         text=f"Réseau sémantique pour la période : {period}",
-                        font=dict(size=16, color='white')  # Titre en blanc
+                        font=dict(size=26, color='white')  # Larger title for print
                     ),
                     showlegend=False,
                     hovermode='closest',
-                    margin=dict(b=20, l=5, r=5, t=40),
+                    margin=dict(b=40, l=40, r=40, t=80),
                     xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, color='white'),
                     yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, color='white'),
                     plot_bgcolor="black",
                     paper_bgcolor="black",  # Fond du graphique en noir également
-                    clickmode="event+select"  # Activer les événements de clic
+                    clickmode="event+select",
+                    width=2000,  # Large export size for high-res
+                    height=1200
                     )
                 )
 
@@ -501,7 +507,21 @@ def create_similar_terms_visualizations(results_file, viz_type="table"):
                 dcc.Graph(
                     id="similar-terms-network-graph", # Keep the ID for the callback
                     figure=initial_graph,
-                    config={"displayModeBar": True, "scrollZoom": True},
+                    config={
+                        "displayModeBar": True,
+                        "scrollZoom": True,
+                        # High-res PNG export options for print
+                        "toImageButtonOptions": {
+                            "format": "png",
+                            "filename": "reseau_semantique_{period}",
+                            "height": 1200,
+                            "width": 2000,
+                            "scale": 3  # ~300dpi for A4
+                        },
+                        "modeBarButtonsToAdd": [],
+                        "modeBarButtonsToRemove": [],
+                        "displaylogo": False
+                    },
                     style={"height": "70vh"} # Give it more vertical space
                 ),
                 # Ajouter un div pour afficher les articles

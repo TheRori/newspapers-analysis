@@ -19,7 +19,7 @@ def get_enhanced_home_layout():
                 html.P(
                     "Conçu pour les chercheurs, journalistes et toute personne curieuse des tendances médiatiques."
                 ),
-                dbc.Button("Commencer l'exploration", color="primary", size="lg", href="/bibliotheque-articles"), # Lien vers le module le plus pertinent pour commencer
+
             ],
             fluid=True,
             className="py-5 px-4 my-4 rounded-3",

@@ -310,8 +310,18 @@ def get_topic_modeling_controls():
 # Layout for the topic modeling page
 # Fichier : src/webapp/topic_modeling_viz.py
 def get_topic_modeling_layout():
-	return dbc.Container([
-		# NOUVELLE STRUCTURE : Onglets principaux pour séparer la configuration des résultats
+    return dbc.Container([
+        html.H2("Modélisation Thématique (Topic Modeling)", className="mb-2"),
+        dbc.Alert([
+            html.H4("Qu'est-ce que la modélisation thématique ?", className="alert-heading"),
+            html.P(
+                "Cette page permet d'extraire automatiquement les grands thèmes du corpus à l'aide d'algorithmes de topic modeling. "
+                "Vous pouvez configurer et lancer une analyse pour regrouper les articles selon leurs thématiques principales, explorer la répartition des topics dans le temps et par journal, "
+                "et visualiser les mots-clés caractéristiques de chaque thème. Les résultats incluent des graphiques interactifs, des tableaux détaillés et un explorateur d'articles par topic. "
+                "L'objectif est d'aider à comprendre la structure thématique globale du corpus et à identifier les évolutions ou ruptures majeures."
+            )
+        ], color="info", className="mb-4"),
+        # NOUVELLE STRUCTURE : Onglets principaux pour séparer la configuration des résultats
 		dbc.Tabs([
 			# Onglet 1: Paramètres pour lancer une nouvelle analyse
 			dbc.Tab([
@@ -1807,7 +1817,20 @@ def render_advanced_topic_stats_from_json(json_file_path):
 			labels = [get_topic_name(i, topic_names) for i in range(len(dist))]
 			df_dist = pd.DataFrame({'Topic': labels, 'Proportion': dist})
 			fig = px.bar(df_dist, x='Topic', y='Proportion', title='Distribution des topics', text_auto='.2f')
-			children.append(dcc.Graph(figure=fig))
+			children.append(dcc.Graph(
+    figure=fig,
+    config={
+        "displayModeBar": True,
+        "toImageButtonOptions": {
+            "format": "png",
+            "filename": "topic_modeling_export",
+            "height": 1200,
+            "width": 2000,
+            "scale": 3
+        }
+    },
+    style={"height": "420px"}
+))
 		
 		# Graphique du nombre d'articles par topic
 		if 'topic_article_counts' in stats:
@@ -1818,7 +1841,20 @@ def render_advanced_topic_stats_from_json(json_file_path):
 			values = [counts[i] for i in sorted_ids]
 			df_counts = pd.DataFrame({'Topic': labels, 'Nombre d\'articles': values})
 			fig = px.bar(df_counts, x='Topic', y='Nombre d\'articles', title="Nombre d'articles par topic", text_auto=True)
-			children.append(dcc.Graph(figure=fig))
+			children.append(dcc.Graph(
+    figure=fig,
+    config={
+        "displayModeBar": True,
+        "toImageButtonOptions": {
+            "format": "png",
+            "filename": "topic_modeling_export",
+            "height": 1200,
+            "width": 2000,
+            "scale": 3
+        }
+    },
+    style={"height": "420px"}
+))
 
 		# Graphiques des mots-clés par topic
 		if 'weighted_words' in stats:
@@ -1838,7 +1874,20 @@ def render_advanced_topic_stats_from_json(json_file_path):
 				topic_title = get_topic_name(topic_id, topic_names)
 				fig = px.bar(df_words, x='Poids', y='Mot', orientation='h', title=topic_title, text_auto='.3f')
 				fig.update_layout(height=350, margin=dict(l=120), yaxis={'categoryorder':'total ascending'})
-				children.append(dcc.Graph(figure=fig))
+				children.append(dcc.Graph(
+    figure=fig,
+    config={
+        "displayModeBar": True,
+        "toImageButtonOptions": {
+            "format": "png",
+            "filename": "topic_modeling_export",
+            "height": 1200,
+            "width": 2000,
+            "scale": 3
+        }
+    },
+    style={"height": "420px"}
+))
 		
 		return html.Div(children)
 

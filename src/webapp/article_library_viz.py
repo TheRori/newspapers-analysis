@@ -99,6 +99,16 @@ def get_article_library_layout():
     # ---- Layout de la page ----
     layout = dbc.Container([
         html.H2("Bibliothèque d'articles enrichis", className="mb-4"),
+        dbc.Alert([
+            html.H4("Explorez votre corpus en détail", className="alert-heading"),
+            html.P(
+                "La bibliothèque d'articles est le point central pour explorer l'ensemble du corpus. "
+                "Elle présente tous les articles dans un tableau interactif, enrichi avec les résultats des différentes analyses (topics, clusters, sentiment, entités). "
+                "Vous pouvez trier, filtrer et rechercher des articles en fonction de multiples critères pour affiner votre exploration. "
+                "En cliquant sur une cellule, vous pouvez visualiser le contenu complet d'un article. "
+                "La section 'Réglages' vous permet de mettre à jour les informations en appliquant de nouvelles analyses."
+            )
+        ], color="info", className="mb-4"),
         
         # Section Réglages (simplifiée)
         dbc.Card([

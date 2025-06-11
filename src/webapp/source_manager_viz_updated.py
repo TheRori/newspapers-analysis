@@ -498,6 +498,15 @@ def get_source_manager_layout():
     
     return html.Div([
         html.H2("Gestionnaire de Fichier Source", className="mb-4"),
+        dbc.Alert([
+            html.H4("Qu'est-ce que le gestionnaire de fichier source ?", className="alert-heading"),
+            html.P(
+                "Ce module vous permet de sélectionner et de gérer le fichier source principal du corpus d'articles utilisé pour toutes les analyses. "
+                "Vous pouvez changer dynamiquement le chemin du fichier source, explorer la composition du corpus (années, journaux, volume), et appliquer des filtres avancés avant de lancer des analyses. "
+                "Utilisez les outils de filtrage pour cibler une période, des journaux, des mots-clés ou une longueur d'article, et prévisualisez instantanément les articles correspondant à vos critères. "
+                "Ce gestionnaire facilite le prétraitement et l'exploration du corpus pour des analyses plus ciblées et reproductibles."
+            )
+        ], color="info", className="mb-4"),
         
         # Section 1: Fichier Source Actuel
         html.Div([
