@@ -49,6 +49,7 @@ from src.webapp.term_tracking_viz import get_term_tracking_layout, register_term
 from src.webapp.export_manager_viz import get_export_manager_layout, register_export_manager_callbacks
 from src.webapp.source_manager_viz import get_source_manager_layout, register_source_manager_callbacks
 from src.webapp.article_library_viz import get_article_library_layout, register_article_library_callbacks
+from src.webapp.home_guide_viz import get_enhanced_home_layout
 
 # Configuration de la journalisation
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -126,10 +127,8 @@ app.layout = dbc.Container([
             html.Div([
                 dbc.Button("Bibliothèque d'articles", id="btn-article-library", color="dark", className="me-2", n_clicks=0),
                 dbc.Button("Gestion Source", id="btn-source-manager", color="primary", className="me-2", n_clicks=0),
-                dbc.Button("Lexical Analysis", id="btn-lexical", color="primary", className="me-2", n_clicks=0),
                 dbc.Button("Topic Modeling", id="btn-topic", color="secondary", className="me-2", n_clicks=0),
                 dbc.Button("Clustering", id="btn-clustering", color="info", className="me-2", n_clicks=0),
-                dbc.Button("Carte des Clusters", id="btn-cluster-map", color="success", className="me-2", n_clicks=0),
                 dbc.Button("Analyse de Sentiment", id="btn-sentiment", color="warning", className="me-2", n_clicks=0),
                 dbc.Button("Entités Nommées", id="btn-entity", color="danger", className="me-2", n_clicks=0),
                 dbc.Button("Analyse Intégrée", id="btn-integrated", color="primary", className="me-2", n_clicks=0),
@@ -151,21 +150,19 @@ logger.info("Layout Dash défini.")
     Output("page-content", "children"),
     Input("btn-article-library", "n_clicks"),
     Input("btn-source-manager", "n_clicks"),
-    Input("btn-lexical", "n_clicks"),
     Input("btn-topic", "n_clicks"),
     Input("btn-clustering", "n_clicks"),
-    Input("btn-cluster-map", "n_clicks"),
     Input("btn-sentiment", "n_clicks"),
     Input("btn-entity", "n_clicks"),
     Input("btn-integrated", "n_clicks"),
     Input("btn-term-tracking", "n_clicks"),
-    Input("btn-export-manager", "n_clicks"),
-    prevent_initial_call=True
+    Input("btn-export-manager", "n_clicks")
 )
-def display_page(btn_article_library, btn_source_manager, btn_lexical, btn_topic, btn_clustering, btn_cluster_map, btn_sentiment, btn_entity, btn_integrated, btn_term_tracking, btn_export_manager):
+def display_page(btn_article_library, btn_source_manager, btn_topic, btn_clustering, btn_sentiment, btn_entity, btn_integrated, btn_term_tracking, btn_export_manager):
     ctx = dash.callback_context
     if not ctx.triggered:
-        button_id = "btn-source-manager"
+        # Afficher le guide d'accueil par défaut
+        return get_enhanced_home_layout()
     else:
         # Determine which button was clicked
         ctx_msg = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else ''
@@ -174,14 +171,10 @@ def display_page(btn_article_library, btn_source_manager, btn_lexical, btn_topic
             return get_article_library_layout()
         elif ctx_msg == "btn-source-manager":
             return get_source_manager_layout()
-        elif ctx_msg == "btn-lexical":
-            return get_lexical_analysis_layout()
         elif ctx_msg == "btn-topic":
             return get_topic_modeling_layout()
         elif ctx_msg == "btn-clustering":
             return get_clustering_layout()
-        elif ctx_msg == "btn-cluster-map":
-            return get_cluster_map_layout()
         elif ctx_msg == "btn-sentiment":
             return get_sentiment_analysis_layout()
         elif ctx_msg == "btn-entity":
@@ -193,8 +186,8 @@ def display_page(btn_article_library, btn_source_manager, btn_lexical, btn_topic
         elif ctx_msg == "btn-export-manager":
             return get_export_manager_layout()
         else:
-            # Default page
-            return get_source_manager_layout()
+            # Page par défaut de secours
+            return get_enhanced_home_layout()
 
 # Callback to update data selection controls based on analysis type
 @app.callback(
@@ -223,19 +216,6 @@ def update_data_selection_controls(analysis_type):
                     {"label": "Topic Over Time", "value": "time"},
                 ],
                 value="distribution",
-                className="mb-2",
-            ),
-        ]
-    elif analysis_type == "lexical_analysis":
-        return [
-            html.P("Visualization type:", className="mt-3"),
-            dcc.RadioItems(
-                id="lexical-viz-type",
-                options=[
-                    {"label": "Word Frequency", "value": "word_frequency"},
-                    {"label": "Word Cloud", "value": "word_cloud"},
-                ],
-                value="word_frequency",
                 className="mb-2",
             ),
         ]
@@ -291,19 +271,6 @@ def update_visualization(analysis_type, _):
         )
         return dcc.Graph(figure=fig)
     
-    elif analysis_type == "lexical_analysis":
-        # Placeholder data for lexical analysis
-        words = ["word1", "word2", "word3", "word4", "word5"]
-        frequencies = [10, 8, 6, 4, 2]
-        
-        fig = px.bar(
-            x=words, 
-            y=frequencies,
-            title="Word Frequency (Placeholder)",
-            labels={"x": "Word", "y": "Frequency"},
-        )
-        return dcc.Graph(figure=fig)
-    
     elif analysis_type == "clustering":
         # Placeholder data for clustering
         clusters = [f"Cluster {i}" for i in range(1, 6)]
@@ -336,19 +303,7 @@ def update_analysis_details(analysis_type):
                 html.Li("Coherence score: 0.42 (placeholder)"),
             ]),
         ])
-    
-    elif analysis_type == "lexical_analysis":
-        return html.Div([
-            html.H5("Lexical Analysis"),
-            html.P("This visualization shows the frequency of words in the articles."),
-            html.P("The data shown is currently placeholder data. Connect to your actual analysis results to see real data."),
-            html.Ul([
-                html.Li("Lexical analysis algorithm: Word Frequency"),
-                html.Li("Number of words: 100"),
-                html.Li("Average word length: 5 (placeholder)"),
-            ]),
-        ])
-    
+
     elif analysis_type == "clustering":
         return html.Div([
             html.H5("Clustering Analysis"),
