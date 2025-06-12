@@ -1,133 +1,125 @@
-# Newspaper Articles Analysis
+# Analyse d'Articles de Presse - Guide d'Installation et Fonctionnalités
 
-## Présentation générale
-Cette application permet d’explorer un vaste corpus d’articles de presse numérisés via OCR. Elle propose une suite complète d’outils d’analyse textuelle et de visualisation interactive pour extraire des informations pertinentes à partir de données textuelles complexes.
+## Présentation
+Cette application permet d'explorer et d'analyser un corpus d'articles de presse numérisés via OCR. Elle offre une suite complète d'outils d'analyse textuelle et de visualisation interactive pour extraire des informations pertinentes à partir de données textuelles.
 
-Elle est composée de deux volets :
-- **Application d’analyse** : interface web interactive pour l’exploration des corpus.
-- **Application de médiation** : interface de restitution des résultats pour un public non-technique.
+L'application est composée de deux volets principaux :
+- **Application d'analyse** : interface web interactive pour l'exploration des corpus
+- **Application de médiation** : interface de restitution des résultats pour un public non-technique
 
-## Fonctionnalités d’analyse
+## Installation
 
-### 1. Gestion des sources
-- Importation depuis diverses sources
-- Filtres par journal, date, etc.
-- Statistiques de base du corpus
-- Accès au texte original des articles
+### Prérequis
+- Python 3.11 ou supérieur
+- Git
+- PowerShell (pour Windows) ou Terminal (pour Linux/Mac)
 
-### 2. Analyse lexicale
-- Fréquences de mots
-- Nuages de mots
+### Étapes d'installation
+
+1. **Cloner le dépôt**
+   ```bash
+   git clone https://github.com/TheRori/newspapers-analysis.git
+   cd newspapers-analysis
+   ```
+
+2. **Créer et activer un environnement virtuel**
+   
+   Sous Windows :
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\activate
+   ```
+   
+   Sous Linux/Mac :
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+
+3. **Installer les dépendances**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Installer le modèle spaCy**
+   ```bash
+   python -m spacy download fr_core_news_md
+   ```
+
+5. **Configuration**
+   - Vérifier et modifier si nécessaire le fichier `config/config.yaml` :
+     - Chemins vers les données
+     - Paramètres d'analyse
+     - Options de visualisation
+
+6. **Placer les données**
+   - Par défaut, les données doivent être placées dans `data/processed/`
+
+## Lancement de l'application
+
+### Méthode recommandée (Windows)
+Utiliser le script PowerShell fourni qui vérifie automatiquement l'environnement et lance l'application :
+```powershell
+.\run_app_direct.ps1
+```
+
+Ce script :
+- Active l'environnement virtuel
+- Vérifie que les modules nécessaires sont installés
+- Lance l'application avec affichage des logs en direct
+
+### Méthode alternative (toutes plateformes)
+```bash
+# Activer l'environnement virtuel (si ce n'est pas déjà fait)
+# Windows:
+.\.venv\Scripts\activate
+# Linux/Mac:
+# source .venv/bin/activate
+
+# Lancer l'application
+python src/webapp/run_app.py
+```
+
+L'application sera accessible via : **http://127.0.0.1:8050/**
+
+## Principales fonctionnalités
+
+### 1. Analyse lexicale
+- Fréquences de mots et nuages de mots
 - N-grammes (bi-/trigrammes)
 - Termes significatifs
 
-### 3. Modélisation thématique (LDA)
-- Thèmes principaux et mots-clés
-- Distribution et évolution temporelle
+### 2. Modélisation thématique (LDA)
+- Identification des thèmes principaux et mots-clés
+- Distribution et évolution temporelle des thèmes
 - Optimisation automatique du nombre de thèmes
 
-### 4. Clustering d’articles
+### 3. Clustering d'articles
 - Regroupement via K-means
 - Visualisation 2D des clusters
 - Analyse des caractéristiques par cluster
 
-### 5. Carte des clusters
-- Représentation spatiale interactive
-- Navigation dans l’espace thématique
-
-### 6. Analyse de sentiment
+### 4. Analyse de sentiment
 - Polarité des articles (positif, négatif, neutre)
 - Évolution temporelle et comparaison entre sources
 
-### 7. Reconnaissance d'entités nommées
-- Extraction : personnes, lieux, organisations, dates
-- Cooccurrences et suivi temporel
+### 5. Reconnaissance d'entités nommées
+- Extraction des personnes, lieux, organisations, dates
+- Analyse des cooccurrences et suivi temporel
 
-### 8. Analyse intégrée
-- Corrélation entre thèmes, entités, sentiment, etc.
-- Tableaux de bord personnalisables
-
-### 9. Suivi de termes
-- Évolution temporelle
-- Comparaison inter-sources
+### 6. Suivi de termes
+- Évolution temporelle des termes spécifiques
+- Comparaison entre différentes sources
 - Visualisations dynamiques (courbes, flux)
 - Liens directs vers les articles
 
-### 10. Exports
-- Résultats exportables
-- Rapports personnalisables
-- Partage de visualisations
-
-## Application de médiation
-Interface dédiée à la présentation des résultats au grand public :
-
-### Fonctionnalités
-- Visualisation de l’évolution des termes informatiques (1950–1999)
+### 7. Application de médiation
+- Visualisation de l'évolution des termes informatiques (1950–1999)
 - Filtres par terme, journal, période, canton
-- Accès direct aux articles (modale + Swiper.js)
+- Accès direct aux articles (avec prévisualisation)
 - Visualisations variées (lignes, aires, flux)
 
-## Structure du projet
-```
-newspapers-analysis/
-├── config/
-│   ├── config.yaml               # Configuration principale
-│   └── cache_config.json         # Cache
-├── data/
-│   ├── raw/                      # Données OCR brutes
-│   ├── processed/                # Données nettoyées
-│   └── results/
-│       ├── clusters/             # Résultats de clustering
-│       ├── exports/              # Données pour médiation
-│       ├── lexical_analysis/
-│       └── ...
-├── src/
-│   ├── analysis/                 # Modules d’analyse
-│   ├── preprocessing/           # Prétraitements
-│   ├── scripts/                 # Scripts d'exécution
-│   ├── utils/                   # Fonctions utilitaires
-│   ├── visualization/           # Visualisation (Dash, Plotly)
-│   └── webapp/                  # Interface Dash
-├── mediation_app.html           # Interface web de médiation
-├── mediation_app.css
-├── mediation_app.js
-├── requirements.txt
-└── README.md
-```
-
-## Installation
-Créer un environnement virtuel :
-```bash
-python -m venv venv
-source venv/bin/activate  # (ou venv\Scripts\activate sous Windows)
-```
-
-Installer les dépendances :
-```bash
-pip install -r requirements.txt
-```
-
-Installer le modèle spaCy :
-```bash
-python -m spacy download fr_core_news_md
-```
-
-Configurer l’application : modifier `config/config.yaml` :
-- Chemins vers les données
-- Paramètres d’analyse
-- Options de visualisation
-
-Placer les données : par défaut dans `data/processed/`
-
-## Utilisation
-
-Lancer l'application web :
-```bash
-python src/webapp/run_app.py
-```
-Accessible via : http://127.0.0.1:8050/
-
-Exécuter des analyses individuelles :
+## Exécution d'analyses individuelles
 ```bash
 # Analyse lexicale
 python src/scripts/run_lexical_analysis.py
@@ -138,16 +130,25 @@ python src/scripts/run_topic_modeling.py
 # Analyse de sentiment
 python src/scripts/run_sentiment_analysis.py
 
-# Reconnaissance d’entités
+# Reconnaissance d'entités
 python src/scripts/run_entity_recognition.py
 
 # Suivi de termes
 python src/scripts/run_term_tracking.py --terms "informatique,ordinateur,internet"
 ```
 
-Interface de médiation : ouvrir `mediation_app.html` dans un navigateur.
+## Dépannage
 
-## Format des données (JSON)
+| Problème | Solution |
+|----------|----------|
+| `ImportError` | Vérifiez que vous êtes dans l'environnement virtuel et que le chemin Python est correct |
+| `KeyError` | Vérifiez que les champs `content` et `cleaned_text` sont présents dans vos données |
+| `spaCy model not found` | Exécutez `python -m spacy download fr_core_news_md` |
+| Erreur de démarrage | Vérifiez les logs dans le dossier racine du projet |
+| Modules manquants | Exécutez `pip install -r requirements.txt` |
+
+## Structure des données
+L'application attend des fichiers JSON avec la structure suivante :
 ```json
 {
   "id": "article_1992-04-12_journal_XYZ",
@@ -156,31 +157,6 @@ Interface de médiation : ouvrir `mediation_app.html` dans un navigateur.
   "source": "Le Journal",
   "content": "Texte nettoyé",
   "original_content": "Texte OCR original",
-  "cleaned_text": "Texte prétraité pour l’analyse"
+  "cleaned_text": "Texte prétraité pour l'analyse"
 }
 ```
-
-## Sorties des analyses
-- Lexicale : fréquences, nuages de mots
-- Thématique : mots-clés, évolution
-- Sentiment : scores, évolutions, comparaisons
-- Entités : extraits, cooccurrences, suivi
-- Termes : dynamiques temporelles, contextes
-
-## Fonctionnalités avancées
-- Correction automatique d’erreurs OCR
-- Suppression des doublons par similarité
-- Optimisation du nombre de thèmes (LDA)
-- Tableaux de bord interactifs
-
-## Dépannage
-
-| Problème                   | Solution                              |
-|----------------------------|---------------------------------------|
-| `ImportError`              | Vérifiez le chemin Python             |
-| `KeyError`                 | Champs `content`, `cleaned_text` requis |
-| `spaCy model not found`    | Installer `fr_core_news_md`          |
-| Erreur Dash (Windows)      | Utilisez `run_app_safe.ps1`          |
-
-## Contributions
-Le projet est en développement actif.

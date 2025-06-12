@@ -5,17 +5,42 @@
 function initJournalVisualization() {
     console.log('Initialisation de la visualisation par journal');
     
+    // Afficher l'indicateur de chargement
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'loading-indicator';
+    loadingDiv.innerHTML = `
+        <div class="loading-spinner">
+            <div class="spinner-circle"></div>
+            <div class="spinner-circle"></div>
+            <div class="spinner-circle"></div>
+            <div class="spinner-circle"></div>
+        </div>
+        <p>Chargement des données des journaux...</p>
+    `;
+    const container = document.getElementById('journal-visualization');
+    if (container) {
+        container.innerHTML = '';
+        container.appendChild(loadingDiv);
+    }
+    
     // Vérifier que les données sont chargées
     if (!state.data || !state.terms || !state.years || !state.newspapers) {
         console.error('Les données nécessaires ne sont pas encore chargées');
-        // Afficher un message d'erreur dans la visualisation
-        const container = document.getElementById('journal-visualization');
-        if (container) {
-            container.innerHTML = '<div class="error-message">Chargement des données en cours...</div>';
+        // Supprimer l'indicateur de chargement
+        if (loadingDiv && loadingDiv.parentNode) {
+            loadingDiv.parentNode.removeChild(loadingDiv);
         }
         // Réessayer dans 1 seconde
         setTimeout(initJournalVisualization, 1000);
         return;
+    }
+    
+    // Marquer la visualisation comme initialisée
+    state.journalVizInitialized = true;
+    
+    // Supprimer l'indicateur de chargement
+    if (loadingDiv && loadingDiv.parentNode) {
+        loadingDiv.parentNode.removeChild(loadingDiv);
     }
     
     // Marquer la visualisation comme initialisée

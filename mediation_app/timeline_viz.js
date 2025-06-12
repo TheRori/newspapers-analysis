@@ -43,6 +43,24 @@ const hideTimelineTooltip = () => {
 window.initTimelineVisualization = function() {
     console.log('Initialisation de la timeline historique');
     
+    // Afficher l'indicateur de chargement
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'loading-indicator';
+    loadingDiv.innerHTML = `
+        <div class="loading-spinner">
+            <div class="spinner-circle"></div>
+            <div class="spinner-circle"></div>
+            <div class="spinner-circle"></div>
+            <div class="spinner-circle"></div>
+        </div>
+        <p>Chargement des données...</p>
+    `;
+    const container = document.getElementById('timeline-visualization');
+    if (container) {
+        container.innerHTML = '';
+        container.appendChild(loadingDiv);
+    }
+    
     // Vérifier que le chargeur de données est disponible
     if (typeof window.dataLoader === 'undefined') {
         console.error('Le chargeur de données global n\'est pas défini');
@@ -56,6 +74,11 @@ window.initTimelineVisualization = function() {
             console.log('Données pas encore chargées, nouvelle tentative dans 1s');
             setTimeout(window.initTimelineVisualization, 1000);
             return;
+        }
+        
+        // Supprimer l'indicateur de chargement
+        if (loadingDiv && loadingDiv.parentNode) {
+            loadingDiv.parentNode.removeChild(loadingDiv);
         }
         
         // Initialiser l'état local

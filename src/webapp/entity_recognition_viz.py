@@ -199,7 +199,11 @@ def get_entity_recognition_layout():
                     
                     dbc.Button("Lancer l'analyse", id="run-entity-button", color="primary"),
                     html.Br(),
-                    html.Div(id="entity-run-output")
+                    dcc.Loading(
+                        id="loading-entity-run",
+                        type="circle",
+                        children=html.Div(id="entity-run-output")
+                    )
                 ], className="mt-3")
             ]),
             
@@ -1048,8 +1052,3 @@ def extract_entity_click_data(point, prop_id):
     except Exception as e:
         print(f"Erreur lors de l'extraction des données de clic: {str(e)}")
         return None, None, None
-
-# Le callback pour lancer une analyse d'entités nommées filtrée a été supprimé car nous utilisons maintenant le filtrage par cluster directement
-
-
-# To be called in app.py: from src.webapp.entity_recognition_viz import register_entity_recognition_callbacks, get_entity_recognition_layout

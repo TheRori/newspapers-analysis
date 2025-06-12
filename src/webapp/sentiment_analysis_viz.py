@@ -194,11 +194,20 @@ def get_sentiment_analysis_layout():
                             # Form fields
                             html.Div(form_fields, className="mb-3"),
 
-                            # Run button
-                            dbc.Button("Lancer l'analyse", id="run-sentiment-button", color="primary", className="mb-3"),
-
+                            html.Div([
+                                html.H3("Analyse de sentiment"),
+                                html.Div([
+                                    dbc.Button("Lancer l'analyse", id="run-sentiment-button", color="primary", className="mb-2"),
+                                    dcc.Loading(
+                                        id="sentiment-loading",
+                                        type="circle",
+                                        children=html.Div(id="sentiment-run-output")
+                                    ),
+                                ]),
+                                html.Hr(),
+                            ]),
                             # Output
-                            html.Div(id="sentiment-run-output", className="mt-3")
+                            # html.Div(id="sentiment-run-output", className="mt-3")
                         ])
                     ], className="mb-4")
                 ], label="Lancer une analyse", tab_id="sentiment-run-tab"),
@@ -992,6 +1001,8 @@ def register_sentiment_analysis_callbacks(app):
         Output("sentiment-run-output", "children"),
         Output("sentiment-results-dropdown", "options"),
         Output("sentiment-results-dropdown", "value"),
+        Output("global-analysis-state", "data"),
+        Output("run-sentiment-button", "disabled"),
         Input("run-sentiment-button", "n_clicks"),
         [State(f"sentiment-{arg['name']}-input", "value") for arg in get_sentiment_analysis_args()] +
         [State("sentiment-run-filter-cluster-file-dropdown", "value"),
@@ -1003,7 +1014,14 @@ def register_sentiment_analysis_callbacks(app):
     def run_sentiment_analysis(n_clicks, *args):
         if not n_clicks:
             current_options = args[-1]
-            return "", current_options, None
+            return "", current_options, None, {"status": "idle"}, False
+
+        # Set global analysis state to running (not shown immediately, but will be used if you split into two callbacks)
+        running_state = {
+            "status": "running",
+            "analysis_type": "sentiment_analysis",
+            "message": "Analyse de sentiment en cours..."
+        }
 
         # Get argument names
         arg_names = [arg['name'] for arg in get_sentiment_analysis_args()]
@@ -1053,15 +1071,27 @@ def register_sentiment_analysis_callbacks(app):
             # Trouver le fichier de résultat le plus récent
             selected_value = updated_results[0]['value'] if updated_results else None
 
-            return html.Div([
-                html.P("Analyse de sentiment terminée avec succès !"),
-                html.Pre(result.stdout, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
-            ]), updated_results, selected_value
+            return (
+                html.Div([
+                    html.P("Analyse de sentiment terminée avec succès !"),
+                    html.Pre(result.stdout, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
+                ]),
+                updated_results,
+                selected_value,
+                {"status": "idle"},
+                False
+            )
         except subprocess.CalledProcessError as e:
-            return html.Div([
-                html.P("Erreur lors de l'analyse de sentiment:", className="text-danger"),
-                html.Pre(e.stderr, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
-            ]), current_options, None
+            return (
+                html.Div([
+                    html.P("Erreur lors de l'analyse de sentiment:", className="text-danger"),
+                    html.Pre(e.stderr, style={"maxHeight": "300px", "overflow": "auto", "backgroundColor": "#f0f0f0", "padding": "10px"})
+                ]),
+                current_options,
+                None,
+                {"status": "idle"},
+                False
+            )
 
     # Callback to display sentiment analysis results
     @app.callback(

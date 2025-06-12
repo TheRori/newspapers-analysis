@@ -120,6 +120,26 @@ register_article_library_callbacks(app)
 # Define the app layout
 logger.info("Définition du layout Dash...")
 app.layout = dbc.Container([
+    dcc.Store(id="global-analysis-state", storage_type="session"),  # Global state for analysis progress
+    dbc.Toast(
+        id="global-analysis-notification",
+        header="Analyse en cours",
+        icon="info",
+        is_open=False,
+        duration=None,
+        dismissable=False,
+        style={
+            "position": "fixed",
+            "top": 80,
+            "right": 30,
+            "minWidth": 350,
+            "zIndex": 2000,
+            "backgroundColor": "#222",
+            "color": "#fff",
+        },
+        children="L'analyse est en cours. Vous pouvez continuer à naviguer."
+    ),
+
     dbc.Row([
         dbc.Col([
             html.H1("Newspaper Articles Analysis Dashboard", className="text-center mb-4"),
@@ -316,3 +336,25 @@ def update_analysis_details(analysis_type):
         ])
     
     return html.P("Select an analysis type to view details")
+
+# --- Global analysis notification callback ---
+@app.callback(
+    Output("global-analysis-notification", "is_open"),
+    Output("global-analysis-notification", "children"),
+    Output("global-analysis-notification", "header"),
+    Output("global-analysis-notification", "icon"),
+    Input("global-analysis-state", "data"),
+    prevent_initial_call=False
+)
+def update_global_analysis_notification(state):
+    print("=== Notification state:", state)
+    if not state or not isinstance(state, dict):
+        return False, "", "", "info"
+    status = state.get("status", "idle")
+    message = state.get("message", "L'analyse est en cours. Vous pouvez continuer à naviguer.")
+    analysis_type = state.get("analysis_type", None)
+    if status == "running":
+        header = f"Analyse en cours" if not analysis_type else f"Analyse en cours: {analysis_type}"
+        return True, message, header, "info"
+    else:
+        return False, "", "", "info"

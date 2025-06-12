@@ -368,7 +368,11 @@ def get_topic_modeling_layout():
 						get_topic_filter_component(id_prefix="topic-filter"),
 
 						dbc.Button("Lancer le Topic Modeling", id="btn-run-topic-modeling", color="primary", n_clicks=0, className="mt-3 mb-2"),
-						html.Div(id="topic-modeling-run-status", className="mb-3"),
+						dcc.Loading(
+    id="topic-modeling-loading-spinner",
+    type="default",
+    children=html.Div(id="topic-modeling-run-status", className="mb-3")
+),
 					]),
 				], className="my-4 shadow"),
 			], label="Paramètres", tab_id="tab-params"),

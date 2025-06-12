@@ -35,16 +35,43 @@ let state = {
 // --- INITIALIZATION ---
 async function initTopicNetwork() {
     state.tooltip = d3.select('#tooltip');
+    
+    // Afficher l'indicateur de chargement
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'loading-indicator';
+    loadingDiv.innerHTML = `
+        <div class="loading-spinner">
+            <div class="spinner-circle"></div>
+            <div class="spinner-circle"></div>
+            <div class="spinner-circle"></div>
+            <div class="spinner-circle"></div>
+        </div>
+        <p>Chargement du réseau de sujets...</p>
+    `;
+    const container = document.getElementById('network-container');
+    if (container) {
+        container.innerHTML = '';
+        container.appendChild(loadingDiv);
+    }
+    
     try {
         await loadData();
         processDataForNetwork();
         createNetworkGraph();
         setupZoomSlider();
         initModal(); // **AJOUT : Initialisation de la modale**
+        
+        // Supprimer l'indicateur de chargement
+        if (loadingDiv && loadingDiv.parentNode) {
+            loadingDiv.parentNode.removeChild(loadingDiv);
+        }
     } catch (error) {
         console.error('Initialization failed:', error);
+        if (loadingDiv && loadingDiv.parentNode) {
+            loadingDiv.parentNode.removeChild(loadingDiv);
+        }
         document.getElementById('network-container').innerHTML =
-            `<p style="color:red; text-align:center; padding: 2rem;">Error: Could not load or process network data. ${error.message}</p>`;
+            `<p style="color:red; text-align:center; padding: 2rem;">Erreur: Impossible de charger ou de traiter les données du réseau. ${error.message}</p>`;
     }
 }
 

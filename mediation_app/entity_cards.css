@@ -18,6 +18,29 @@ body {
     color: var(--text-color);
 }
 
+
+/* --- Style pour l'animation de chargement en superposition --- */
+#loader-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(24, 26, 27, 0.85); /* Fond semi-transparent */
+    z-index: 1000; /* Pour être sûr qu'il est au-dessus de tout */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    transition: opacity 0.3s ease;
+}
+
+/* Assurez-vous que le conteneur principal peut accueillir un élément en position absolue */
+.container {
+    position: relative;
+}
+
 /* Header Styles */
 header {
     background-color: var(--secondary-color);
