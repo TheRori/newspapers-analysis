@@ -45,110 +45,81 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Fonction pour charger les articles depuis le fichier JSON
     async function loadArticles() {
         try {
-            // Afficher l'overlay de chargement
-            showLoaderOverlay();
             console.log('Chargement des articles...');
             const response = await fetch('data/source/articles_v1_filtered.json');
             if (!response.ok) {
                 throw new Error(`Erreur HTTP: ${response.status}`);
             }
+            
             const articles = await response.json();
             console.log(`${articles.length} articles chargés`);
-
+            
             // Filtrer les articles qui contiennent au moins un des termes recherchés
             allArticles = articles.filter(article => {
                 if (!article.topics) return false;
-                return activeTerms.some(term => article.topics.includes(term));
+                
+                // Vérifier si l'article contient un des termes recherchés
+                return activeTerms.some(term => 
+                    article.topics.includes(term)
+                );
             });
+            
             console.log(`${allArticles.length} articles pertinents trouvés`);
+            
+            // Trier les articles par date
             allArticles.sort((a, b) => {
                 if (!a.date) return 1;
                 if (!b.date) return -1;
                 return new Date(a.date) - new Date(b.date);
             });
-
+            
             // Grouper les articles par terme
             const articlesByTerm = {};
             activeTerms.forEach(term => {
-                articlesByTerm[term] = allArticles.filter(article =>
+                articlesByTerm[term] = allArticles.filter(article => 
                     article.topics && article.topics.includes(term)
                 );
+                
+                // Trier par date pour chaque terme
                 articlesByTerm[term].sort((a, b) => {
                     if (!a.date) return 1;
                     if (!b.date) return -1;
                     return new Date(a.date) - new Date(b.date);
                 });
+                
                 console.log(`${term}: ${articlesByTerm[term].length} articles`);
             });
+            
+            // Trouver les premiers articles pour chaque terme
             const firstArticlesByTerm = {};
             activeTerms.forEach(term => {
                 if (articlesByTerm[term] && articlesByTerm[term].length > 0) {
+                    // Prendre les 5 premiers articles pour chaque terme
                     firstArticlesByTerm[term] = articlesByTerm[term].slice(0, 5);
                 } else {
                     firstArticlesByTerm[term] = [];
                 }
             });
+            
             // Créer une liste d'articles à afficher dans le carrousel
             filteredArticles = [];
             activeTerms.forEach(term => {
                 firstArticlesByTerm[term].forEach(article => {
-                    filteredArticles.push({ ...article, primaryTerm: term });
+                    filteredArticles.push({
+                        ...article,
+                        primaryTerm: term
+                    });
                 });
             });
+            
+            // Mélanger les articles pour le mode aléatoire
             shuffleArray(filteredArticles);
-
-            // Chargement progressif par lots
-            await loadArticlesInBatches(filteredArticles, 20);
-
+            
+            // Afficher les articles dans le carrousel
+            displayArticles();
+            
         } catch (error) {
             console.error('Erreur lors du chargement des articles:', error);
-        } finally {
-            // Retirer l'overlay de chargement
-            hideLoaderOverlay();
-        }
-    }
-
-    // Affichage progressif des articles dans le carrousel
-    async function loadArticlesInBatches(articles, batchSize = 20) {
-        const total = articles.length;
-        let loaded = 0;
-        filteredArticles = [];
-        while (loaded < total) {
-            const batch = articles.slice(loaded, loaded + batchSize);
-            filteredArticles.push(...batch);
-            displayArticles();
-            loaded += batchSize;
-            await new Promise(resolve => setTimeout(resolve, 0)); // Laisse le navigateur respirer
-        }
-    }
-
-    // Overlay spinner (inspiré entity_cards.js)
-    function showLoaderOverlay() {
-        let overlay = document.getElementById('loader-overlay');
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.id = 'loader-overlay';
-            overlay.innerHTML = `
-                <div class="loading-spinner">
-                    <div class="spinner-circle"></div>
-                    <div class="spinner-circle"></div>
-                    <div class="spinner-circle"></div>
-                    <div class="spinner-circle"></div>
-                </div>
-                <p>Chargement des citations...</p>
-            `;
-            const container = document.querySelector('.container');
-            if (container) {
-                container.appendChild(overlay);
-            }
-        } else {
-            overlay.style.display = 'flex';
-        }
-    }
-    function hideLoaderOverlay() {
-        const overlay = document.getElementById('loader-overlay');
-        if (overlay) {
-            overlay.style.display = 'none';
         }
     }
     
