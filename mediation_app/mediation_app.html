@@ -16,6 +16,16 @@
     <script src="timeline_retro_style.js"></script>
 </head>
 <body>
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-content">
+            <h2>Chargement des données en cours...</h2>
+            <p>Cette opération peut prendre quelques instants en fonction de la taille des données.</p>
+            <div class="progress-bar-container">
+                <div id="progress-bar" class="progress-bar"></div>
+            </div>
+            <p id="progress-label">Initialisation...</p>
+        </div>
+    </div>
     <header class="header-mediation">
     <div class="header-content">
         <h1>Évolution des termes liés à l'informatique (1950-1999)</h1>
@@ -27,10 +37,10 @@
         <a href="mediation_app.html" class="nav-link active"><i class="fas fa-chart-line"></i> Évolution chronologique</a>
         <a href="retro_citations.html" class="nav-link"><i class="fas fa-quote-left"></i> Citations historiques</a>
         <a href="sentiment_heatmap.html" class="nav-link"><i class="fas fa-map"></i> Heatmap sentiments</a>
-        <a href="topic_network.html" class="nav-link active"><i class="fas fa-project-diagram"></i> Réseau thématique</a>
+        <a href="topic_network.html" class="nav-link"><i class="fas fa-project-diagram"></i> Réseau thématique</a>
     </nav>
 </header>
-
+    
     <div class="container">
         <!-- Système d'onglets -->
         <div class="tabs">

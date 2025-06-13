@@ -1,6 +1,6 @@
 # Médiation App – Interface de visualisation grand public
 
-## Présentation
+#### Présentation
 L'application de médiation est une interface web interactive dédiée à la restitution et à la valorisation des résultats d'analyse textuelle sur la presse suisse (1950–1999). Elle permet à un public non technique d'explorer l'évolution des termes informatiques, leur répartition par journal, par canton et dans le temps, à travers des visualisations dynamiques.
 
 ## Fonctionnalités principales
@@ -57,6 +57,9 @@ mediation_app/
   - Cliquer sur un point ou une zone du graphique pour voir les extraits d’articles.
 - Comparer les journaux ou cantons :
   - Utiliser les filtres dédiés et changer de type de visualisation.
+
+## Hébergement
+Le site web est hébergé sur Netlify à l'adresse suivante : https://mediation-app.netlify.app/
 
 ## Dépannage
 | Problème | Solution |

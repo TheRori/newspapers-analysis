@@ -16,3 +16,15 @@ transformers
 pyyaml
 networkx
 bertopic
+python-dotenv
+wheel
+setuptools
+certifi
+charset-normalizer
+colorama
+idna
+packaging
+pyasn1
+pyasn1-modules
+rsa
+urllib3

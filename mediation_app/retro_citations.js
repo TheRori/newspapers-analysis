@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Fonction pour charger les articles depuis le fichier JSON
     async function loadArticles() {
+        showLoaderOverlay();
         try {
             console.log('Chargement des articles...');
             const response = await fetch('data/source/articles_v1_filtered.json');
@@ -111,15 +112,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                 });
             });
-            
             // Mélanger les articles pour le mode aléatoire
             shuffleArray(filteredArticles);
-            
-            // Afficher les articles dans le carrousel
-            displayArticles();
+            // Chargement progressif par lots pour éviter le freeze
+            await loadArticlesInBatches(filteredArticles, 20);
             
         } catch (error) {
             console.error('Erreur lors du chargement des articles:', error);
+        } finally {
+            hideLoaderOverlay();
+        }
+    }
+
+    // Overlay spinner
+    function showLoaderOverlay() {
+        let overlay = document.getElementById('loader-overlay');
+        if (overlay) {
+            overlay.style.display = 'flex';
+        }
+    }
+    function hideLoaderOverlay() {
+        let overlay = document.getElementById('loader-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
         }
     }
     
@@ -132,6 +147,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         return array;
     }
     
+    // Chargement progressif des articles dans le carrousel
+    async function loadArticlesInBatches(articles, batchSize = 20) {
+        const total = articles.length;
+        let loaded = 0;
+        filteredArticles = [];
+        while (loaded < total) {
+            const batch = articles.slice(loaded, loaded + batchSize);
+            filteredArticles.push(...batch);
+            displayArticles();
+            loaded += batchSize;
+            await new Promise(resolve => setTimeout(resolve, 0)); // Laisse le navigateur respirer
+        }
+    }
+
     // Fonction pour afficher les articles dans le carrousel
     function displayArticles() {
         const container = document.getElementById('citations-container');

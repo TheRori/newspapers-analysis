@@ -21,6 +21,7 @@ const config = {
         'other': '#666666' // Gris pour les autres
     }
 };
+
 // État de l'application
 let state = {
     data: null,
@@ -50,6 +51,30 @@ let state = {
     journalEndYear: null,
     journalYearlyData: {}
 };
+
+function updateLoadingProgress(progress, label) {
+    const overlay = document.getElementById('loading-overlay');
+    const progressBar = document.getElementById('progress-bar');
+    const progressLabel = document.getElementById('progress-label');
+
+    if (overlay && !overlay.classList.contains('active')) {
+        overlay.classList.add('active');
+    }
+
+    if (progressBar) {
+        progressBar.style.width = `${progress}%`;
+    }
+    if (progressLabel) {
+        progressLabel.textContent = label;
+    }
+}
+
+function hideLoadingOverlay() {
+    const overlay = document.getElementById('loading-overlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+    }
+}
 
 // Initialisation de l'application
 document.addEventListener('DOMContentLoaded', () => {
@@ -103,6 +128,9 @@ function initTabs() {
 
 async function initApp() {
     try {
+        // Afficher un indicateur de chargement global
+        document.body.classList.add('loading');
+
         // Charger les données
         await loadData();
         
@@ -128,234 +156,49 @@ async function initApp() {
         console.error('Erreur lors de l\'initialisation de l\'application:', error);
         document.getElementById('chart-container').innerHTML = 
             `<div class="error-message">Erreur lors du chargement des données: ${error.message}</div>`;
+    } finally {
+        // Cacher l'indicateur de chargement
+        document.body.classList.remove('loading');
     }
 }
 
-// Chargement et traitement des données
+// Initialisation et synchronisation de l'état local à partir du dataLoader global
 async function loadData() {
+    // Nouvelle version : ne fait plus de traitement lourd, récupère simplement les données déjà prêtes
     try {
-        // Charger les données de suivi de termes
-        const data = await d3.csv(config.dataPath);
-        
-        // Stocker les données brutes pour débogage et accès direct
-        state.rawData = data;
-        console.log('Données brutes chargées:', data.length, 'lignes');
-        console.log('Exemple de données brutes:', data[0]);
-        
-        // Essayer de charger les articles (avec gestion d'erreur)
-        let articles = [];
-        try {
-            // Vérifier si le fichier Parquet existe
-            const parquetResponse = await fetch(config.articlesParquetPath, { method: 'HEAD' })
-                .catch(() => ({ ok: false })); // Gérer silencieusement l'erreur 404
-            
-            if (parquetResponse.ok) {
-                // Utiliser le fichier Parquet
-                console.log('Chargement des articles depuis Parquet...');
-                articles = await loadArticlesFromParquet(config.articlesParquetPath);
-            } else {
-                // Utiliser le fichier JSON comme avant
-                console.log('Fichier Parquet non trouvé, utilisation du JSON...');
-                const articlesResponse = await fetch(config.articlesPath);
-                if (articlesResponse.ok) {
-                    articles = await articlesResponse.json();
-                } else {
-                    console.warn('Impossible de charger les articles:', articlesResponse.statusText);
-                }
-            }
-            console.log(`Chargé ${articles.length} articles`);
-        } catch (err) {
-            console.warn('Erreur lors du chargement des articles:', err);
+        console.log("Mediation_app: Attente du chargement des données globales via data_loader.js...");
+        const globalDataState = await window.dataLoader.getData();
+
+        if (globalDataState.error) {
+            throw globalDataState.error;
         }
-        
-        // Fonction pour charger les articles depuis un fichier Parquet
-        async function loadArticlesFromParquet(parquetPath) {
-            try {
-                // Vérifier si Apache Arrow est disponible
-                if (typeof arrow === 'undefined') {
-                    // Charger Apache Arrow si nécessaire
-                    await loadScript('https://cdn.jsdelivr.net/npm/apache-arrow@latest/Arrow.es2015.min.js');
-                }
-                
-                // Charger le fichier Parquet
-                const response = await fetch(parquetPath);
-                const arrayBuffer = await response.arrayBuffer();
-                
-                // Utiliser Apache Arrow pour lire le fichier Parquet
-                const table = await arrow.Table.from(new Uint8Array(arrayBuffer));
-                
-                // Convertir la table Arrow en format compatible avec notre application
-                return table.toArray().map(row => {
-                    const obj = {};
-                    table.schema.fields.forEach((field, i) => {
-                        obj[field.name] = row[i];
-                    });
-                    return obj;
-                });
-            } catch (error) {
-                console.error('Erreur lors du chargement du fichier Parquet:', error);
-                // En cas d'erreur, on revient au JSON
-                const response = await fetch(parquetPath.replace('.parquet', '.json'));
-                return await response.json();
-            }
-        }
-        
-        // Fonction pour charger un script externe
-        function loadScript(src) {
-            return new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = src;
-                script.onload = resolve;
-                script.onerror = reject;
-                document.head.appendChild(script);
-            });
-        }
-        
-        // Extraire les termes (colonnes sauf 'key')
-        const terms = Object.keys(data[0]).filter(key => key !== 'key');
-        console.log('Termes extraits du CSV:', terms);
-        
-        // Vérifier spécifiquement si 'ordinateur' est présent
-        if (terms.includes('ordinateur')) {
-            console.log("Le terme 'ordinateur' a été trouvé dans les données");
-            
-            // Vérifier les articles qui contiennent le terme 'ordinateur'
-            const articlesWithOrdinateur = data.filter(row => row.ordinateur && parseFloat(row.ordinateur) > 0);
-            console.log(`Nombre d'articles contenant le terme 'ordinateur': ${articlesWithOrdinateur.length}`);
-            if (articlesWithOrdinateur.length > 0) {
-                console.log('Exemple d\'article avec "ordinateur":', articlesWithOrdinateur[0]);
-            }
-        } else {
-            console.warn("Le terme 'ordinateur' n'a pas été trouvé dans les données");
-            
-            // Rechercher des termes similaires qui pourraient être mal encodés
-            const possibleMatches = terms.filter(term => 
-                term.toLowerCase().includes('ordin') || 
-                term.toLowerCase().includes('comput'));
-            console.log('Termes similaires à "ordinateur":', possibleMatches);
-        }
-        
-        // Extraire les années, journaux et cantons à partir des clés d'articles
-        const articleInfo = data.map(row => {
-            const parts = row.key.split('_');
-            const dateStr = parts[1];
-            
-            // Trouver l'article correspondant dans le fichier JSON si disponible
-            const articleDetails = articles.find(a => a.id === row.key) || {};
-            
-            // Fonction pour nettoyer les noms de journaux (supprimer les numéros, points, etc.)
-            function cleanJournalName(name) {
-                if (!name) return 'inconnu';
-                
-                // Supprimer les numéros d'édition (comme "18." à la fin)
-                let cleanedName = name.replace(/\s+\d+\.?\s*$/, '');
-                
-                // Supprimer les points à la fin
-                cleanedName = cleanedName.replace(/\.\s*$/, '');
-                
-                // Supprimer les espaces en trop
-                cleanedName = cleanedName.trim();
-                
-                return cleanedName || 'inconnu';
-            }
-            
-            // Utiliser le nom complet du journal depuis le fichier JSON si disponible
-            // Sinon, utiliser le nom extrait de l'ID (parts[3])
-            const rawJournalName = articleDetails.newspaper || parts[3] || 'inconnu';
-            
-            // Nettoyer le nom du journal pour supprimer les numéros et autres suffixes
-            const journal = cleanJournalName(rawJournalName);
-            const canton = articleDetails.canton || 'unknown';
-            
-            console.log(`Article ${row.key}: journal = ${journal}`);
-            // Afficher les 5 premiers articles pour débogage
-            if (data.indexOf(row) < 5) {
-                console.log('Détails de l\'article:', articleDetails);
-            }
-            
-            return {
-                id: row.key,
-                year: dateStr.substring(0, 4),
-                date: dateStr,
-                journal: journal,
-                canton: canton,
-                values: terms.reduce((acc, term) => {
-                    acc[term] = row[term] ? parseFloat(row[term]) : 0;
-                    return acc;
-                }, {}),
-                details: articleDetails
-            };
-        });
-        
-        // Obtenir la liste des années uniques et les trier
-        const years = [...new Set(articleInfo.map(item => item.date))].sort();
-        
-        // Obtenir la liste des cantons et journaux uniques (sans normalisation)
-        const cantons = [...new Set(articleInfo.map(item => item.canton).filter(c => c !== 'unknown'))];
-        const journals = [...new Set(articleInfo.map(item => item.journal).filter(j => j !== 'inconnu'))];
-        
-        console.log('Journaux (sans normalisation):', journals);
-        
-        // Agréger les données par année
-        const yearlyData = years.reduce((acc, year) => {
-            const articlesThisYear = articleInfo.filter(a => a.date.substring(0, 4) === year);
-            
-            acc[year] = terms.reduce((termAcc, term) => {
-                termAcc[term] = articlesThisYear.reduce((sum, article) => sum + (article.values[term] || 0), 0);
-                return termAcc;
-            }, {});
-            
+
+        console.log("Mediation_app: Données globales chargées. Initialisation de l'état local.");
+
+        // Copier simplement les données déjà traitées par data_loader.js
+        state.rawData = globalDataState.rawData;
+        state.data = globalDataState.articleInfo; // Utilise les données détaillées pré-calculées
+        state.articles = globalDataState.articles;
+        state.terms = globalDataState.terms;
+        state.years = globalDataState.years.map(y => y.toString()); // Assurer que les années sont des chaînes
+        state.cantons = globalDataState.cantons;
+        state.newspapers = globalDataState.newspapers;
+        // Données déjà agrégées
+        state.yearlyData = globalDataState.data.reduce((acc, yearData) => {
+            acc[yearData.key] = yearData;
             return acc;
         }, {});
-        
-        // Agréger les données par journal (en utilisant les noms normalisés)
-        const journalData = journals.reduce((acc, journal) => {
-            // Trouver tous les articles pour ce journal normalisé
-            const articlesThisJournal = articleInfo.filter(a => a.journal === journal);
-            
-            // Agréger les données pour chaque terme
-            acc[journal] = terms.reduce((termAcc, term) => {
-                termAcc[term] = articlesThisJournal.reduce((sum, article) => sum + (article.values[term] || 0), 0);
-                return termAcc;
-            }, {});
-            
-            // Ajouter des métadonnées sur ce journal
-            acc[journal]._count = articlesThisJournal.length;
-            acc[journal]._originalNames = [...new Set(articlesThisJournal.map(a => a.originalJournal))].sort();
-            
-            return acc;
-        }, {});
-        
-        console.log('Données agrégées par journal:', journalData);
-        
-        // Agréger les données par canton
-        const cantonData = cantons.reduce((acc, canton) => {
-            const articlesThisCanton = articleInfo.filter(a => a.canton === canton);
-            
-            acc[canton] = terms.reduce((termAcc, term) => {
-                termAcc[term] = articlesThisCanton.reduce((sum, article) => sum + (article.values[term] || 0), 0);
-                return termAcc;
-            }, {});
-            
-            return acc;
-        }, {});
-        
-        // Mettre à jour l'état
-        state.rawData = data;
-        state.data = articleInfo;
-        state.articles = articles;
-        state.terms = terms;
-        state.selectedTerms = config.defaultTerms.filter(term => terms.includes(term));
-        state.years = years;
-        state.startYear = years[0];
-        state.endYear = years[years.length - 1];
-        state.yearlyData = yearlyData;
-        state.journalData = journalData;
-        state.cantonData = cantonData;
-        state.cantons = cantons;
-        state.newspapers = journals;
+        state.journalData = globalDataState.journalData;
+        state.cantonData = globalDataState.cantonData;
+
+        // Initialiser les filtres et sélections par défaut
+        state.selectedTerms = config.defaultTerms.filter(term => state.terms.includes(term));
+        state.startYear = state.years[0];
+        state.endYear = state.years[state.years.length - 1];
+
+        console.log("Mediation_app: État local initialisé avec succès.");
     } catch (error) {
-        console.error('Erreur lors du chargement des données:', error);
+        console.error('Erreur lors de la synchronisation avec le dataLoader global:', error);
         throw error;
     }
 }
