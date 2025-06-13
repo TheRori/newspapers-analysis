@@ -33,26 +33,78 @@ body {
     flex-direction: column;
 }
 
-/* En-tête */
+/* En-tête - Styles communs */
 header {
     text-align: center;
     margin-bottom: 3rem;
     padding-bottom: 2rem;
     border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    background: var(--header-bg, var(--background-color));
+    color: var(--header-text, var(--text-color));
+    transition: var(--transition);
+}
+
+.header-content {
+    margin-bottom: 1.5rem;
 }
 
 header h1 {
     font-size: 2.5rem;
-    color: var(--primary-color);
+    color: var(--header-title, var(--primary-color));
     margin-bottom: 0.5rem;
     font-weight: 600;
 }
 
 header p {
     font-size: 1.1rem;
-    color: #666;
+    color: var(--header-subtitle, #666);
     max-width: 700px;
     margin: 0 auto;
+}
+
+.main-nav {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+}
+
+.nav-link {
+    color: var(--nav-link, var(--primary-color));
+    text-decoration: none;
+    font-size: 1.05rem;
+    padding: 0.5rem 1.2rem;
+    border-radius: 5px;
+    transition: background 0.2s, color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+}
+
+.nav-link:hover {
+    background: var(--nav-hover-bg, var(--secondary-color));
+    color: var(--nav-hover-text, #fff);
+}
+
+.nav-link.active {
+    background: var(--nav-active-bg, var(--primary-color));
+    color: var(--nav-active-text, #fff);
+    font-weight: 700;
+}
+
+/* Personnalisation du header pour la heatmap */
+.header-heatmap {
+    --header-bg: #2c3e50;
+    --header-text: #f8f9fa;
+    --header-title: #1abc9c;
+    --header-subtitle: #d0f0e0;
+    --nav-link: #1abc9c;
+    --nav-hover-bg: #3498db;
+    --nav-hover-text: #fff;
+    --nav-active-bg: #1abc9c;
+    --nav-active-text: #fff;
 }
 
 /* Grille de médiations */
