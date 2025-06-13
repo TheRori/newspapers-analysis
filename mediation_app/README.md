@@ -59,7 +59,7 @@ mediation_app/
   - Utiliser les filtres dédiés et changer de type de visualisation.
 
 ## Hébergement
-Le site web est hébergé sur Netlify à l'adresse suivante : https://mediation-app.netlify.app/
+Le site web est hébergé sur Netlify à l'adresse suivante : https://684c4f216db3f7308919993d--capable-gaufre-53ac20.netlify.app/
 
 ## Dépannage
 | Problème | Solution |
