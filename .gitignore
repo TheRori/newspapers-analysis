@@ -1,6 +1,7 @@
-# Ignore all data and results
+# Ignore all data and results except biblio_enriched.csv
 
-data/
+data/*
+!data/biblio_enriched.csv
 results/
 
 # Ignore virtual environments
@@ -19,6 +20,8 @@ __pycache__/
 # Ignore Jupyter Notebook checkpoints
 .ipynb_checkpoints/
 
+
+mediation_app/data/source/
 # Ignore logs
 *.log
 logs/

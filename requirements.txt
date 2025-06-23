@@ -4,37 +4,46 @@
 #
 #    pip-compile requirements.in
 #
-bertopic==0.17.0
+annotated-types==0.7.0
+    # via pydantic
+bertopic==0.15.0
     # via -r requirements.in
 blinker==1.9.0
     # via flask
-blis==0.7.11
+blis==1.2.1
     # via thinc
 catalogue==2.0.10
     # via
     #   spacy
     #   srsly
     #   thinc
-certifi==2025.1.31
+certifi==2025.6.15
     # via
     #   -r requirements.in
     #   requests
-charset-normalizer==3.4.1
+cffi==1.17.1
+    # via gevent
+charset-normalizer==3.4.2
     # via
     #   -r requirements.in
     #   requests
-click==8.1.8
+click==8.2.1
     # via
     #   flask
     #   nltk
     #   typer
+cloudpathlib==0.21.1
+    # via weasel
 colorama==0.4.6
     # via
     #   -r requirements.in
     #   click
     #   tqdm
+    #   wasabi
 confection==0.1.5
-    # via thinc
+    # via
+    #   thinc
+    #   weasel
 contourpy==1.3.2
     # via matplotlib
 cycler==0.12.1
@@ -44,11 +53,11 @@ cymem==2.0.11
     #   preshed
     #   spacy
     #   thinc
-dash==3.0.3
+dash==3.0.4
     # via
     #   -r requirements.in
     #   dash-bootstrap-components
-dash-bootstrap-components==2.0.2
+dash-bootstrap-components==2.0.3
     # via -r requirements.in
 dnspython==2.7.0
     # via pymongo
@@ -59,26 +68,29 @@ filelock==3.18.0
     #   transformers
 flask==3.0.3
     # via dash
-fonttools==4.57.0
+fonttools==4.58.4
     # via matplotlib
-fsspec==2025.3.2
-    # via
-    #   huggingface-hub
-    #   torch
+fsspec==2025.5.1
+    # via huggingface-hub
 gensim==4.3.3
+    # via -r requirements.in
+gevent==25.5.1
+    # via -r requirements.in
+greenlet==3.2.3
+    # via gevent
+gunicorn==23.0.0
     # via -r requirements.in
 hdbscan==0.8.40
     # via bertopic
-huggingface-hub==0.30.2
+huggingface-hub==0.16.4
     # via
     #   sentence-transformers
-    #   tokenizers
     #   transformers
 idna==3.10
     # via
     #   -r requirements.in
     #   requests
-importlib-metadata==8.6.1
+importlib-metadata==8.7.0
     # via dash
 itsdangerous==2.2.0
     # via flask
@@ -87,7 +99,7 @@ jinja2==3.1.6
     #   flask
     #   spacy
     #   torch
-joblib==1.4.2
+joblib==1.5.1
     # via
     #   hdbscan
     #   nltk
@@ -105,32 +117,38 @@ llvmlite==0.44.0
     #   pynndescent
 marisa-trie==1.2.1
     # via language-data
+markdown-it-py==3.0.0
+    # via rich
 markupsafe==3.0.2
     # via
     #   jinja2
     #   werkzeug
-matplotlib==3.10.1
+matplotlib==3.10.3
     # via
     #   -r requirements.in
     #   seaborn
     #   wordcloud
+mdurl==0.1.2
+    # via markdown-it-py
 mpmath==1.3.0
     # via sympy
-murmurhash==1.0.12
+murmurhash==1.0.13
     # via
     #   preshed
     #   spacy
     #   thinc
-narwhals==1.36.0
+narwhals==1.44.0
     # via plotly
 nest-asyncio==1.6.0
     # via dash
-networkx==3.4.2
+networkx==3.5
     # via
     #   -r requirements.in
     #   torch
 nltk==3.9.1
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   sentence-transformers
 numba==0.61.2
     # via
     #   pynndescent
@@ -149,40 +167,40 @@ numpy==1.26.4
     #   scikit-learn
     #   scipy
     #   seaborn
+    #   sentence-transformers
     #   spacy
     #   thinc
+    #   torchvision
     #   transformers
     #   umap-learn
     #   wordcloud
 packaging==25.0
     # via
     #   -r requirements.in
+    #   gunicorn
     #   huggingface-hub
     #   matplotlib
     #   plotly
     #   spacy
     #   thinc
     #   transformers
-pandas==2.2.3
+    #   weasel
+pandas==2.3.0
     # via
     #   -r requirements.in
     #   bertopic
     #   seaborn
-pathlib-abc==0.1.1
-    # via pathy
-pathy==0.11.0
-    # via spacy
 pillow==11.2.1
     # via
     #   matplotlib
-    #   sentence-transformers
+    #   torchvision
     #   wordcloud
-plotly==6.0.1
+plotly==6.1.2
     # via
     #   -r requirements.in
     #   bertopic
     #   dash
-preshed==3.0.9
+preshed==3.0.10
     # via
     #   spacy
     #   thinc
@@ -193,12 +211,19 @@ pyasn1==0.6.1
     #   rsa
 pyasn1-modules==0.4.2
     # via -r requirements.in
-pydantic==1.10.22
+pycparser==2.22
+    # via cffi
+pydantic==2.11.7
     # via
     #   confection
     #   spacy
     #   thinc
-pymongo==4.12.0
+    #   weasel
+pydantic-core==2.33.2
+    # via pydantic
+pygments==2.19.2
+    # via rich
+pymongo==4.13.2
     # via -r requirements.in
 pynndescent==0.5.13
     # via umap-learn
@@ -221,20 +246,24 @@ regex==2024.11.6
     # via
     #   nltk
     #   transformers
-requests==2.32.3
+requests==2.32.4
     # via
     #   -r requirements.in
     #   dash
     #   huggingface-hub
     #   spacy
+    #   torchvision
     #   transformers
-retrying==1.3.4
+    #   weasel
+retrying==1.3.5
     # via dash
+rich==14.0.0
+    # via typer
 rsa==4.9.1
     # via -r requirements.in
 safetensors==0.5.3
     # via transformers
-scikit-learn==1.6.1
+scikit-learn==1.7.0
     # via
     #   -r requirements.in
     #   bertopic
@@ -252,18 +281,19 @@ scipy==1.13.1
     #   umap-learn
 seaborn==0.13.2
     # via -r requirements.in
-sentence-transformers==4.1.0
+sentence-transformers==2.2.2
     # via bertopic
+sentencepiece==0.2.0
+    # via sentence-transformers
+shellingham==1.5.4
+    # via typer
 six==1.17.0
-    # via
-    #   python-dateutil
-    #   retrying
-smart-open==6.4.0
+    # via python-dateutil
+smart-open==7.1.0
     # via
     #   gensim
-    #   pathy
-    #   spacy
-spacy==3.4.4
+    #   weasel
+spacy==3.8.7
     # via -r requirements.in
 spacy-legacy==3.0.12
     # via spacy
@@ -274,15 +304,20 @@ srsly==2.5.1
     #   confection
     #   spacy
     #   thinc
-sympy==1.13.3
+    #   weasel
+sympy==1.14.0
     # via torch
-thinc==8.1.12
+thinc==8.3.4
     # via spacy
 threadpoolctl==3.6.0
     # via scikit-learn
-tokenizers==0.21.1
+tokenizers==0.13.3
     # via transformers
-torch==2.7.0
+torch==2.0.1
+    # via
+    #   sentence-transformers
+    #   torchvision
+torchvision==0.15.2
     # via sentence-transformers
 tqdm==4.67.1
     # via
@@ -293,33 +328,40 @@ tqdm==4.67.1
     #   spacy
     #   transformers
     #   umap-learn
-transformers==4.51.3
+transformers==4.30.2
     # via
     #   -r requirements.in
     #   sentence-transformers
-typer==0.7.0
+typer==0.16.0
     # via
-    #   pathy
     #   spacy
-typing-extensions==4.13.2
+    #   weasel
+typing-extensions==4.14.0
     # via
     #   dash
     #   huggingface-hub
     #   pydantic
-    #   sentence-transformers
+    #   pydantic-core
     #   torch
+    #   typer
+    #   typing-inspection
+typing-inspection==0.4.1
+    # via pydantic
 tzdata==2025.2
     # via pandas
 umap-learn==0.5.7
     # via bertopic
-urllib3==2.4.0
+urllib3==2.5.0
     # via
     #   -r requirements.in
     #   requests
-wasabi==0.10.1
+wasabi==1.1.3
     # via
     #   spacy
     #   thinc
+    #   weasel
+weasel==0.4.1
+    # via spacy
 werkzeug==3.0.6
     # via
     #   dash
@@ -328,8 +370,14 @@ wheel==0.45.1
     # via -r requirements.in
 wordcloud==1.9.4
     # via -r requirements.in
-zipp==3.21.0
+wrapt==1.17.2
+    # via smart-open
+zipp==3.23.0
     # via importlib-metadata
+zope-event==5.0
+    # via gevent
+zope-interface==7.2
+    # via gevent
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
