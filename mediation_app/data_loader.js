@@ -147,6 +147,32 @@ async function loadAllData() {
         });
         dataState.data = aggregatedData.sort((a, b) => parseInt(a.key) - parseInt(b.key));
         
+        // Agrégation par canton pour les filtres géographiques
+        const cantonData = {};
+        dataState.cantons.forEach(canton => {
+            cantonData[canton] = {};
+            const cantonArticles = articleInfo.filter(item => item.canton === canton);
+            
+            dataState.terms.forEach(term => {
+                const values = cantonArticles.map(article => article.values[term]).filter(v => !isNaN(v));
+                cantonData[canton][term] = values.length > 0 ? values.reduce((a, b) => a + b, 0) : 0;
+            });
+        });
+        dataState.cantonData = cantonData;
+        
+        // Agrégation par journal pour les filtres de journaux
+        const journalData = {};
+        dataState.newspapers.forEach(journal => {
+            journalData[journal] = {};
+            const journalArticles = articleInfo.filter(item => item.journal === journal);
+            
+            dataState.terms.forEach(term => {
+                const values = journalArticles.map(article => article.values[term]).filter(v => !isNaN(v));
+                journalData[journal][term] = values.length > 0 ? values.reduce((a, b) => a + b, 0) : 0;
+            });
+        });
+        dataState.journalData = journalData;
+        
         // Charger les événements optionnels
         try {
             const timelineEventsResponse = await fetch(dataConfig.timelineEventsPath);

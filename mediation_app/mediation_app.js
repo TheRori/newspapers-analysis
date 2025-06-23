@@ -177,7 +177,8 @@ async function loadData() {
 
         // Copier simplement les données déjà traitées par data_loader.js
         state.rawData = globalDataState.rawData;
-        state.data = globalDataState.articleInfo; // Utilise les données détaillées pré-calculées
+        state.data = globalDataState.data; // Utiliser les données agrégées par année pour le graphique
+        state.articleInfo = globalDataState.articleInfo; // Stocker les données détaillées des articles séparément
         state.articles = globalDataState.articles;
         state.terms = globalDataState.terms;
         state.years = globalDataState.years.map(y => y.toString()); // Assurer que les années sont des chaînes
@@ -190,6 +191,9 @@ async function loadData() {
         }, {});
         state.journalData = globalDataState.journalData;
         state.cantonData = globalDataState.cantonData;
+        
+        // Vérifier que les données sont correctement structurées pour la visualisation
+        console.log("Structure des données pour visualisation:", state.data);
 
         // Initialiser les filtres et sélections par défaut
         state.selectedTerms = config.defaultTerms.filter(term => state.terms.includes(term));
@@ -545,6 +549,9 @@ function showArticlesForTermAndYear(term, year) {
     filterAndShowArticles({ term, year });
 }
 
+// Exposer la fonction globalement pour qu'elle soit accessible depuis timeline_viz.js
+window.showArticlesForTermAndYear = showArticlesForTermAndYear;
+
 // Fonction pour filtrer les données et mettre à jour la visualisation
 function filterDataAndUpdateVisualization() {
     console.log("Début du filtrage avec:", { 
@@ -781,23 +788,27 @@ function createVisualization() {
 
 // Préparation des données pour le graphique
 function prepareChartData(filteredYears) {
+    console.log('Préparation des données pour le graphique avec les années:', filteredYears);
+    console.log('État des données agrégées:', state.yearlyData);
+    
     return filteredYears.map(year => {
+        // Récupérer les données agrégées pour cette année
         const yearData = { year };
+        const aggregatedYearData = state.yearlyData[year];
         
-        // Pour chaque terme, vérifier si des articles existent pour cette année
-        state.selectedTerms.forEach(term => {
-            // Vérifier si nous avons des articles pré-filtrés pour cette année et ce terme
-            if (state.availableArticles && 
-                state.availableArticles[year] && 
-                state.availableArticles[year][term] && 
-                state.availableArticles[year][term].length > 0) {
-                // Utiliser le nombre d'articles comme valeur
-                yearData[term] = state.availableArticles[year][term].length;
-            } else {
-                // Aucun article trouvé, mettre à null pour que D3 ignore ce point
-                yearData[term] = null;
-            }
-        });
+        if (aggregatedYearData) {
+            // Pour chaque terme sélectionné, récupérer la valeur agrégée
+            state.selectedTerms.forEach(term => {
+                yearData[term] = aggregatedYearData[term] || 0;
+            });
+            console.log(`Données pour l'année ${year}:`, yearData);
+        } else {
+            console.warn(`Pas de données agrégées pour l'année ${year}`);
+            // Si pas de données pour cette année, mettre des valeurs à 0
+            state.selectedTerms.forEach(term => {
+                yearData[term] = 0;
+            });
+        }
         
         return yearData;
     });
