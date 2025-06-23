@@ -3,7 +3,9 @@ services:
     name: newspapers-analysis
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python src/webapp/app.py
+    startCommand: ./run_app_direct.sh
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.0
+      - key: PORT
+        value: 8050
