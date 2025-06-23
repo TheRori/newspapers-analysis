@@ -35,7 +35,12 @@ fi
 
 echo -e "\033[36mLancement de l'application...\033[0m"
 export PYTHONUNBUFFERED=1
-echo -e "\033[32mApplication démarrée. Accédez à http://127.0.0.1:8050/ dans votre navigateur.\033[0m"
+
+# Déterminer le port à utiliser (variable d'environnement PORT pour Render ou 8050 par défaut)
+PORT=${PORT:-8050}
+
+echo -e "\033[32mApplication démarrée. Accédez à http://0.0.0.0:$PORT/ dans votre navigateur.\033[0m"
 echo -e "\033[33mAppuyez sur Ctrl+C pour arrêter l'application.\033[0m"
 
+# Lancer l'application avec le port approprié
 python src/webapp/run_app.py

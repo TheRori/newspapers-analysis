@@ -40,7 +40,11 @@ Write-Host "Lancement de l'application..." -ForegroundColor Cyan
 try {
     # Utiliser PYTHONUNBUFFERED pour éviter la mise en tampon
     $env:PYTHONUNBUFFERED = "1"
-    Write-Host "Application démarrée. Accédez à http://127.0.0.1:8050/ dans votre navigateur." -ForegroundColor Green
+    
+    # Déterminer le port à utiliser (variable d'environnement PORT pour Render ou 8050 par défaut)
+    $PORT = if ($env:PORT) { $env:PORT } else { "8050" }
+    
+    Write-Host "Application démarrée. Accédez à http://0.0.0.0:$PORT/ dans votre navigateur." -ForegroundColor Green
     Write-Host "Appuyez sur Ctrl+C pour arrêter l'application." -ForegroundColor Yellow
     
     # Exécuter directement sans redirection pour voir les logs en temps réel
