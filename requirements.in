@@ -28,3 +28,5 @@ pyasn1
 pyasn1-modules
 rsa
 urllib3
+gunicorn
+gevent

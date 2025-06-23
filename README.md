@@ -229,4 +229,4 @@ Pour toute question, suggestion ou bug, merci d’ouvrir une issue sur le dépô
 
 ---
 
-*Bonnes analyses !*
+*Bonnes analyses !*

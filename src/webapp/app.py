@@ -358,3 +358,9 @@ def update_global_analysis_notification(state):
         return True, message, header, "info"
     else:
         return False, "", "", "info"
+
+# Run the app
+if __name__ == "__main__":
+    # Get port from environment variable for Render deployment
+    port = int(os.environ.get("PORT", 8050))
+    app.run_server(host="0.0.0.0", port=port, debug=False)

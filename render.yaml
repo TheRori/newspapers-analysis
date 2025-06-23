@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: newspapers-analysis
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python src/webapp/app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0
