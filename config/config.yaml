@@ -50,7 +50,7 @@ analysis:
 data:
   cluster_results_dir: data/results/clusters/
   files:
-    articles: articles_v1_filtered.json
+    articles: filtered_articles_20250609_184822.json
   lexical_analysis_dir: data/results/lexical_analysis/
   processed_dir: C:\Users\nicol\Documents\Projects\newspapers-analysis\data\processed
   raw_dir: data/raw
@@ -64,7 +64,7 @@ llm:
     model: mistral-small
     provider: mistral
   openai:
-    api_key: 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
+    api_key: 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
     endpoint: https://api.openai.com/v1/chat/completions
     language: fr
     model: gpt-4o

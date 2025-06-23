@@ -1,7 +1,7 @@
 {
-    "main_source": "C:\\Users\\nicol\\Documents\\Projects\\newspapers-analysis\\data\\processed\\classified_tv_programs_20250523_104843_filtered.json",
-    "topic_matrix_source": "C:\\Users\\nicol\\Documents\\Projects\\newspapers-analysis\\data\\results\\doc_topic_matrix\\doc_topic_matrix_gensim_lda_20250524-163956_93a8c0ec.json",
+    "main_source": "C:\\Users\\nicol\\Documents\\Projects\\newspapers-analysis\\data\\processed\\filtered_articles_20250609_184822.json",
+    "topic_matrix_source": "C:\\Users\\nicol\\Documents\\Projects\\newspapers-analysis\\data\\results\\doc_topic_matrix\\doc_topic_matrix_gensim_lda_20250623-231354_5c684c3b.json",
     "clusters_source": "C:\\Users\\nicol\\Documents\\Projects\\newspapers-analysis\\data\\results\\clusters\\doc_clusters_k6.json",
-    "sentiment_source": "C:\\Users\\nicol\\Documents\\Projects\\newspapers-analysis\\data\\results\\sentiment_analysis\\articles_with_sentiment_fd50f47f.json",
-    "entity_source": "C:\\Users\\nicol\\Documents\\Projects\\newspapers-analysis\\data\\results\\entity_recognition\\articles_with_entities_8bfe1398.json"
+    "sentiment_source": "C:\\Users\\nicol\\Documents\\Projects\\newspapers-analysis\\data\\results\\sentiment_analysis\\articles_with_sentiment_6a3b4225.json",
+    "entity_source": "C:\\Users\\nicol\\Documents\\Projects\\newspapers-analysis\\data\\results\\entity_recognition\\articles_with_entities_06f56b5a.json"
 }

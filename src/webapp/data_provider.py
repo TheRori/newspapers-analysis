@@ -94,10 +94,41 @@ class DashDataProvider:
                         topic_data = json.load(f).get('doc_topics', {})
                     
                     topic_names = {}
-                    topic_names_path = self.results_dir / "topic_names_llm.json"
-                    if topic_names_path.exists():
-                        with open(topic_names_path, "r", encoding="utf-8") as f:
-                            topic_names = json.load(f).get("topic_names", {})
+                    
+                    # Extraire l'identifiant unique de la matrice de topics (format: doc_topic_matrix_gensim_lda_20250623-231354_5c684c3b.json)
+                    topic_matrix_file = topic_files[0]
+                    matrix_filename = topic_matrix_file.name
+                    
+                    # Chercher un fichier topic_names avec le même identifiant
+                    matrix_id = None
+                    if "_" in matrix_filename:
+                        # Extraire l'identifiant unique (date_hash) à la fin du nom de fichier
+                        parts = matrix_filename.split('_')
+                        if len(parts) >= 5:  # Au moins 5 parties pour avoir l'identifiant
+                            # Les deux dernières parties sont généralement date_hash.json
+                            matrix_id = f"{parts[-2]}_{parts[-1].replace('.json', '')}"
+                    
+                    if matrix_id:
+                        # Chercher un fichier topic_names avec le même identifiant
+                        topic_names_pattern = f"topic_names*{matrix_id}*.json"
+                        matching_files = list(self.results_dir.glob(topic_names_pattern))
+                        
+                        if matching_files:
+                            topic_names_path = matching_files[0]
+                            print(f"[TOPICS] Chargement automatique des noms de topics depuis : {topic_names_path}")
+                            try:
+                                with open(topic_names_path, "r", encoding="utf-8") as f:
+                                    topic_names = json.load(f).get("topic_names", {})
+                            except Exception as e:
+                                print(f"[TOPICS] Erreur lors du chargement des noms de topics : {e}")
+                    
+                    # Si aucun fichier correspondant n'est trouvé, essayer avec le fichier générique
+                    if not topic_names:
+                        topic_names_path = self.results_dir / "topic_names_llm.json"
+                        if topic_names_path.exists():
+                            print(f"[TOPICS] Utilisation du fichier générique : {topic_names_path}")
+                            with open(topic_names_path, "r", encoding="utf-8") as f:
+                                topic_names = json.load(f).get("topic_names", {})
 
                     for doc_id, data in topic_data.items():
                         if doc_id in article_map:
@@ -193,6 +224,46 @@ class DashDataProvider:
         df = pd.DataFrame(articles_enriched)
 
         export_rows = []
+        # --- Charger les noms de topics depuis le fichier correspondant à la matrice de topics ---
+        topic_names = {}
+        topic_matrix_source = None
+        if "topic_matrix_source" in self.custom_sources and self.custom_sources["topic_matrix_source"]:
+            topic_matrix_source = self.custom_sources["topic_matrix_source"]
+            # Extraire l'identifiant unique de la matrice de topics
+            matrix_path = Path(topic_matrix_source)
+            matrix_filename = matrix_path.name
+            
+            # Chercher un fichier topic_names avec le même identifiant
+            matrix_id = None
+            if "_" in matrix_filename:
+                # Extraire l'identifiant unique (date_hash) à la fin du nom de fichier
+                parts = matrix_filename.split('_')
+                if len(parts) >= 5:  # Au moins 5 parties pour avoir l'identifiant
+                    # Les deux dernières parties sont généralement date_hash.json
+                    matrix_id = f"{parts[-2]}_{parts[-1].replace('.json', '')}"
+            
+            if matrix_id:
+                # Chercher un fichier topic_names avec le même identifiant
+                topic_names_pattern = f"topic_names*{matrix_id}*.json"
+                matching_files = list(self.results_dir.glob(topic_names_pattern))
+                
+                if matching_files:
+                    topic_names_path = matching_files[0]
+                    print(f"[TOPICS] Chargement automatique des noms de topics depuis : {topic_names_path}")
+                    try:
+                        with open(topic_names_path, "r", encoding="utf-8") as f:
+                            topic_names = json.load(f).get("topic_names", {})
+                    except Exception as e:
+                        print(f"[TOPICS] Erreur lors du chargement des noms de topics : {e}")
+            
+            # Si aucun fichier correspondant n'est trouvé, essayer avec le fichier générique
+            if not topic_names:
+                topic_names_path = self.results_dir / "topic_names_llm.json"
+                if topic_names_path.exists():
+                    print(f"[TOPICS] Utilisation du fichier générique : {topic_names_path}")
+                    with open(topic_names_path, "r", encoding="utf-8") as f:
+                        topic_names = json.load(f).get("topic_names", {})
+        
         # --- Charger le sentiment depuis le fichier sélectionné ou le plus récent ---
         sentiment_map = {}
         sentiment_source = None
@@ -308,13 +379,23 @@ class DashDataProvider:
                 
                 journal_base = normalize_journal_name(journal_name)
                 
+            # Récupérer le topic dominant et utiliser le nom du topic chargé depuis le fichier correspondant
+            dominant_topic = row.get("dominant_topic")
+            topic_name = "Non défini"
+            if dominant_topic is not None:
+                # Utiliser le nom du topic depuis le fichier topic_names correspondant
+                topic_name = topic_names.get(str(dominant_topic), f"Topic {dominant_topic}")
+            else:
+                # Fallback sur la valeur existante si disponible
+                topic_name = row.get("nom_du_topic", "Non défini")
+            
             export_rows.append({
                 "id_article": article_id,
                 "titre": row.get("title"),
                 "date": row.get("date"),
                 "journal": row.get("newspaper"),
                 "journal_base": journal_base,  # Ajouter le nom de base du journal
-                "nom_du_topic": row.get("nom_du_topic", "Non défini"),
+                "nom_du_topic": topic_name,
                 "score_topic": score_topic_pct,
                 "cluster": row.get("cluster"),
                 "sentiment": sentiment_val,
