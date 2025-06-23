@@ -13,4 +13,7 @@ sys.path.append(str(project_root))
 from src.webapp.app import app
 
 if __name__ == "__main__":
-    app.run(debug=True, port=8050)
+    # Utiliser le port défini par l'environnement (pour Render) ou 8050 par défaut
+    port = int(os.environ.get("PORT", 8050))
+    # Utiliser 0.0.0.0 pour être accessible depuis l'extérieur
+    app.run_server(host="0.0.0.0", port=port, debug=False)
