@@ -1,9 +1,17 @@
 import json
+import os
 from datetime import datetime
+from pathlib import Path
+from src.utils.config_loader import load_config
 
-# Chemin du fichier à modifier
-input_path = r"c:\Users\nicol\Documents\Projects\newspapers-analysis\data\processed\articles_v1.json"
-output_path = r"c:\Users\nicol\Documents\Projects\newspapers-analysis\data\processed\articles_v1_filtered.json"  # Change en input_path pour écraser
+# Charger la configuration
+config_path = os.path.join(Path(__file__).parent, 'config', 'config.yaml')
+config = load_config(config_path)
+
+# Récupérer les chemins depuis la configuration
+processed_dir = config['data']['processed_dir']
+input_path = os.path.join(processed_dir, 'articles_v1.json')
+output_path = os.path.join(processed_dir, 'articles_v1_filtered.json')
 
 # Date limite
 limit_date = datetime(1950, 1, 1)
