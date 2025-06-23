@@ -79,6 +79,7 @@ gensim==4.3.3
 gevent==25.5.1
     # via -r requirements.in
 greenlet==3.2.3
+dash_bootstrap_components
     # via gevent
 gunicorn==23.0.0
     # via -r requirements.in
